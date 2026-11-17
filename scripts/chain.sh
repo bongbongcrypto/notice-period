@@ -73,16 +73,34 @@ same_address() {
   [ "$(echo "$1" | tr 'A-F' 'a-f')" = "$(echo "$2" | tr 'A-F' 'a-f')" ]
 }
 
-json_field() { # json field
-  python3 -c 'import json,sys; d=json.loads(sys.argv[1]); v=d.get(sys.argv[2]); print("" if v is None else v)' "$1" "$2"
+# Reads a field from the last JSON object in a tool's output (the object may span several lines and follow other
+# text). Prints nothing if there is no such object or field.
+json_field() { # text field
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+text, field = sys.argv[1], sys.argv[2]
+dec = json.JSONDecoder()
+found = None
+for i, ch in enumerate(text):
+    if ch != "{":
+        continue
+    try:
+        obj, _ = dec.raw_decode(text[i:])
+    except ValueError:
+        continue
+    if isinstance(obj, dict) and field in obj:
+        found = obj
+v = None if found is None else found.get(field)
+print("" if v is None else v)
+PY
 }
 
 # forge create with the testnet key. Prints "<address> <tx hash>". Extra args go to forge create.
 deploy() { # rpc label contract value_wei [forge create args...]
   local rpc="$1" label="$2" contract="$3" value="$4" out addr tx
   shift 4
-  out="$(forge create --broadcast --json --rpc-url "$rpc" --private-key "$DEPLOY_KEY" --value "$value" "$contract" "$@" \
-    | grep -E '^\{' | tail -n 1)" || die "$label: deployment failed"
+  out="$(forge create --broadcast --json --rpc-url "$rpc" --private-key "$DEPLOY_KEY" --value "$value" "$contract" "$@")" \
+    || die "$label: deployment failed"
   addr="$(json_field "$out" deployedTo)"
   tx="$(json_field "$out" transactionHash)"
   [ -n "$addr" ] && [ -n "$tx" ] || die "$label: deployment answer has no address or hash"

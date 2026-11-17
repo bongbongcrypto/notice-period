@@ -119,7 +119,7 @@ counting for the tick; when no watch has one, the CRON subscription is removed.
 The exit is asked for at once, instead of waiting, when (reason code in brackets):
 - the change is already due within `LEAD` when it is seen (3, `TooSoon`);
 - the change is due later than `MAX_WAIT` (900 s in the demo deployment), which would cost too many ticks (4, `WaitTooLong`);
-- `data` is longer than 512 bytes (5, `DataTooLong`);
+- `data` is longer than 256 bytes (5, `DataTooLong`);
 - the watch already stores `MAX_PENDING` (3) changes (6, `PendingFull`);
 - the watch has used its reaction budget while a change is pending (7, `Budget`).
 
@@ -162,6 +162,10 @@ The origin transaction hash travels in the payload and is an indexed topic of bo
 | (84532, vault, `Submit`, selector, any, any), one per selector of the watched kinds | arming | when the last watch that needs it ends |
 | (84532, vault, `Revoke`, any, any, any), mode 1 only | arming | when the last mode-1 watch on that vault ends |
 | (5318007, `0x…fffFfF`, `Cron10`, any, any, any) | first stored change of any watch | when no watch stores a change |
+
+A real Cron10 log read on Lasna (2026-11-17) carries its counter as indexed `topic1` and empty data, not in data
+as the docs describe. The contract reads neither: it only checks source, chain and `topic0`. The fixture test
+feeds that real log.
 
 Filters are reference-counted: the network treats two identical subscriptions as one, so an unsubscribe for
 one watch would otherwise silence another watch on the same vault. The contract subscribes on 0 → 1 and
@@ -221,6 +225,7 @@ lREACT a day. The real figures come from the first on-chain runs.
 | NoticeReactive | `WatchClosed(uint256 watchId, uint8 status)` | watchId |
 | NoticeReactive | `FilterOn(bytes32 key)`, `FilterOff(bytes32 key)` | key |
 | NoticeReactive | `StrayEvent(uint256 chainId, address source, uint256 topic0, uint256 total)` | chainId, source, topic0 |
+| NoticeReactive | `UnknownEvent(uint256 chainId, address source, uint256 topic0, uint256 total)` | chainId, source, topic0 |
 
 ## 11. Limits, said plainly
 
@@ -235,6 +240,10 @@ lREACT a day. The real figures come from the first on-chain runs.
   exit can only be wrong in the direction of leaving.
 - "No server, no key that can send the funds elsewhere": the exit right exists only through the vault's own
   event, the network's callback, and a redeem whose receiver is fixed to the owner.
+- If an exit callback reverts on Base Sepolia (`AssetsNotReceived`, or a failure of the callback itself), the
+  reactive contract has already closed the watch, while on Base Sepolia it is still `Active`. That watch no
+  longer protects anything and blocks a new arm on the same vault (`AlreadyWatching`) until the owner cancels
+  it. The page must show the Lasna status next to the Base status.
 
 ## 12. What the Foundry simulation shows and what it cannot
 
@@ -243,6 +252,14 @@ subscriptions and delivers a log only when all six subscribe arguments match (so
 fails a test), and a mock callback proxy writes the requesting contract's address into the first argument
 as the network does. Real logs (a Morpho V2 `Submit` from Base, a Cron10 tick from Lasna) are decoded in
 fixture tests.
+
+Checks in CI on every push: unit and attack tests (each refusal test next to a sibling call that succeeds), fuzz
+tests, an invariant run with random visitor, curator, clock and attacker actions (the exit contract never
+holds tokens or shares, tokens go only to their depositor, both chains agree on each watch's status, the CRON
+subscription exists exactly while a change is stored, `react()` never reverts), a mutation check that removes
+each refusal rule in turn and requires its named test to fail (`scripts/mutations.py`), and a dry run of the
+deploy and loop scripts on two local anvil chains with the mock network contracts at the real addresses and a
+relay script that plays the network.
 
 Not shown until the real loop runs on Lasna and Base Sepolia: that the network injects our reactive
 contract's address (day-1 reading: yes, on chain), how soon a subscription added inside `react()` catches
