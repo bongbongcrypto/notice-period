@@ -61,6 +61,17 @@ contract NoticeReactive is AbstractReactive {
         bytes data;
     }
 
+    /// @dev A Submit as read from its log (memory only). `data` is the change when it is at most MAX_DATA_LENGTH
+    ///      bytes, else its selector alone, with `dataHash` 0; `dataLength` is the length of the change as logged.
+    struct Seen {
+        bytes data;
+        bytes32 dataHash;
+        uint256 dataLength;
+        uint256 executableAt;
+        uint256 originTxHash;
+        uint8 kind;
+    }
+
     uint256 public immutable ORIGIN_CHAIN_ID;
     address public immutable EXIT;
     uint256 public immutable CRON_TOPIC;
@@ -208,33 +219,38 @@ contract NoticeReactive is AbstractReactive {
             _unknown(log_);
             return;
         }
-        uint256 executableAt = uint256(bytes32(log_.data[32:64]));
+        Seen memory s;
+        s.dataLength = data.length;
+        s.executableAt = uint256(bytes32(log_.data[32:64]));
+        s.originTxHash = log_.txHash;
         bytes4 selector = NoticeKinds.topicSelector(log_.topic1);
-        uint8 kind = NoticeKinds.kindOf(selector);
+        s.kind = NoticeKinds.kindOf(selector);
         // A curator controls the length of `data`. Only a change of at most MAX_DATA_LENGTH bytes is copied, stored
         // and sent; a longer one travels as its selector alone, so padding cannot push this reaction or the
         // callback over its gas limit.
-        bytes memory carried;
-        bytes32 h;
         if (data.length <= MAX_DATA_LENGTH) {
-            carried = data;
-            h = keccak256(carried);
+            s.data = data;
+            s.dataHash = keccak256(data);
         } else {
-            carried = abi.encodePacked(selector);
+            s.data = abi.encodePacked(selector);
         }
-        uint256[] memory ids = _vaultWatches[vault];
+        _applySubmit(vault, s);
+    }
+
+    function _applySubmit(address vault_, Seen memory s_) internal {
+        uint256[] memory ids = _vaultWatches[vault_];
         for (uint256 i = 0; i < ids.length; i++) {
             uint256 id = ids[i];
             Watch storage w = watches[id];
-            if (w.status != ST_ARMED || w.kinds & kind == 0) continue;
+            if (w.status != ST_ARMED || w.kinds & s_.kind == 0) continue;
             if (w.mode == MODE_NOW) {
-                _fire(id, carried, h, log_.txHash, R_SCHEDULED);
+                _fire(id, s_.data, s_.dataHash, s_.originTxHash, R_SCHEDULED);
                 continue;
             }
             w.reactions += 1;
-            uint8 reason = _reasonNotToWait(w, data.length, executableAt);
-            if (reason != 0) _fire(id, carried, h, log_.txHash, reason);
-            else _store(id, w, carried, h, executableAt, log_.txHash);
+            uint8 reason = _reasonNotToWait(w, s_.dataLength, s_.executableAt);
+            if (reason != 0) _fire(id, s_.data, s_.dataHash, s_.originTxHash, reason);
+            else _store(id, w, s_.data, s_.dataHash, s_.executableAt, s_.originTxHash);
         }
     }
 

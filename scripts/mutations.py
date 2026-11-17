@@ -167,7 +167,7 @@ add("stray-tick", "a tick while disarmed is a stray", R,
     "if (filterRefs[_cronKey()] == 0) {", "if (false) {",
     NR, "test_stray_tick_after_unsubscribe_is_counted")
 add("submit-kind-per-watch", "a change exits only the watches of its kind", R,
-    "if (w.status != ST_ARMED || w.kinds & kind == 0) continue;", "if (w.status != ST_ARMED) continue;",
+    "if (w.status != ST_ARMED || w.kinds & s_.kind == 0) continue;", "if (w.status != ST_ARMED) continue;",
     NR, "test_cap_change_exits_only_the_watch_that_opted_in")
 add("wait-budget", "the reaction budget ends a spammed watch", R,
     "if (w_.reactions > MAX_REACTIONS) return R_BUDGET;", "",
@@ -197,8 +197,8 @@ add("submit-malformed", "a malformed Submit is counted, never decoded blindly", 
     "if (!ok || log_.data.length < 64) {", "if (false) {",
     NR, "test_malformed_submit_is_counted_not_reverted")
 add("carry-bounded", "a change longer than 256 bytes travels as its selector alone", R,
-    "        if (data.length <= MAX_DATA_LENGTH) {\n            carried = data;",
-    "        if (true) {\n            carried = data;",
+    "        if (data.length <= MAX_DATA_LENGTH) {\n            s.data = data;",
+    "        if (true) {\n            s.data = data;",
     "PaddingTest", "test_padding_4kb_does_not_stop_the_exit")
 add("store-dedupe", "a change is stored once", R,
     "if (_pending[id_][j].dataHash == h) return; // the same change delivered twice", "",
