@@ -136,50 +136,23 @@ tx_block_time() { # rpc txhash -> unix seconds of the block that holds it
   python3 -c 'import sys; print(int(sys.argv[1], 0))' "$ts"
 }
 
-# Polls for the first log matching the filter; prints its transaction hash. An RPC error is retried, never read as
-# "no log"; only the timeout ends the wait.
-# Topics are 32-byte hex values for topic1, topic2, ... (use `cast to-uint256` for numbers). The query is a plain
-# eth_getLogs, and every returned log is checked again here (address, block, topics), so an RPC that ignores part of
-# the filter cannot hand back the wrong log.
+# Polls for the first log matching the filter; prints its transaction hash. The poll itself is scripts/wait-log.py:
+# an RPC error is retried, never read as "no log"; only the timeout ends the wait. Queries name both block ends and
+# span at most LOG_CHUNK blocks, and send their own User-Agent (sepolia.base.org refuses urllib's default with 403
+# and wide or "latest" ranges with 413). Every returned log is checked again (address, block, topics).
+# Topics are 32-byte hex values for topic1, topic2, ... (use `cast to-uint256` for numbers).
 wait_log() { # rpc label from_block address event_sig timeout_s [topic...]
-  local rpc="$1" label="$2" from="$3" addr="$4" sig="$5" timeout="$6" start topic0 tx rc
+  local rpc="$1" label="$2" from="$3" addr="$4" sig="$5" timeout="$6" topic0 tx rc
   shift 6
-  topic0="$(cast keccak "$sig")"
-  start="$(date +%s)"
-  while :; do
-    rc=0
-    tx="$(python3 - "$rpc" "$from" "$addr" "$topic0" "$@" <<'PY'
-import json, sys, urllib.request
-rpc, frm, addr, *topics = sys.argv[1:]
-topics = [t.lower() for t in topics]
-frm = int(frm, 0)
-query = {"fromBlock": hex(frm), "toBlock": "latest", "address": addr, "topics": topics}
-req = urllib.request.Request(rpc, data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_getLogs",
-                             "params": [query]}).encode(), headers={"content-type": "application/json"})
-try:
-    with urllib.request.urlopen(req, timeout=20) as r:
-        body = json.load(r)
-except Exception:
-    sys.exit(2)
-if "error" in body or not isinstance(body.get("result"), list):
-    sys.exit(2)
-for log in body["result"]:
-    t = [x.lower() for x in log.get("topics", [])]
-    if (log.get("address", "").lower() == addr.lower() and int(log["blockNumber"], 16) >= frm
-            and t[:len(topics)] == topics):
-        print(log["transactionHash"])
-        break
-PY
-)" || rc=$?
-    if [ "$rc" = 0 ] && [ -n "$tx" ]; then
-      echo "$label: tx $tx after $(($(date +%s) - start)) s of waiting" >&2
-      echo "$tx"
-      return 0
-    fi
-    [ "$rc" = 0 ] || echo "$label: log query failed, retrying (state unknown, not 'absent')" >&2
-    [ $(($(date +%s) - start)) -lt "$timeout" ] || die "$label: not seen within $timeout s"
-    sleep 3
-  done
+  topic0="$(cast keccak "$sig")" || die "$label: cannot hash $sig"
+  rc=0
+  tx="$(python3 scripts/wait-log.py "$rpc" "$label" "$from" "$addr" "$topic0" "$timeout" "$@")" || rc=$?
+  case "$rc" in
+    0) [ -n "$tx" ] || die "$label: wait ended with no hash" ;;
+    3) die "$label: not seen within $timeout s" ;;
+    *) die "$label: wait failed (exit $rc)" ;;
+  esac
+  echo "$tx"
 }
 
 # Stops unless the exit landed strictly before the change could run (both unix seconds).

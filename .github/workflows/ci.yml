@@ -101,7 +101,11 @@ jobs:
       - name: Lint the shell scripts
         run: |
           for f in scripts/*.sh; do bash -n "$f"; done
-          python3 -m py_compile scripts/mutate.py scripts/mutations.py scripts/relay-anvil.py scripts/dry-run-fund.py
+          python3 -m py_compile scripts/mutate.py scripts/mutations.py scripts/relay-anvil.py scripts/dry-run-fund.py \
+            scripts/wait-log.py scripts/test-wait-log.py
+
+      - name: Log wait against a stub RPC (403 default agent, 413 wide ranges, failed chunk, lagging node)
+        run: python3 scripts/test-wait-log.py
 
       - name: Dry run on local chains (deploy-hello, deploy-system, loop hello, loop system mode 0 and 1)
         run: bash scripts/dry-run.sh
