@@ -110,6 +110,11 @@ def main():
         print("\n".join(problems))
         raise SystemExit("baseline: a named test does not pass")
     print(f"baseline: {len(selected)} named tests pass on the real code")
+    # the per-test filter must select the named test (a filter that selects nothing would count as a survivor)
+    first = selected[0]
+    _, res = forge_json(["--match-contract", f"^{first['contract']}$", "--match-test", f"^{first['test']}\\("])
+    if status_of(res, first["contract"], first["test"]) != "Success":
+        raise SystemExit("the per-test filter does not select the named test on the real code")
 
     # 3. mutants
     survivors, broken = [], []
@@ -126,7 +131,10 @@ def main():
                 verdict = "MUTANT DOES NOT COMPILE"
                 tail = (b.stdout + b.stderr)[-1500:]
             else:
-                pt, res = forge_json(["--match-contract", f"^{m['contract']}$", "--match-test", f"^{m['test']}$"])
+                # forge matches --match-test against the signature, e.g. "test_x()" or "testFuzz_y(uint256)"
+                pt, res = forge_json(
+                    ["--match-contract", f"^{m['contract']}$", "--match-test", f"^{m['test']}\\("]
+                )
                 s = status_of(res, m["contract"], m["test"])
                 if s == "Failure":
                     verdict = "killed"
