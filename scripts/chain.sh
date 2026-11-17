@@ -125,9 +125,15 @@ block_number() { # rpc
 }
 
 tx_block_time() { # rpc txhash -> unix seconds of the block that holds it
-  local bn
-  bn="$(cast receipt --rpc-url "$1" "$2" blockNumber 2>/dev/null)" || die "receipt of $2 unknown"
-  cast block --rpc-url "$1" "$bn" timestamp 2>/dev/null || die "block $bn unknown"
+  local r b bn ts
+  r="$(cast receipt --json --rpc-url "$1" "$2" 2>/dev/null)" || die "receipt of $2 unknown"
+  bn="$(json_field "$r" blockNumber)"
+  [ -n "$bn" ] || die "receipt of $2 has no block number"
+  bn="$(python3 -c 'import sys; print(int(sys.argv[1], 0))' "$bn")"
+  b="$(cast block --json --rpc-url "$1" "$bn" 2>/dev/null)" || die "block $bn unknown"
+  ts="$(json_field "$b" timestamp)"
+  [ -n "$ts" ] || die "block $bn has no timestamp"
+  python3 -c 'import sys; print(int(sys.argv[1], 0))' "$ts"
 }
 
 # Polls for the first log matching the filter; prints its transaction hash. An RPC error is retried, never read as
