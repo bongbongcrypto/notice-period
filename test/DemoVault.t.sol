@@ -419,15 +419,37 @@ contract DemoVaultTest is Test {
         vm.stopPrank();
     }
 
+    function deployVault(address asset_, address curator_) external returns (address) {
+        return address(new DemoVault(asset_, curator_, 180));
+    }
+
+    function deployFactory(address asset_) external returns (address) {
+        return address(new DemoVaultFactory(asset_, 180));
+    }
+
+    /// @dev Plain try/catch on an external deploy helper, so the check does not depend on how a cheatcode treats CREATE.
+    function _assertDeployRefused(bool vault_, address asset_, address curator_, bytes4 err_) internal {
+        if (vault_) {
+            try this.deployVault(asset_, curator_) returns (address) {
+                revert("vault deployed with a zero address");
+            } catch (bytes memory reason) {
+                assertEq(reason, abi.encodeWithSelector(err_));
+            }
+        } else {
+            try this.deployFactory(asset_) returns (address) {
+                revert("factory deployed with a zero address");
+            } catch (bytes memory reason) {
+                assertEq(reason, abi.encodeWithSelector(err_));
+            }
+        }
+    }
+
     function test_vault_and_factory_refuse_zero_addresses() public {
-        new DemoVault(address(token), curator, 180);
-        vm.expectRevert(DemoVault.ZeroAddress.selector);
-        new DemoVault(address(0), curator, 180);
-        vm.expectRevert(DemoVault.ZeroAddress.selector);
-        new DemoVault(address(token), address(0), 180);
-        new DemoVaultFactory(address(token), 180);
-        vm.expectRevert(DemoVaultFactory.ZeroAddress.selector);
-        new DemoVaultFactory(address(0), 180);
+        assertTrue(this.deployVault(address(token), curator) != address(0));
+        _assertDeployRefused(true, address(0), curator, DemoVault.ZeroAddress.selector);
+        _assertDeployRefused(true, address(token), address(0), DemoVault.ZeroAddress.selector);
+        assertTrue(this.deployFactory(address(token)) != address(0));
+        _assertDeployRefused(false, address(0), address(0), DemoVaultFactory.ZeroAddress.selector);
     }
 
     function test_vault_refuses_token_answering_false() public {

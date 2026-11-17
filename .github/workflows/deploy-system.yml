@@ -1,0 +1,58 @@
+name: deploy-system
+
+# Deploys DemoToken, DemoVaultFactory, NoticeReactive and NoticeExit (SPEC.md section 7) with the testnet key.
+# Manual only, inside the "testnet" environment (main branch only; the key is the TESTNET_KEY secret).
+# Stops before sending anything if a balance is zero, unknown or too small.
+on:
+  workflow_dispatch:
+    inputs:
+      reactive_fund:
+        description: "lREACT sent to NoticeReactive (whole coins), the operator float"
+        default: "5"
+        required: true
+      exit_fund:
+        description: "Base Sepolia ETH sent to NoticeExit for callback fees"
+        default: "0.005"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testnet-key
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: testnet
+    env:
+      BASE_RPC: https://sepolia.base.org
+      LASNA_RPC: https://lasna-rpc.rnk.dev/
+      CALLBACK_PROXY: "0x476F44b11F5C942c58f4c8E3d0300E5710743585"
+    steps:
+      - name: Check out this commit (plain git, no third-party action)
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          git init -q .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          echo "::add-mask::${auth}"
+          git -c http.extraheader="AUTHORIZATION: basic ${auth}" fetch -q --depth 1 origin "${GITHUB_SHA}"
+          git checkout -q FETCH_HEAD
+          git log -1 --format='%H %s'
+
+      - name: Install pinned Foundry, solc and libraries
+        run: bash scripts/ci-setup.sh
+
+      - name: Test before deploying
+        run: forge test
+
+      - name: Deploy (prints addresses and transaction hashes)
+        env:
+          DEPLOY_KEY: ${{ secrets.TESTNET_KEY }}
+          REACTIVE_FUND: ${{ inputs.reactive_fund }}
+          EXIT_FUND: ${{ inputs.exit_fund }}
+        run: bash scripts/deploy-system.sh

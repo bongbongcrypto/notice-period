@@ -1,0 +1,94 @@
+name: loop
+
+# Fires the origin event on Base Sepolia, waits for the reactive transaction on Lasna and the callback on
+# Base Sepolia, and prints the three transaction hashes with the seconds between them.
+# Manual only, inside the "testnet" environment (it sends transactions with the testnet key).
+on:
+  workflow_dispatch:
+    inputs:
+      which:
+        description: "hello = Ping/Relayed/Ponged; system = curator action/ExitRequested/WatchEnded"
+        type: choice
+        options: [hello, system]
+        default: hello
+      origin_or_token:
+        description: "hello: HelloOrigin address; system: DemoToken address"
+        required: true
+      reactive:
+        description: "HelloReactive or NoticeReactive address (Lasna)"
+        required: true
+      callback_or_exit:
+        description: "hello: HelloCallback address; system: NoticeExit address"
+        required: true
+      factory:
+        description: "system only: DemoVaultFactory address"
+        required: false
+        default: ""
+      mode:
+        description: "system only: 0 leave now, 1 leave if still pending"
+        type: choice
+        options: ["0", "1"]
+        default: "0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testnet-key
+  cancel-in-progress: false
+
+jobs:
+  loop:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: testnet
+    env:
+      BASE_RPC: https://sepolia.base.org
+      LASNA_RPC: https://lasna-rpc.rnk.dev/
+      CALLBACK_PROXY: "0x476F44b11F5C942c58f4c8E3d0300E5710743585"
+    steps:
+      - name: Check out this commit (plain git, no third-party action)
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          git init -q .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          echo "::add-mask::${auth}"
+          git -c http.extraheader="AUTHORIZATION: basic ${auth}" fetch -q --depth 1 origin "${GITHUB_SHA}"
+          git checkout -q FETCH_HEAD
+          git log -1 --format='%H %s'
+
+      - name: Install pinned Foundry, solc and libraries
+        run: bash scripts/ci-setup.sh
+
+      - name: Check the addresses
+        env:
+          A1: ${{ inputs.origin_or_token }}
+          A2: ${{ inputs.reactive }}
+          A3: ${{ inputs.callback_or_exit }}
+          A4: ${{ inputs.factory }}
+          WHICH: ${{ inputs.which }}
+        run: |
+          for a in "$A1" "$A2" "$A3"; do [[ "$a" =~ ^0x[0-9a-fA-F]{40}$ ]] || { echo "not an address: $a"; exit 1; }; done
+          if [ "$WHICH" = system ]; then [[ "$A4" =~ ^0x[0-9a-fA-F]{40}$ ]] || { echo "factory address needed"; exit 1; }; fi
+
+      - name: Hello-world loop
+        if: inputs.which == 'hello'
+        env:
+          DEPLOY_KEY: ${{ secrets.TESTNET_KEY }}
+          HELLO_ORIGIN: ${{ inputs.origin_or_token }}
+          HELLO_REACTIVE: ${{ inputs.reactive }}
+          HELLO_CALLBACK: ${{ inputs.callback_or_exit }}
+        run: bash scripts/loop-hello.sh
+
+      - name: System loop (visitor journey)
+        if: inputs.which == 'system'
+        env:
+          DEPLOY_KEY: ${{ secrets.TESTNET_KEY }}
+          NP_TOKEN: ${{ inputs.origin_or_token }}
+          NP_REACTIVE: ${{ inputs.reactive }}
+          NP_EXIT: ${{ inputs.callback_or_exit }}
+          NP_FACTORY: ${{ inputs.factory }}
+          LOOP_MODE: ${{ inputs.mode }}
+        run: bash scripts/loop-system.sh
