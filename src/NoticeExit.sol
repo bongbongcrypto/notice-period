@@ -33,6 +33,8 @@ interface IBalanceOf {
 contract NoticeExit is AbstractCallback, INoticeExit {
     uint8 public constant MODE_NOW = 0;
     uint8 public constant MODE_IF_PENDING = 1;
+    /// @notice Reason code of NoticeReactive for "stored change due within LEAD" (its R_DEADLINE).
+    uint8 public constant REASON_DEADLINE = 2;
     uint8 public constant DEFAULT_KINDS = NoticeKinds.DEFAULT;
 
     uint8 public constant STATUS_NONE = 0;
@@ -176,7 +178,8 @@ contract NoticeExit is AbstractCallback, INoticeExit {
     /// @notice Redeems the watch owner's shares to the watch owner. Callable only through the callback proxy, on
     ///         request of our reactive contract.
     /// @param sender_ Overwritten by the network with the requesting reactive contract's address.
-    /// @param data_ The scheduled call that triggered the exit (its selector must be a watched kind).
+    /// @param data_ The scheduled call that triggered the exit: the whole call when it is at most 256 bytes, else its
+    ///        selector alone. Its selector must be a watched kind.
     /// @param originTxHash_ Transaction hash of the vault's Submit, carried for the hash chain.
     /// @param reason_ Why the reactive contract asked (SPEC.md section 6); recorded only.
     function exit(address sender_, uint256 watchId_, bytes calldata data_, uint256 originTxHash_, uint8 reason_)
@@ -196,7 +199,9 @@ contract NoticeExit is AbstractCallback, INoticeExit {
         w.status = STATUS_ENDED;
         activeWatchOf[owner][vault] = 0;
 
-        if (w.mode == MODE_IF_PENDING && IExitVault(vault).executableAt(data_) == 0) {
+        // Only a Deadline exit carries the full stored change and is re-checked; the other mode-1 reasons mean the
+        // reactive contract chose to leave at once, and `data_` may then be the selector alone (SPEC.md section 6).
+        if (w.mode == MODE_IF_PENDING && reason_ == REASON_DEADLINE && IExitVault(vault).executableAt(data_) == 0) {
             emit WatchEnded(watchId_, originTxHash_, OUTCOME_CHANGE_NOT_PENDING, reason_, 0, 0);
             return;
         }

@@ -11,8 +11,15 @@ import { ISystemContract } from "@reactive/src/interfaces/ISystemContract.sol";
 ///      - identical subscriptions behave as one;
 ///      - unsubscribe removes only an exact match of all six criteria and is silent otherwise;
 ///      - a log reaches react() only if it matches an active subscription of that contract;
-///      - a revert inside react() is caught (the network bills it and emits ReactiveContractReverted).
+///      - a revert inside react() is caught (the network bills it and emits ReactiveContractReverted);
+///      - gas: the network caps one reactive transaction at 900,000 gas. The mock measures the gas react() uses,
+///        leaves out what its own bookkeeping costs (subscription storage, callback storage), adds what the real
+///        system contract would spend on a callback request (one log carrying the configuration, 8 gas per byte),
+///        and counts every reaction above the cap in `overGasLimit`. Unknown and not modelled: the real cost of
+///        subscribe and unsubscribe, and whether the cap also covers the transaction's calldata.
 contract MockSystem {
+    uint256 public constant REACT_GAS_LIMIT = 900_000;
+
     uint256 internal constant IGNORE = 0xa65f96fc951c35ead38878e0f0b7a3c744a6f5ccc1476b313353ce31712313ad;
 
     struct Sub {
@@ -43,6 +50,10 @@ contract MockSystem {
     uint256 public silentMisses;
     uint256 public reverts;
     uint256 public delivered;
+    uint256 public overGasLimit;
+    uint256 public maxReactGas;
+    uint256 public lastReactGas;
+    uint256 internal _excluded;
 
     event CallbackRequest(
         uint256 indexed chainId,
@@ -52,6 +63,15 @@ contract MockSystem {
         bytes configuration
     );
     event ReactiveContractReverted(address indexed target, bytes reason);
+    event ReactOverGasLimit(address indexed target, uint256 modelledGas);
+
+    /// @dev Leaves the gas of the mock's own bookkeeping out of the reaction's gas, then charges `modelled_` instead.
+    modifier bookkeeping(uint256 modelled_) {
+        uint256 g = gasleft();
+        _;
+        uint256 spent = g - gasleft();
+        _excluded += spent > modelled_ ? spent - modelled_ : 0;
+    }
 
     receive() external payable { }
 
@@ -61,6 +81,7 @@ contract MockSystem {
 
     function subscribe(uint256 chainId_, address source_, uint256 t0_, uint256 t1_, uint256 t2_, uint256 t3_)
         external
+        bookkeeping(0)
     {
         subscribeCalls += 1;
         bytes32 key = keccak256(abi.encode(msg.sender, chainId_, source_, t0_, t1_, t2_, t3_));
@@ -75,6 +96,7 @@ contract MockSystem {
 
     function unsubscribe(uint256 chainId_, address source_, uint256 t0_, uint256 t1_, uint256 t2_, uint256 t3_)
         external
+        bookkeeping(0)
     {
         unsubscribeCalls += 1;
         bytes32 key = keccak256(abi.encode(msg.sender, chainId_, source_, t0_, t1_, t2_, t3_));
@@ -86,7 +108,10 @@ contract MockSystem {
         _subs[i - 1].active = false;
     }
 
-    function requestCallbackV_1_0(ISystemContract.CallbackConfiguration_V_1_0 memory config_) public {
+    function requestCallbackV_1_0(ISystemContract.CallbackConfiguration_V_1_0 memory config_)
+        public
+        bookkeeping(1_000 + 8 * (config_.payload.length + 160))
+    {
         _callbacks.push(Callback(msg.sender, config_.chainId, config_.recipient, config_.gasLimit, config_.payload));
         emit CallbackRequest(
             config_.chainId, msg.sender, config_.recipient, ISystemContract.CallbackVersion.V_1_0, abi.encode(config_)
@@ -157,7 +182,18 @@ contract MockSystem {
 
     function _call(address target_, IReactive.LogRecord calldata log_) internal {
         delivered += 1;
-        (bool ok, bytes memory ret) = target_.call(abi.encodeCall(IReactive.react, (log_)));
+        bytes memory input = abi.encodeCall(IReactive.react, (log_));
+        _excluded = 0;
+        uint256 g = gasleft();
+        (bool ok, bytes memory ret) = target_.call(input);
+        uint256 used = g - gasleft();
+        uint256 modelled = used > _excluded ? used - _excluded : 0;
+        lastReactGas = modelled;
+        if (modelled > maxReactGas) maxReactGas = modelled;
+        if (modelled > REACT_GAS_LIMIT) {
+            overGasLimit += 1;
+            emit ReactOverGasLimit(target_, modelled);
+        }
         if (!ok) {
             reverts += 1;
             emit ReactiveContractReverted(target_, ret);

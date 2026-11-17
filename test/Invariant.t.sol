@@ -99,6 +99,21 @@ contract NoticeHandler is NoticeSetup {
         _pump(address(reactive));
     }
 
+    /// @notice A curator pads a scheduled call (the ABI decoder ignores the extra bytes, so the call still runs).
+    function schedulePadded(uint256 who_, uint256 kind_, uint256 extra_) external recorded {
+        uint256 i = who_ % 3;
+        _salt += 1;
+        bytes memory call_ = kind_ % 2 == 0
+            ? _adapterCall(address(uint160(0xC000 + _salt)))
+            : _allocatorCall(address(uint160(0xD000 + _salt)));
+        bytes memory data = abi.encodePacked(call_, new bytes(bound(extra_, 300, 20_000)));
+        vm.prank(actors[i]);
+        try vaults[i].submit(data) {
+            _scheduled[i].push(data);
+        } catch { }
+        _pump(address(reactive));
+    }
+
     function revokeOne(uint256 who_, uint256 pick_) external recorded {
         uint256 i = who_ % 3;
         uint256 n = _scheduled[i].length;
@@ -218,6 +233,7 @@ interface IHandlerReactive {
 interface IHandlerCounters {
     function reverts() external view returns (uint256);
     function failed() external view returns (uint256);
+    function overGasLimit() external view returns (uint256);
 }
 
 contract NoticeInvariantTest is Test {
@@ -244,7 +260,7 @@ contract NoticeInvariantTest is Test {
         sys = IHandlerCounters(s);
         proxy = IHandlerCounters(p);
 
-        bytes4[] memory sels = new bytes4[](13);
+        bytes4[] memory sels = new bytes4[](14);
         sels[0] = NoticeHandler.deposit.selector;
         sels[1] = NoticeHandler.arm.selector;
         sels[2] = NoticeHandler.cancel.selector;
@@ -258,6 +274,7 @@ contract NoticeInvariantTest is Test {
         sels[10] = NoticeHandler.attackForgedRequester.selector;
         sels[11] = NoticeHandler.attackOtherVault.selector;
         sels[12] = NoticeHandler.attackArmOnSomeoneElsesShares.selector;
+        sels[13] = NoticeHandler.schedulePadded.selector;
         targetSelector(FuzzSelector({ addr: address(h), selectors: sels }));
         targetContract(address(h));
     }
@@ -309,6 +326,11 @@ contract NoticeInvariantTest is Test {
     /// @dev react() never reverts (a revert is billed and leaves state behind on the real network).
     function invariant_react_never_reverts() public view {
         assertEq(sys.reverts(), 0);
+    }
+
+    /// @dev Every reaction fits the network's 900,000 gas cap as the mock measures it, padded changes included.
+    function invariant_reactions_fit_gas_cap() public view {
+        assertEq(sys.overGasLimit(), 0);
     }
 
     function invariant_active_watches_bounded() public view {

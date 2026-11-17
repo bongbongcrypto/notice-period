@@ -464,6 +464,18 @@ contract DemoVaultTest is Test {
         vm.stopPrank();
     }
 
+    function test_vault_refuses_token_reverting_without_reason() public {
+        FalseToken ft = new FalseToken();
+        DemoVault v = new DemoVault(address(ft), curator, 180);
+        ft.mint(user, 100);
+        vm.startPrank(user);
+        v.deposit(10, user);
+        ft.setRevertEmpty(true);
+        vm.expectRevert(DemoVault.TransferFailed.selector);
+        v.deposit(10, user);
+        vm.stopPrank();
+    }
+
     /// @dev The vault's own receiver check, with a token that would happily send to the zero address.
     function test_vault_refuses_zero_receiver_even_if_token_allows() public {
         FalseToken ft = new FalseToken();

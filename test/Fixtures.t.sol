@@ -62,7 +62,8 @@ contract FixturesTest is Network {
             abi.decode(args, (address, uint256, bytes, uint256, uint8));
         (bytes memory realData,) = abi.decode(real.data, (bytes, uint256));
         assertEq(id, 1);
-        assertEq(data, realData);
+        assertGt(realData.length, reactive.MAX_DATA_LENGTH(), "this real change is 388 bytes");
+        assertEq(data, abi.encodePacked(bytes4(realData)), "a change over 256 bytes travels as its selector");
         assertEq(origin, real.txHash, "the real origin transaction hash is carried");
         assertEq(reason, reactive.R_SCHEDULED());
         assertEq(sys.reverts(), 0);

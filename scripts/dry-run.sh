@@ -67,4 +67,8 @@ done
 reverts="$(cast call --rpc-url "$LASNA_RPC" "$SYSTEM" 'reverts()(uint256)' | awk '{print $1}')"
 echo "react() reverts seen by the mock system: $reverts"
 [ "$reverts" = 0 ] || status=1
+over="$(cast call --rpc-url "$LASNA_RPC" "$SYSTEM" 'overGasLimit()(uint256)' | awk '{print $1}')"
+maxgas="$(cast call --rpc-url "$LASNA_RPC" "$SYSTEM" 'maxReactGas()(uint256)' | awk '{print $1}')"
+echo "reactions over the 900,000 gas cap: $over (largest reaction as measured by the mock: $maxgas gas)"
+[ "$over" = 0 ] || status=1
 exit "$status"

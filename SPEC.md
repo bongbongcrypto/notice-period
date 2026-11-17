@@ -54,6 +54,17 @@ owner actions that take effect at once and emit no `Submit`, so no watch can fle
 | `submit(data)` | the curator | `Unauthorized()`; `DataAlreadyPending()` if the same `data` is pending |
 | `revoke(data)` | the curator | `Unauthorized()`; `DataNotTimelocked()` if `data` is not pending |
 | run a change (`addAdapter`, `increaseAbsoluteCap`, `increaseRelativeCap`, `decreaseTimelock`, `increaseTimelock`, `setIsAllocator`) | anyone, once the exact call was submitted and its time has come | `DataNotTimelocked()` if never submitted or already run; `TimelockNotExpired()` if early; `TimelockNotDecreasing()`, `TimelockNotIncreasing()`, `AutomaticallyTimelocked()`, `AbsoluteCapNotIncreasing()`, `RelativeCapNotIncreasing()`, `RelativeCapAboveOne()` as in Vault V2 |
+| share `transfer`, `transferFrom` | the holder, or someone the holder approved | `ZeroAddress()` for receiver 0; `InsufficientBalance()`; `InsufficientAllowance()` |
+| any action that pays out or mints | — | `ZeroAddress()` if the receiver is 0 (shares or assets) |
+| any action that moves the token | — | the token's own revert data is passed on unchanged; `TransferFailed()` if the token reverts with no data or answers `false` |
+| `constructor(asset, curator, timelock)` | the factory | `ZeroAddress()` if `asset` or `curator` is 0 |
+
+`DemoVaultFactory`: `constructor(asset)` refuses `asset` 0 with `ZeroAddress()`; `create()` is open to anyone
+and makes the caller the curator of a new vault.
+
+`DemoToken` (ours, test token, 6 decimals): `mint(to, amount)` is open to anyone, at most 1,000 tokens per
+call: `MintTooLarge(amount, max)`, `ZeroAddress()` for receiver 0. `transfer`, `transferFrom`:
+`ZeroAddress()` for receiver 0, `InsufficientBalance()`, `InsufficientAllowance()`.
 
 Every curator selector starts with a 180-second timelock. A `decreaseTimelock(sel, x)` waits for the
 current timelock of `sel`, as in Vault V2. Each vault has its own curator (the address that created it),
@@ -88,6 +99,17 @@ Only the system contract (`0x8888…8888`) can call `react()`; anyone else gets 
 system)`. `react()` never reverts on an event it does not want, because a revert is billed: it counts the
 event and returns. Anyone can send it lREACT or call `coverDebt()`. Nobody can take lREACT out.
 
+A `WatchArmed` it cannot take is refused with `WatchRefused(watchId, code)`, checked in this order: 1 bad kinds
+(none, or bits above 8), 2 bad mode, 3 too many active watches, 4 vault full (section 9). A `Submit` or
+`Revoke` whose data is not a valid ABI encoding is counted in `unknownEvents`, never decoded blindly.
+
+What travels in the exit callback: the scheduled call itself when it is at most 256 bytes; a longer one
+travels as its 4-byte selector alone, and `ExitRequested` then carries `dataHash` 0. A curator controls the
+length of the call (the ABI decoder ignores trailing bytes, so `addAdapter(x)` with 100 KB of padding still
+runs), so without this bound padding could push the reaction over the 900,000 gas cap or the exit over the
+callback gas limit, and switch the exit off. Only calls of at most 256 bytes are ever stored (mode 1), so a
+`Revoke` of a longer call is not hashed and removes nothing.
+
 ## 5. What an exit does, and the limits on it
 
 The exit contract redeems `min(maxShares, owner's share balance, owner's share allowance to NoticeExit)`
@@ -110,7 +132,8 @@ contract stores the change (hash of `data`, `data`, `executableAt`, the origin t
 on a CRON tick (Cron10, about every 10.7 s on Lasna). On each tick, if a stored change is due
 (`executableAt - LEAD <= now`, with `LEAD` 60 s in the demo deployment) it asks for the exit (reason 2,
 `Deadline`). On Base Sepolia the exit contract asks the vault once more whether the change is still
-pending; if not, the watch ends with `ChangeNotPending` and nothing moves.
+pending; if not, the watch ends with `ChangeNotPending` and nothing moves. Only a `Deadline` exit is
+re-checked: every other reason below means "leave at once", and its payload may hold the selector alone.
 
 A vault revoke of a stored change removes it (matched by the hash of the full `data`, so revoking one
 change does not disarm another change of the same kind). When a watch has no stored change left it stops
@@ -236,8 +259,11 @@ lREACT a day. The real figures come from the first on-chain runs.
 - The demo pays for watches from an operator float; user-paid watches are later scope.
 - One origin chain (Base Sepolia) in this version.
 - The exit runs in seconds, not in the same block. A change with no timelock cannot be fled.
-- The check that the change is still pending is made on Base Sepolia when the callback lands, so a mode-1
-  exit can only be wrong in the direction of leaving.
+- The check that the change is still pending is made on Base Sepolia when the callback lands. The vault
+  answers "not pending" both after a revoke and after the change has run, so a `Deadline` exit that lands
+  after the change already ran ends with `ChangeNotPending` and the depositor stays in. That needs the
+  change to run within `LEAD` (60 s) of its time and before the callback lands; a mode-1 watch accepts this
+  risk, mode 0 does not have it (pinned by `test_exit_if_pending_stays_when_change_already_ran`).
 - "No server, no key that can send the funds elsewhere": the exit right exists only through the vault's own
   event, the network's callback, and a redeem whose receiver is fixed to the owner.
 - If an exit callback reverts on Base Sepolia (`AssetsNotReceived`, or a failure of the callback itself), the
@@ -256,10 +282,18 @@ fixture tests.
 Checks in CI on every push: unit and attack tests (each refusal test next to a sibling call that succeeds), fuzz
 tests, an invariant run with random visitor, curator, clock and attacker actions (the exit contract never
 holds tokens or shares, tokens go only to their depositor, both chains agree on each watch's status, the CRON
-subscription exists exactly while a change is stored, `react()` never reverts), a mutation check that removes
+subscription exists exactly while a change is stored, `react()` never reverts, every reaction fits the gas
+cap, padded curator calls included), a mutation check that removes
 each refusal rule in turn and requires its named test to fail (`scripts/mutations.py`), and a dry run of the
 deploy and loop scripts on two local anvil chains with the mock network contracts at the real addresses and a
 relay script that plays the network.
+
+Gas, as far as a simulation can show it: the mock system contract measures the gas each `react()` uses, leaves
+out its own bookkeeping, adds what the real system contract would spend on a callback request, and counts every
+reaction above 900,000 (`overGasLimit`, required 0 in tests, invariants and the dry run). The mock proxy runs
+each callback with the gas limit the reactive contract asked for. Padded calls of 4 KB, 32 KB and 100 KB on a
+vault with three watches in both modes stay under the cap (`test/Padding.t.sol`). Not modelled: the real cost
+of `subscribe` and `unsubscribe`, and whether the network's cap also counts the calldata of a large log.
 
 Not shown until the real loop runs on Lasna and Base Sepolia: that the network injects our reactive
 contract's address (day-1 reading: yes, on chain), how soon a subscription added inside `react()` catches

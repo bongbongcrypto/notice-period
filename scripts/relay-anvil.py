@@ -109,9 +109,10 @@ def main():
                          raw)
             if not m:
                 raise RuntimeError(f"cannot read callback {done}: {raw[:200]}")
-            sender, chain, recipient, _gas, payload = m.groups()
+            sender, chain, recipient, gas, payload = m.groups()
             if int(chain) == base_chain:
-                tx = send(a.base, key, a.proxy, "deliver(address,bytes,address)", recipient, payload, sender)
+                tx = send(a.base, key, a.proxy, "deliverWithGas(address,bytes,address,uint256)", recipient, payload,
+                          sender, gas)
                 print(f"relay: callback {done} from {sender} to {recipient}: {tx}", flush=True)
             done += 1
         time.sleep(1)

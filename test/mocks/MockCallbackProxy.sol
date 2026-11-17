@@ -24,12 +24,22 @@ contract MockCallbackProxy {
         public
         returns (bool ok, bytes memory ret)
     {
+        return deliverWithGas(recipient_, payload_, requester_, 0);
+    }
+
+    /// @notice As deliver, with the callback's gas limit (0 = no limit). The network runs the callback with the
+    ///         gas limit the reactive contract asked for; a callback that needs more fails.
+    function deliverWithGas(address recipient_, bytes memory payload_, address requester_, uint256 gas_)
+        public
+        returns (bool ok, bytes memory ret)
+    {
         require(payload_.length >= 36, "payload too short");
         assembly {
             // payload_ + 32 is the selector; the first argument word starts 4 bytes later.
             mstore(add(payload_, 36), requester_)
         }
-        (ok, ret) = recipient_.call(payload_);
+        if (gas_ == 0) (ok, ret) = recipient_.call(payload_);
+        else (ok, ret) = recipient_.call{ gas: gas_ }(payload_);
         delivered += 1;
         if (!ok) failed += 1;
         lastOk = ok;

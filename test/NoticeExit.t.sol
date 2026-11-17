@@ -31,7 +31,11 @@ contract NoticeExitTest is NoticeSetup {
     }
 
     function _deliver(uint256 id_, bytes memory data_) internal {
-        proxy.deliverOrRevert(address(exitC), _exitPayload(id_, data_, 0xABC, 1), address(reactive));
+        _deliverReason(id_, data_, 1);
+    }
+
+    function _deliverReason(uint256 id_, bytes memory data_, uint8 reason_) internal {
+        proxy.deliverOrRevert(address(exitC), _exitPayload(id_, data_, 0xABC, reason_), address(reactive));
     }
 
     function _lastOutcome() internal returns (uint8 outcome, uint256 shares, uint256 assets) {
@@ -270,7 +274,7 @@ contract NoticeExitTest is NoticeSetup {
         vm.prank(alice);
         vault.submit(data);
         vm.recordLogs();
-        _deliver(id, data);
+        _deliverReason(id, data, exitC.REASON_DEADLINE());
         (uint8 outcome,,) = _lastOutcome();
         assertEq(outcome, exitC.OUTCOME_REDEEMED());
         assertEq(token.balanceOf(alice), DEPOSIT);
@@ -284,11 +288,37 @@ contract NoticeExitTest is NoticeSetup {
         vault.revoke(data);
         vm.stopPrank();
         vm.recordLogs();
-        _deliver(id, data);
+        _deliverReason(id, data, exitC.REASON_DEADLINE());
         (uint8 outcome,,) = _lastOutcome();
         assertEq(outcome, exitC.OUTCOME_CHANGE_NOT_PENDING());
         assertEq(vault.balanceOf(alice), DEPOSIT, "shares stay");
         assertEq(_status(id), exitC.STATUS_ENDED());
+    }
+
+    /// @dev The other mode-1 reasons mean "leave at once"; the payload may hold the selector alone, so no re-check.
+    function test_exit_if_pending_leave_at_once_reason_skips_recheck() public {
+        uint256 id = _armAlice(1);
+        vm.recordLogs();
+        _deliverReason(id, abi.encodePacked(NoticeKinds.ADD_ADAPTER), 5); // DataTooLong, selector only
+        (uint8 outcome,,) = _lastOutcome();
+        assertEq(outcome, exitC.OUTCOME_REDEEMED());
+        assertEq(token.balanceOf(alice), DEPOSIT);
+    }
+
+    /// @dev Pins a limit of SPEC.md section 11: if the change already ran before a Deadline callback lands, the vault
+    ///      reports it as not pending (V2 clears executableAt on run as on revoke) and the depositor stays.
+    function test_exit_if_pending_stays_when_change_already_ran() public {
+        uint256 id = _armAlice(1);
+        bytes memory data = _adapterCall(address(0xA1));
+        vm.prank(alice);
+        vault.submit(data);
+        vm.warp(block.timestamp + TIMELOCK);
+        vault.addAdapter(address(0xA1));
+        vm.recordLogs();
+        _deliverReason(id, data, exitC.REASON_DEADLINE());
+        (uint8 outcome,,) = _lastOutcome();
+        assertEq(outcome, exitC.OUTCOME_CHANGE_NOT_PENDING());
+        assertEq(vault.balanceOf(alice), DEPOSIT, "the change ran and the depositor is still in");
     }
 
     function test_exit_now_mode_ignores_pending_state() public {

@@ -74,7 +74,7 @@ abstract contract Network is Test {
             MockSystem.Callback memory cb = sys.callbackAt(callbacksDone);
             callbacksDone += 1;
             if (cb.chainId == ORIGIN_CHAIN) {
-                proxy.deliver(cb.recipient, cb.payload, cb.sender);
+                proxy.deliverWithGas(cb.recipient, cb.payload, cb.sender, cb.gasLimit);
             }
         }
     }

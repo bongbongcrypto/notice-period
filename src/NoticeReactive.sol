@@ -203,22 +203,51 @@ contract NoticeReactive is AbstractReactive {
             _stray(ORIGIN_CHAIN_ID, vault, NoticeKinds.SUBMIT_TOPIC, log_.topic1, REACTIVE_IGNORE);
             return;
         }
-        uint8 kind = NoticeKinds.kindOf(NoticeKinds.topicSelector(log_.topic1));
-        (bytes memory data, uint256 executableAt) = abi.decode(log_.data, (bytes, uint256));
+        (bool ok, bytes calldata data) = _bytesArg(log_.data, 0);
+        if (!ok || log_.data.length < 64) {
+            _unknown(log_);
+            return;
+        }
+        uint256 executableAt = uint256(bytes32(log_.data[32:64]));
+        bytes4 selector = NoticeKinds.topicSelector(log_.topic1);
+        uint8 kind = NoticeKinds.kindOf(selector);
+        // A curator controls the length of `data`. Only a change of at most MAX_DATA_LENGTH bytes is copied, stored
+        // and sent; a longer one travels as its selector alone, so padding cannot push this reaction or the
+        // callback over its gas limit.
+        bytes memory carried;
+        bytes32 h;
+        if (data.length <= MAX_DATA_LENGTH) {
+            carried = data;
+            h = keccak256(carried);
+        } else {
+            carried = abi.encodePacked(selector);
+        }
         uint256[] memory ids = _vaultWatches[vault];
         for (uint256 i = 0; i < ids.length; i++) {
             uint256 id = ids[i];
             Watch storage w = watches[id];
             if (w.status != ST_ARMED || w.kinds & kind == 0) continue;
             if (w.mode == MODE_NOW) {
-                _fire(id, data, log_.txHash, R_SCHEDULED);
+                _fire(id, carried, h, log_.txHash, R_SCHEDULED);
                 continue;
             }
             w.reactions += 1;
             uint8 reason = _reasonNotToWait(w, data.length, executableAt);
-            if (reason != 0) _fire(id, data, log_.txHash, reason);
-            else _store(id, w, data, executableAt, log_.txHash);
+            if (reason != 0) _fire(id, carried, h, log_.txHash, reason);
+            else _store(id, w, carried, h, executableAt, log_.txHash);
         }
+    }
+
+    /// @dev Reads the ABI-encoded `bytes` argument whose head word is at `head_`, straight from calldata (no copy).
+    ///      Returns ok = false for a malformed encoding instead of reverting.
+    function _bytesArg(bytes calldata raw_, uint256 head_) internal pure returns (bool ok, bytes calldata out) {
+        out = raw_[0:0];
+        if (raw_.length < head_ + 32) return (false, out);
+        uint256 off = uint256(bytes32(raw_[head_:head_ + 32]));
+        if (off > raw_.length || raw_.length - off < 32) return (false, out);
+        uint256 len = uint256(bytes32(raw_[off:off + 32]));
+        if (len > raw_.length - off - 32) return (false, out);
+        return (true, raw_[off + 32:off + 32 + len]);
     }
 
     function _onRevoke(LogRecord calldata log_) internal {
@@ -227,14 +256,20 @@ contract NoticeReactive is AbstractReactive {
             _stray(ORIGIN_CHAIN_ID, vault, NoticeKinds.REVOKE_TOPIC, REACTIVE_IGNORE, REACTIVE_IGNORE);
             return;
         }
-        bytes32 h = keccak256(abi.decode(log_.data, (bytes)));
+        (bool ok, bytes calldata data) = _bytesArg(log_.data, 0);
+        if (!ok) {
+            _unknown(log_);
+            return;
+        }
+        // Only changes of at most MAX_DATA_LENGTH bytes are ever stored, so a longer one cannot match: not hashed.
+        bytes32 h = data.length <= MAX_DATA_LENGTH ? keccak256(data) : bytes32(0);
         uint256[] memory ids = _vaultWatches[vault];
         for (uint256 i = 0; i < ids.length; i++) {
             uint256 id = ids[i];
             Watch storage w = watches[id];
             if (w.status != ST_ARMED || w.mode != MODE_IF_PENDING) continue;
             w.reactions += 1;
-            if (_removePending(id, w, h)) emit ChangeRevoked(id, h);
+            if (h != bytes32(0) && _removePending(id, w, h)) emit ChangeRevoked(id, h);
         }
     }
 
@@ -259,8 +294,9 @@ contract NoticeReactive is AbstractReactive {
             else if (uint256(p.executableAt) <= block.timestamp + LEAD) reason = R_DEADLINE;
             if (reason != 0) {
                 bytes memory data = p.data;
+                bytes32 h = p.dataHash;
                 uint256 originTxHash = p.originTxHash;
-                _fire(id, data, originTxHash, reason);
+                _fire(id, data, h, originTxHash, reason);
                 fired = true;
             }
         }
@@ -296,10 +332,15 @@ contract NoticeReactive is AbstractReactive {
         return 0;
     }
 
-    function _store(uint256 id_, Watch storage w_, bytes memory data_, uint256 executableAt_, uint256 originTxHash_)
-        internal
-    {
-        bytes32 h = keccak256(data_);
+    /// @dev `data_` is at most MAX_DATA_LENGTH bytes here (longer changes are fled at once) and `h` is its hash.
+    function _store(
+        uint256 id_,
+        Watch storage w_,
+        bytes memory data_,
+        bytes32 h,
+        uint256 executableAt_,
+        uint256 originTxHash_
+    ) internal {
         uint8 n = w_.pendingCount;
         for (uint256 j = 0; j < n; j++) {
             if (_pending[id_][j].dataHash == h) return; // the same change delivered twice
@@ -359,15 +400,16 @@ contract NoticeReactive is AbstractReactive {
         }
     }
 
-    /// @dev Asks the network for the exit callback, then closes the watch.
-    function _fire(uint256 id_, bytes memory data_, uint256 originTxHash_, uint8 reason_) internal {
+    /// @dev Asks the network for the exit callback, then closes the watch. `data_` is the change when it is at most
+    ///      MAX_DATA_LENGTH bytes, else its selector alone; `dataHash_` is 0 in the second case.
+    function _fire(uint256 id_, bytes memory data_, bytes32 dataHash_, uint256 originTxHash_, uint8 reason_) internal {
         bytes memory payload = abi.encodeCall(INoticeExit.exit, (address(0), id_, data_, originTxHash_, reason_));
         SYSTEM.requestCallbackV_1_0(
             ISystemContract.CallbackConfiguration_V_1_0({
                 chainId: ORIGIN_CHAIN_ID, recipient: EXIT, gasLimit: CALLBACK_GAS, payload: payload
             })
         );
-        emit ExitRequested(id_, originTxHash_, reason_, keccak256(data_));
+        emit ExitRequested(id_, originTxHash_, reason_, dataHash_);
         _close(id_, ST_EXITED);
     }
 

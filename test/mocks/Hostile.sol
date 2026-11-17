@@ -58,10 +58,16 @@ contract ReentrantToken {
 contract FalseToken {
     uint8 public constant decimals = 6;
     bool public refuse;
+    bool public revertEmpty;
     mapping(address => uint256) public balanceOf;
 
     function setRefuse(bool refuse_) external {
         refuse = refuse_;
+    }
+
+    /// @notice When set, transfers revert with no reason at all.
+    function setRevertEmpty(bool revertEmpty_) external {
+        revertEmpty = revertEmpty_;
     }
 
     function mint(address to_, uint256 amount_) external {
@@ -69,6 +75,7 @@ contract FalseToken {
     }
 
     function transferFrom(address from_, address to_, uint256 amount_) external returns (bool) {
+        if (revertEmpty) revert();
         if (refuse) return false;
         balanceOf[from_] -= amount_;
         balanceOf[to_] += amount_;
@@ -76,6 +83,7 @@ contract FalseToken {
     }
 
     function transfer(address to_, uint256 amount_) external returns (bool) {
+        if (revertEmpty) revert();
         if (refuse) return false;
         balanceOf[msg.sender] -= amount_;
         balanceOf[to_] += amount_;

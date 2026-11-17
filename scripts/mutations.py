@@ -98,8 +98,13 @@ add("exit-kind-watched", "exit only for a watched kind", X,
     "if (NoticeKinds.kindOf(selector) & w.kinds == 0) revert KindNotWatched(selector);", "",
     E, "test_exit_refuses_unwatched_kind")
 add("exit-pending-recheck", "mode 1 re-checks that the change is still pending", X,
-    "w.mode == MODE_IF_PENDING && IExitVault(vault).executableAt(data_) == 0", "false",
+    "w.mode == MODE_IF_PENDING && reason_ == REASON_DEADLINE && IExitVault(vault).executableAt(data_) == 0",
+    "false",
     E, "test_exit_if_pending_does_nothing_after_vault_revoke")
+add("exit-recheck-deadline-only", "only a Deadline exit is re-checked (others may carry the selector alone)", X,
+    "w.mode == MODE_IF_PENDING && reason_ == REASON_DEADLINE && ",
+    "w.mode == MODE_IF_PENDING && ",
+    E, "test_exit_if_pending_leave_at_once_reason_skips_recheck")
 add("exit-receiver-is-owner", "redeem pays the watch owner only", X,
     "redeem(shares_, owner_, owner_)", "redeem(shares_, msg.sender, owner_)",
     E, "test_exit_redeems_to_owner")
@@ -188,6 +193,13 @@ add("tick-deadline", "leave shortly before the change can run", R,
 add("tick-one-exit", "at most one exit per tick", R,
     "if (fired) continue; // at most one exit per tick (gas cap per reactive transaction)", "",
     NR, "test_one_exit_per_tick")
+add("submit-malformed", "a malformed Submit is counted, never decoded blindly", R,
+    "if (!ok || log_.data.length < 64) {", "if (false) {",
+    NR, "test_malformed_submit_is_counted_not_reverted")
+add("carry-bounded", "a change longer than 256 bytes travels as its selector alone", R,
+    "        if (data.length <= MAX_DATA_LENGTH) {\n            carried = data;",
+    "        if (true) {\n            carried = data;",
+    "PaddingTest", "test_padding_4kb_does_not_stop_the_exit")
 add("store-dedupe", "a change is stored once", R,
     "if (_pending[id_][j].dataHash == h) return; // the same change delivered twice", "",
     NR, "test_duplicate_submit_delivery_is_stored_once")
@@ -295,6 +307,10 @@ add("vault-push-to-zero", "no assets to the zero address", V,
 add("vault-token-false", "a token answering false is a failed transfer", V,
     "if (ret.length > 0 && !abi.decode(ret, (bool))) revert TransferFailed();", "",
     DV, "test_vault_refuses_token_answering_false")
+add("vault-token-revert-empty", "a token reverting without a reason is a failed transfer", V,
+    "            }\n            revert TransferFailed();\n        }",
+    "            }\n        }",
+    DV, "test_vault_refuses_token_reverting_without_reason")
 add("vault-ctor-zero", "a vault needs an asset and a curator", V,
     "if (asset_ == address(0) || curator_ == address(0)) revert ZeroAddress();", "",
     DV, "test_vault_and_factory_refuse_zero_addresses")

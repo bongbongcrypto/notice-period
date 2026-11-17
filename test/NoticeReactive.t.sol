@@ -578,6 +578,20 @@ contract NoticeReactiveTest is NoticeSetup {
         assertEq(sys.reverts(), 0);
     }
 
+    function test_malformed_submit_is_counted_not_reverted() public {
+        uint256 id = _arm(alice, vault, NoticeKinds.DEFAULT, 0, type(uint256).max);
+        IReactive.LogRecord memory r = _submitRecord(address(vault), _adapterCall(address(1)), block.timestamp + 180, 7);
+        r.data = hex"1234"; // not an ABI encoding of (bytes, uint256)
+        assertTrue(sys.deliver(address(reactive), r), "matches the watch's filter");
+        assertEq(reactive.unknownEvents(), 1);
+        assertEq(sys.callbackCount(), 0);
+        assertEq(_rStatus(id), reactive.ST_ARMED());
+        r.data = abi.encode(uint256(1 << 200), uint256(0)); // offset far outside the data
+        sys.deliver(address(reactive), r);
+        assertEq(reactive.unknownEvents(), 2);
+        assertEq(sys.reverts(), 0);
+    }
+
     function test_stray_tick_after_unsubscribe_is_counted() public {
         sys.forceDeliver(address(reactive), _cronRecord());
         assertEq(reactive.strayEvents(), 1);
