@@ -139,6 +139,11 @@ def main():
     shim.mkdir(exist_ok=True)
     (shim / "cast").write_text('''#!/usr/bin/env bash
 set -euo pipefail
+# Every send must carry an explicit nonce, so cast never reads one from a lagging RPC backend between legs.
+if [ "${1-}" = send ] && [[ " $* " != *" --nonce "* ]]; then
+  echo "dry-run shim: cast send without --nonce" >&2
+  exit 97
+fi
 if [ "${1-}" = send ] && [ "${FUND_TEST_REVERT_ON_SEND-}" = 1 ]; then
   "$FUND_REAL_CAST" rpc --rpc-url "$SEPOLIA_RPC" anvil_setCode "$FUND_TEST_FAUCET" "$FUND_REVERT_CODE" >/dev/null
 fi
