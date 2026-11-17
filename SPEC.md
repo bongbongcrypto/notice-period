@@ -169,7 +169,11 @@ The exit is asked for at once, instead of waiting, when (reason code in brackets
 - the watch already stores `MAX_PENDING` (3) changes (6, `PendingFull`);
 - the watch has used its reaction budget (7, `Budget`), on a `Submit`, a `Revoke` or a tick.
 
-All of these protect the depositor: when the contract cannot afford to wait, it leaves.
+All of these protect the depositor: when the contract cannot afford to wait, it leaves. They also mean a
+curator can make every mode-1 watcher on the vault leave whenever they like (one padded change, four changes,
+or one change due within `LEAD`, revoked afterwards): the funds still go only to their owners, but the
+position is lost. And with `MAX_WAIT` 900 s, every change on a real Vault V2 (timelocks of days) is fled at
+once, so on a real vault mode 1 behaves like mode 0 until a slower CRON and a larger budget are used.
 
 Race between a vault revoke and the tick: if the revoke reaches the reactive contract first, the change is
 removed and nothing is sent. If the tick fires first, the exit is on its way and is carried out, whatever the
@@ -347,7 +351,9 @@ the network's code), whether the mock spent more or less. Not modelled: whether 
 the calldata of a large log.
 
 Fees: both mocks keep a debt per contract that a test sets and a payment settles, so `coverDebt()` is tested
-against a non-zero debt. How the real proxy and system contract record and bill debt is not shown.
+against a non-zero debt. No fee is charged per reaction or per callback, so how the real proxy and system
+contract record and bill debt, and what a spam loop costs, is not shown. The mock proxy gives the callback its
+whole gas limit; the real proxy keeps some gas back for its own bookkeeping first.
 
 Not shown until the real loop runs on Lasna and Base Sepolia: that the network injects our reactive
 contract's address (day-1 reading: yes, on chain), how soon a subscription added inside `react()` catches
