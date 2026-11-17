@@ -1,0 +1,54 @@
+# Secrets
+.env*
+!.env.example
+.alert.env
+wallet.json
+*.key
+*.pem
+id_rsa*
+*.mnemonic
+*-session-cookie*
+.dev.vars
+.wrangler/
+
+# Binaries
+*.exe
+*.bin
+*.dll
+*.so
+
+# Dependencies and build output
+node_modules/
+venv/
+__pycache__/
+*.pyc
+out/
+cache/
+broadcast/
+dist/
+
+# Logs / Cache
+*.log
+logs/
+.cache/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.codex/
+.gemini/
+.cursor/
+.aider*
+.DS_Store
+Thumbs.db
+
+# Local notes
+CLAUDE.md
+PROGRESS.md
+AGENTS.md
+.agents/
+.claude/
+
+# Fetched in CI, never committed
+lib/
