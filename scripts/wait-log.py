@@ -23,7 +23,7 @@ import time
 import urllib.error
 import urllib.request
 
-USER_AGENT = "notice-period-loop/1"
+USER_AGENT = "rpc-client"  # generic on purpose: no project name in headers sent to public RPCs
 
 
 class Unknown(Exception):
