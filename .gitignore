@@ -51,4 +51,4 @@ AGENTS.md
 .claude/
 
 # Fetched in CI, never committed
-lib/
+/lib/

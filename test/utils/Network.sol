@@ -25,6 +25,8 @@ abstract contract Network is Test {
     uint256 internal callbacksDone;
     /// @dev Synthetic hash given to the logs of the first round of the last pump (the origin action).
     uint256 internal lastTxHash;
+    /// @dev When true, callbacks requested by the reactive side wait until _deliverCallbacks() (for race tests).
+    bool internal holdCallbacks;
 
     function _setUpNetwork() internal {
         vm.etch(SYSTEM_ADDR, address(new MockSystem()).code);
@@ -63,7 +65,7 @@ abstract contract Network is Test {
             for (uint256 i = 0; i < logs.length; i++) {
                 sys.deliver(reactive_, _toRecord(logs[i], txHash));
             }
-            _deliverCallbacks();
+            if (!holdCallbacks) _deliverCallbacks();
         }
     }
 
