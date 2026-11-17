@@ -101,7 +101,10 @@ jobs:
       - name: Lint the shell scripts
         run: |
           for f in scripts/*.sh; do bash -n "$f"; done
-          python3 -m py_compile scripts/mutate.py scripts/mutations.py scripts/relay-anvil.py
+          python3 -m py_compile scripts/mutate.py scripts/mutations.py scripts/relay-anvil.py scripts/dry-run-fund.py
 
       - name: Dry run on local chains (deploy-hello, deploy-system, loop hello, loop system mode 0 and 1)
         run: bash scripts/dry-run.sh
+
+      - name: Funding dry run (three local chains, transaction and refusal checks)
+        run: bash scripts/dry-run-fund.sh

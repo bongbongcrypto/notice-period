@@ -187,6 +187,14 @@ mode-0 watch is never billed for a `Revoke`.
 
 ## 7. Order of operations
 
+The manual `fund` workflow uses `TESTNET_KEY` in the main-only `testnet` environment, matched against
+`TESTNET_ADDRESS`, to convert faucet-funded Sepolia ETH to Lasna lREACT (default 0.1 ETH, cap 2) and
+bridge ETH to the same account on Base Sepolia (default 0.05 ETH, cap 0.2). Zero skips a leg; both cannot
+be zero. Before sending it checks chain IDs, contract code and a gas reserve of max(0.01 ETH, twice the
+estimated gas cost). A failed faucet receipt stops the bridge. Credits are polled every 15 s for up to
+15 minutes; a timeout warns without failing. Check the summary's transactions and balance changes before
+retrying. CI tests the script on three local anvil chains with mocks and simulated credits.
+
 Deployment (no owner setter: the circular dependency is broken by computing the next contract address):
 1. Base Sepolia: `DemoToken`, then `DemoVaultFactory`.
 2. Read the deployer's Base Sepolia nonce `n`; the exit contract will live at `CREATE(deployer, n)`.
