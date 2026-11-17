@@ -14,7 +14,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-anvil --host 127.0.0.1 --chain-id 11155111 --port 8547 > "$logs/anvil-sepolia.log" 2>&1 &
+# Sepolia runs at a 7 wei base fee with no minimum tip, so eth_gasPrice is 7 wei, as low as real Sepolia
+# (about 16 wei in 2026-11) and below fund.sh's gas price ceiling. Anvil's default would report about 2 gwei.
+anvil --host 127.0.0.1 --chain-id 11155111 --port 8547 --block-base-fee-per-gas 7 --disable-min-priority-fee \
+  > "$logs/anvil-sepolia.log" 2>&1 &
 pids="$!"
 anvil --host 127.0.0.1 --chain-id 84532 --port 8548 > "$logs/anvil-base.log" 2>&1 &
 pids="$pids $!"
