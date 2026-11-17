@@ -181,7 +181,8 @@ contract NoticeExit is AbstractCallback, INoticeExit {
     /// @param data_ The scheduled call that triggered the exit: the whole call when it is at most 256 bytes, else its
     ///        selector alone. Its selector must be a watched kind.
     /// @param originTxHash_ Transaction hash of the vault's Submit, carried for the hash chain.
-    /// @param reason_ Why the reactive contract asked (SPEC.md section 6); recorded only.
+    /// @param reason_ Why the reactive contract asked (SPEC.md section 6). Recorded in WatchEnded; for a mode-1 watch,
+    ///        only reason Deadline (2) makes this contract re-check that the change is still pending.
     function exit(address sender_, uint256 watchId_, bytes calldata data_, uint256 originTxHash_, uint8 reason_)
         external
         onlyServiceProvider

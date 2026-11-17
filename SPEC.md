@@ -90,7 +90,7 @@ of these outcomes in `WatchEnded`:
 |---|---|---|
 | `Redeemed` | 0 | Shares redeemed, assets in the owner's wallet |
 | `NothingToRedeem` | 1 | The owner holds no shares or allows none to this contract |
-| `ChangeNotPending` | 2 | Mode "leave if still pending" and the vault says the change is no longer pending (revoked or already run) |
+| `ChangeNotPending` | 2 | Mode "leave if still pending", reason `Deadline`, and the vault says the change is no longer pending (revoked or already run) |
 | `RedeemFailed` | 3 | The vault's `redeem` reverted (for example short of liquidity). The revert data is in `RedeemReverted`. Shares stay with the owner |
 
 ### NoticeReactive

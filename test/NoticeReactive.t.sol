@@ -578,6 +578,28 @@ contract NoticeReactiveTest is NoticeSetup {
         assertEq(sys.reverts(), 0);
     }
 
+    function test_malformed_revoke_is_counted_not_reverted() public {
+        uint256 id = _arm(alice, vault, NoticeKinds.DEFAULT, 1, type(uint256).max);
+        IReactive.LogRecord memory r;
+        r.chainId = ORIGIN_CHAIN;
+        r.contractAddress = address(vault);
+        r.topic0 = NoticeKinds.REVOKE_TOPIC;
+        r.topic1 = uint256(uint160(alice));
+        r.topic2 = NoticeKinds.selectorTopic(NoticeKinds.ADD_ADAPTER);
+        r.opCode = 3;
+        r.data = abi.encode(_adapterCall(address(1)));
+        assertTrue(sys.deliver(address(reactive), r), "a well-formed Revoke is taken");
+        assertEq(reactive.unknownEvents(), 0);
+        r.data = hex"1234"; // not an ABI encoding of (bytes)
+        assertTrue(sys.deliver(address(reactive), r));
+        assertEq(reactive.unknownEvents(), 1);
+        r.data = abi.encode(uint256(32), uint256(1 << 200)); // length far beyond the data
+        sys.deliver(address(reactive), r);
+        assertEq(reactive.unknownEvents(), 2);
+        assertEq(sys.reverts(), 0);
+        assertEq(_rStatus(id), reactive.ST_ARMED());
+    }
+
     function test_malformed_submit_is_counted_not_reverted() public {
         uint256 id = _arm(alice, vault, NoticeKinds.DEFAULT, 0, type(uint256).max);
         IReactive.LogRecord memory r = _submitRecord(address(vault), _adapterCall(address(1)), block.timestamp + 180, 7);

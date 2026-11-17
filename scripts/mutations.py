@@ -196,6 +196,12 @@ add("tick-one-exit", "at most one exit per tick", R,
 add("submit-malformed", "a malformed Submit is counted, never decoded blindly", R,
     "if (!ok || log_.data.length < 64) {", "if (false) {",
     NR, "test_malformed_submit_is_counted_not_reverted")
+add("revoke-malformed", "a malformed Revoke is counted, never decoded blindly", R,
+    "        if (!ok) {\n            _unknown(log_);\n            return;\n        }\n"
+    "        // Only changes of at most MAX_DATA_LENGTH",
+    "        if (false) {\n            _unknown(log_);\n            return;\n        }\n"
+    "        // Only changes of at most MAX_DATA_LENGTH",
+    NR, "test_malformed_revoke_is_counted_not_reverted")
 add("carry-bounded", "a change longer than 256 bytes travels as its selector alone", R,
     "        if (data.length <= MAX_DATA_LENGTH) {\n            s.data = data;",
     "        if (true) {\n            s.data = data;",
