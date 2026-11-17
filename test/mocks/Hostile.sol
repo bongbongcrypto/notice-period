@@ -52,6 +52,37 @@ contract ReentrantToken {
     }
 }
 
+/// @notice A lax token: no allowance check, accepts the zero address as receiver, and when `refuse` is set answers
+///         transfers with `false` instead of reverting (some real tokens do this). Lets a test reach the vault's own
+///         checks instead of the token's.
+contract FalseToken {
+    uint8 public constant decimals = 6;
+    bool public refuse;
+    mapping(address => uint256) public balanceOf;
+
+    function setRefuse(bool refuse_) external {
+        refuse = refuse_;
+    }
+
+    function mint(address to_, uint256 amount_) external {
+        balanceOf[to_] += amount_;
+    }
+
+    function transferFrom(address from_, address to_, uint256 amount_) external returns (bool) {
+        if (refuse) return false;
+        balanceOf[from_] -= amount_;
+        balanceOf[to_] += amount_;
+        return true;
+    }
+
+    function transfer(address to_, uint256 amount_) external returns (bool) {
+        if (refuse) return false;
+        balanceOf[msg.sender] -= amount_;
+        balanceOf[to_] += amount_;
+        return true;
+    }
+}
+
 interface IMintable {
     function mint(address to_, uint256 amount_) external;
 }

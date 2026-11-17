@@ -6,6 +6,7 @@ import { DemoToken } from "../src/demo/DemoToken.sol";
 import { DemoVault } from "../src/demo/DemoVault.sol";
 import { DemoVaultFactory } from "../src/demo/DemoVaultFactory.sol";
 import { NoticeKinds } from "../src/lib/NoticeKinds.sol";
+import { FalseToken } from "./mocks/Hostile.sol";
 
 contract DemoVaultTest is Test {
     DemoToken internal token;
@@ -322,11 +323,32 @@ contract DemoVaultTest is Test {
     }
 
     function test_redeem_refuses_more_than_balance() public {
-        vm.prank(user);
+        // another depositor first, so the vault holds more tokens than the user's shares are worth: the refusal must
+        // come from the vault's share balance check, not from the token running out
+        token.mint(other, 100e6);
+        vm.startPrank(other);
+        token.approve(address(vault), 100e6);
+        vault.deposit(100e6, other);
+        vm.stopPrank();
+        vm.startPrank(user);
         vault.deposit(500e6, user);
+        vault.redeem(1e6, user, user);
         vm.expectRevert(DemoVault.InsufficientBalance.selector);
-        vm.prank(user);
-        vault.redeem(500e6 + 1, user, user);
+        vault.redeem(499e6 + 1, user, user);
+        vm.stopPrank();
+    }
+
+    function test_increase_timelock_refuses_decrease_selector() public {
+        bytes memory ok = abi.encodeCall(DemoVault.increaseTimelock, (NoticeKinds.ADD_ADAPTER, 600));
+        bytes memory bad = abi.encodeCall(DemoVault.increaseTimelock, (NoticeKinds.DECREASE_TIMELOCK, 600));
+        vm.startPrank(curator);
+        vault.submit(ok);
+        vault.submit(bad);
+        vm.stopPrank();
+        vm.warp(block.timestamp + 180);
+        vault.increaseTimelock(NoticeKinds.ADD_ADAPTER, 600);
+        vm.expectRevert(DemoVault.AutomaticallyTimelocked.selector);
+        vault.increaseTimelock(NoticeKinds.DECREASE_TIMELOCK, 600);
     }
 
     function test_mint_and_withdraw_round_up() public {
@@ -342,6 +364,114 @@ contract DemoVaultTest is Test {
     function test_token_mint_cap() public {
         vm.expectRevert(abi.encodeWithSelector(DemoToken.MintTooLarge.selector, 1_000e6 + 1, 1_000e6));
         token.mint(user, 1_000e6 + 1);
+    }
+
+    // ---------------- remaining refusals, each next to the same call succeeding ----------------
+
+    function test_relative_cap_refuses_decrease() public {
+        bytes memory idData = abi.encode("market");
+        vm.startPrank(curator);
+        vault.submit(abi.encodeCall(DemoVault.increaseRelativeCap, (idData, 5e17)));
+        vault.submit(abi.encodeCall(DemoVault.increaseRelativeCap, (idData, 4e17)));
+        vm.stopPrank();
+        vm.warp(block.timestamp + 180);
+        vault.increaseRelativeCap(idData, 5e17);
+        vm.expectRevert(DemoVault.RelativeCapNotIncreasing.selector);
+        vault.increaseRelativeCap(idData, 4e17);
+    }
+
+    function test_mint_refuses_zero_shares() public {
+        vm.prank(user);
+        vault.mint(1, user);
+        vm.expectRevert(DemoVault.ZeroShares.selector);
+        vm.prank(user);
+        vault.mint(0, user);
+    }
+
+    function test_withdraw_refuses_zero_assets() public {
+        vm.startPrank(user);
+        vault.deposit(10e6, user);
+        vault.withdraw(1, user, user);
+        vm.expectRevert(DemoVault.ZeroAssets.selector);
+        vault.withdraw(0, user, user);
+        vm.stopPrank();
+    }
+
+    function test_vault_refuses_zero_receiver() public {
+        vm.startPrank(user);
+        vault.deposit(10e6, user);
+        vault.redeem(1e6, user, user);
+        vm.expectRevert(DemoVault.ZeroAddress.selector);
+        vault.redeem(1e6, address(0), user);
+        vm.expectRevert(DemoVault.ZeroAddress.selector);
+        vault.deposit(1e6, address(0));
+        vm.stopPrank();
+    }
+
+    function test_share_transfer_refusals() public {
+        vm.startPrank(user);
+        vault.deposit(10e6, user);
+        vault.transfer(other, 1e6);
+        vm.expectRevert(DemoVault.ZeroAddress.selector);
+        vault.transfer(address(0), 1e6);
+        vm.expectRevert(DemoVault.InsufficientBalance.selector);
+        vault.transfer(other, 10e6);
+        vm.stopPrank();
+    }
+
+    function test_vault_and_factory_refuse_zero_addresses() public {
+        new DemoVault(address(token), curator, 180);
+        vm.expectRevert(DemoVault.ZeroAddress.selector);
+        new DemoVault(address(0), curator, 180);
+        vm.expectRevert(DemoVault.ZeroAddress.selector);
+        new DemoVault(address(token), address(0), 180);
+        new DemoVaultFactory(address(token), 180);
+        vm.expectRevert(DemoVaultFactory.ZeroAddress.selector);
+        new DemoVaultFactory(address(0), 180);
+    }
+
+    function test_vault_refuses_token_answering_false() public {
+        FalseToken ft = new FalseToken();
+        DemoVault v = new DemoVault(address(ft), curator, 180);
+        ft.mint(user, 100);
+        vm.startPrank(user);
+        v.deposit(10, user);
+        ft.setRefuse(true);
+        vm.expectRevert(DemoVault.TransferFailed.selector);
+        v.deposit(10, user);
+        vm.stopPrank();
+    }
+
+    /// @dev The vault's own receiver check, with a token that would happily send to the zero address.
+    function test_vault_refuses_zero_receiver_even_if_token_allows() public {
+        FalseToken ft = new FalseToken();
+        DemoVault v = new DemoVault(address(ft), curator, 180);
+        ft.mint(user, 100);
+        vm.startPrank(user);
+        v.deposit(10, user);
+        v.redeem(1, user, user);
+        vm.expectRevert(DemoVault.ZeroAddress.selector);
+        v.redeem(1, address(0), user);
+        vm.stopPrank();
+    }
+
+    function test_token_refusals() public {
+        vm.startPrank(user);
+        token.transfer(other, 1e6);
+        vm.expectRevert(DemoToken.InsufficientBalance.selector);
+        token.transfer(other, 1_000e6);
+        vm.expectRevert(DemoToken.ZeroAddress.selector);
+        token.transfer(address(0), 1e6);
+        token.approve(other, 1e6);
+        vm.stopPrank();
+        vm.startPrank(other);
+        token.transferFrom(user, other, 1e6);
+        vm.expectRevert(DemoToken.InsufficientAllowance.selector);
+        token.transferFrom(user, other, 1);
+        vm.stopPrank();
+        token.mint(user, 1);
+        vm.expectRevert(DemoToken.ZeroAddress.selector);
+        token.mint(address(0), 1);
     }
 
     function testFuzz_redeem_never_pays_more_than_deposited(uint256 amount_, uint256 donation_, uint256 other_)

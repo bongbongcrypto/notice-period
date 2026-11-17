@@ -43,3 +43,30 @@ jobs:
 
       - name: Tests (unit, fuzz, invariant)
         run: forge test -vv
+
+  mutation:
+    # Removes one refusal rule at a time (scripts/mutations.py); the named test must fail on every mutant.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      FOUNDRY_PROFILE: mutation
+    steps:
+      - name: Check out this commit (plain git, no third-party action)
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          git init -q .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          echo "::add-mask::${auth}"
+          git -c http.extraheader="AUTHORIZATION: basic ${auth}" fetch -q --depth 1 origin "${GITHUB_SHA}"
+          git checkout -q FETCH_HEAD
+
+      - name: Install pinned Foundry, solc and libraries
+        run: bash scripts/ci-setup.sh
+
+      - name: List the rules under test
+        run: python3 scripts/mutate.py --list
+
+      - name: Mutation check (every refusal rule has a test that fails without it)
+        run: python3 scripts/mutate.py

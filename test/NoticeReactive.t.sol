@@ -149,6 +149,43 @@ contract NoticeReactiveTest is NoticeSetup {
         assertEq(sys.reverts(), 0);
     }
 
+    function test_watch_armed_from_another_contract_is_ignored() public {
+        IReactive.LogRecord memory r;
+        r.chainId = ORIGIN_CHAIN;
+        r.contractAddress = address(exitC);
+        r.topic0 = reactive.WATCH_ARMED_TOPIC();
+        r.topic1 = 80;
+        r.topic3 = uint256(uint160(address(vault)));
+        r.opCode = 4;
+        r.data = abi.encode(NoticeKinds.DEFAULT, uint8(0), uint256(1));
+        sys.forceDeliver(address(reactive), r);
+        assertEq(_rStatus(80), reactive.ST_ARMED(), "from our exit contract: armed");
+        r.contractAddress = address(0xBAD);
+        r.topic1 = 81;
+        sys.forceDeliver(address(reactive), r);
+        assertEq(_rStatus(81), reactive.ST_NONE(), "same event from anyone else: ignored");
+        assertEq(reactive.unknownEvents(), 1);
+        assertEq(reactive.activeWatches(), 1);
+    }
+
+    function test_bad_mode_in_event_is_refused_not_reverted() public {
+        IReactive.LogRecord memory r;
+        r.chainId = ORIGIN_CHAIN;
+        r.contractAddress = address(exitC);
+        r.topic0 = reactive.WATCH_ARMED_TOPIC();
+        r.topic1 = 78;
+        r.topic3 = uint256(uint160(address(vault)));
+        r.opCode = 4;
+        r.data = abi.encode(NoticeKinds.DEFAULT, uint8(1), uint256(1));
+        sys.forceDeliver(address(reactive), r);
+        assertEq(_rStatus(78), reactive.ST_ARMED(), "mode 1 is accepted");
+        r.topic1 = 79;
+        r.data = abi.encode(NoticeKinds.DEFAULT, uint8(2), uint256(1));
+        sys.forceDeliver(address(reactive), r);
+        assertEq(_rStatus(79), reactive.ST_REFUSED(), "mode 2 does not exist");
+        assertEq(sys.reverts(), 0);
+    }
+
     function test_refuses_fourth_watch_on_one_vault() public {
         address dave = makeAddr("dave");
         _arm(alice, vault, NoticeKinds.DEFAULT, 0, type(uint256).max);
@@ -232,6 +269,18 @@ contract NoticeReactiveTest is NoticeSetup {
         _submit(alice, vault, _capCall(100e6));
         assertEq(_rStatus(id), reactive.ST_EXITED());
         assertEq(token.balanceOf(alice), DEPOSIT);
+    }
+
+    function test_cap_change_exits_only_the_watch_that_opted_in() public {
+        _deposit(bob, vault, 10e6);
+        uint256 idA = _arm(alice, vault, NoticeKinds.DEFAULT | NoticeKinds.CAP_UP, 0, type(uint256).max);
+        uint256 idB = _arm(bob, vault, NoticeKinds.DEFAULT, 0, type(uint256).max);
+        _submit(alice, vault, _capCall(1e12));
+        assertEq(sys.callbackCount(), 1);
+        (uint256 id,,,) = _callbackArgs(0);
+        assertEq(id, idA);
+        assertEq(_rStatus(idB), reactive.ST_ARMED());
+        assertEq(_status(idB), exitC.STATUS_ACTIVE());
     }
 
     function test_shorter_timelock_and_allocator_exit_by_default() public {
@@ -505,6 +554,27 @@ contract NoticeReactiveTest is NoticeSetup {
         assertEq(sys.unsubscribeCalls(), unsubs + 1, "the exact unsubscribe is sent again");
         assertEq(sys.silentMisses(), misses + 1);
         assertEq(sys.callbackCount(), cbs, "a stray never exits anyone");
+        assertEq(sys.reverts(), 0);
+    }
+
+    function test_stray_revoke_after_unsubscribe_is_counted() public {
+        uint256 id = _arm(alice, vault, NoticeKinds.DEFAULT, 1, type(uint256).max);
+        IReactive.LogRecord memory r;
+        r.chainId = ORIGIN_CHAIN;
+        r.contractAddress = address(vault);
+        r.topic0 = NoticeKinds.REVOKE_TOPIC;
+        r.topic1 = uint256(uint160(alice));
+        r.topic2 = NoticeKinds.selectorTopic(NoticeKinds.ADD_ADAPTER);
+        r.opCode = 3;
+        r.data = abi.encode(_adapterCall(address(1)));
+        assertTrue(sys.deliver(address(reactive), r), "while the pending watch lives, Revoke is subscribed");
+        assertEq(reactive.strayEvents(), 0);
+        vm.prank(alice);
+        exitC.cancel(id);
+        _pump(address(reactive));
+        assertFalse(_revokeActive(address(vault)));
+        sys.forceDeliver(address(reactive), r);
+        assertEq(reactive.strayEvents(), 1);
         assertEq(sys.reverts(), 0);
     }
 
