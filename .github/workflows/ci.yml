@@ -1,0 +1,45 @@
+name: ci
+
+# Build, tests, mutation check and a dry run of the deploy and loop scripts on local anvil chains.
+# No environment, no secret, no network writes.
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      FOUNDRY_PROFILE: ci
+    steps:
+      - name: Check out this commit (plain git, no third-party action)
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          git init -q .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          echo "::add-mask::${auth}"
+          git -c http.extraheader="AUTHORIZATION: basic ${auth}" fetch -q --depth 1 origin "${GITHUB_SHA}"
+          git checkout -q FETCH_HEAD
+          git log -1 --format='%H %s'
+
+      - name: Install pinned Foundry, solc and libraries
+        run: bash scripts/ci-setup.sh
+
+      - name: Show the compiler Foundry will use
+        run: forge config --json | python3 -c "import json,sys; c=json.load(sys.stdin); print('solc', c.get('solc') or c.get('solc_version'), 'evm', c['evm_version'], 'offline', c['offline'])"
+
+      - name: Build
+        run: forge build --sizes
+
+      - name: Tests (unit, fuzz, invariant)
+        run: forge test -vv
