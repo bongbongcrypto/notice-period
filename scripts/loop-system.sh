@@ -73,6 +73,7 @@ hash3="$(wait_log "$BASE_RPC" "3. WatchEnded on Base Sepolia" "$base_from" "$NP_
 
 t1="$(tx_block_time "$BASE_RPC" "$hash1")"
 t3="$(tx_block_time "$BASE_RPC" "$hash3")"
+[ "$t3" -ge "$t1" ] || die "the exit $hash3 is older than the curator action $hash1: wrong log"
 tokens_after="$(cast call --rpc-url "$BASE_RPC" "$NP_TOKEN" 'balanceOf(address)(uint256)' "$DEPLOYER" | awk '{print $1}')"
 shares_after="$(cast call --rpc-url "$BASE_RPC" "$vault" 'balanceOf(address)(uint256)' "$DEPLOYER" | awk '{print $1}')"
 

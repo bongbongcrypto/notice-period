@@ -29,6 +29,7 @@ hash3="$(wait_log "$BASE_RPC" "3. callback on Base Sepolia" "$base_from" "$HELLO
 t1="$(tx_block_time "$BASE_RPC" "$hash1")"
 t2="$(tx_block_time "$LASNA_RPC" "$hash2")"
 t3="$(tx_block_time "$BASE_RPC" "$hash3")"
+[ "$t3" -ge "$t1" ] || die "the callback $hash3 is older than the ping $hash1: wrong log"
 
 summary "### Hello-world loop"
 summary ""

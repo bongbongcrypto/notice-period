@@ -138,21 +138,45 @@ tx_block_time() { # rpc txhash -> unix seconds of the block that holds it
 
 # Polls for the first log matching the filter; prints its transaction hash. An RPC error is retried, never read as
 # "no log"; only the timeout ends the wait.
+# Topics are 32-byte hex values for topic1, topic2, ... (use `cast to-uint256` for numbers). The query is a plain
+# eth_getLogs, and every returned log is checked again here (address, block, topics), so an RPC that ignores part of
+# the filter cannot hand back the wrong log.
 wait_log() { # rpc label from_block address event_sig timeout_s [topic...]
-  local rpc="$1" label="$2" from="$3" addr="$4" sig="$5" timeout="$6" start out tx
+  local rpc="$1" label="$2" from="$3" addr="$4" sig="$5" timeout="$6" start topic0 tx rc
   shift 6
+  topic0="$(cast keccak "$sig")"
   start="$(date +%s)"
   while :; do
-    if out="$(cast logs --json --rpc-url "$rpc" --from-block "$from" --to-block latest --address "$addr" "$sig" "$@" 2>/dev/null)"; then
-      tx="$(python3 -c 'import json,sys; l=json.loads(sys.argv[1] or "[]"); print(l[0]["transactionHash"] if l else "")' "$out")"
-      if [ -n "$tx" ]; then
-        echo "$label: tx $tx after $(($(date +%s) - start)) s of waiting" >&2
-        echo "$tx"
-        return 0
-      fi
-    else
-      echo "$label: log query failed, retrying (state unknown, not 'absent')" >&2
+    rc=0
+    tx="$(python3 - "$rpc" "$from" "$addr" "$topic0" "$@" <<'PY'
+import json, sys, urllib.request
+rpc, frm, addr, *topics = sys.argv[1:]
+topics = [t.lower() for t in topics]
+frm = int(frm, 0)
+query = {"fromBlock": hex(frm), "toBlock": "latest", "address": addr, "topics": topics}
+req = urllib.request.Request(rpc, data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_getLogs",
+                             "params": [query]}).encode(), headers={"content-type": "application/json"})
+try:
+    with urllib.request.urlopen(req, timeout=20) as r:
+        body = json.load(r)
+except Exception:
+    sys.exit(2)
+if "error" in body or not isinstance(body.get("result"), list):
+    sys.exit(2)
+for log in body["result"]:
+    t = [x.lower() for x in log.get("topics", [])]
+    if (log.get("address", "").lower() == addr.lower() and int(log["blockNumber"], 16) >= frm
+            and t[:len(topics)] == topics):
+        print(log["transactionHash"])
+        break
+PY
+)" || rc=$?
+    if [ "$rc" = 0 ] && [ -n "$tx" ]; then
+      echo "$label: tx $tx after $(($(date +%s) - start)) s of waiting" >&2
+      echo "$tx"
+      return 0
     fi
+    [ "$rc" = 0 ] || echo "$label: log query failed, retrying (state unknown, not 'absent')" >&2
     [ $(($(date +%s) - start)) -lt "$timeout" ] || die "$label: not seen within $timeout s"
     sleep 3
   done
