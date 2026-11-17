@@ -12,6 +12,10 @@ on:
         description: "Sepolia ETH to bridge to Base Sepolia (0 skips, at most 0.2)"
         default: "0.05"
         required: true
+      sepolia_nonce:
+        description: "The account's current Sepolia nonce (0 before the first run; the last run's summary shows the next value). A mismatch is refused, so a repeat never funds twice by accident"
+        default: "0"
+        required: true
 
 permissions:
   contents: read
@@ -47,4 +51,5 @@ jobs:
           TESTNET_ADDRESS: ${{ vars.TESTNET_ADDRESS }}
           REACT_ETH: ${{ inputs.react_eth }}
           BASE_ETH: ${{ inputs.base_eth }}
+          SEPOLIA_NONCE: ${{ inputs.sepolia_nonce }}
         run: bash scripts/fund.sh

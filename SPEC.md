@@ -190,10 +190,22 @@ mode-0 watch is never billed for a `Revoke`.
 The manual `fund` workflow uses `TESTNET_KEY` in the main-only `testnet` environment, matched against
 `TESTNET_ADDRESS`, to convert faucet-funded Sepolia ETH to Lasna lREACT (default 0.1 ETH, cap 2) and
 bridge ETH to the same account on Base Sepolia (default 0.05 ETH, cap 0.2). Zero skips a leg; both cannot
-be zero. Before sending it checks chain IDs, contract code and a gas reserve of max(0.01 ETH, twice the
-estimated gas cost). A failed faucet receipt stops the bridge. Credits are polled every 15 s for up to
-15 minutes; a timeout warns without failing. Check the summary's transactions and balance changes before
-retrying. CI tests the script on three local anvil chains with mocks and simulated credits.
+be zero. The contract addresses are fixed in the script. Before sending it checks:
+- chain IDs and contract code;
+- a Sepolia gas price of at most 1 gwei (sends go at twice the read price, legacy, fixed nonce and gas limit);
+- a balance covering the values plus max(0.01 ETH, the gas limits at the send price);
+- for an lREACT leg, the payout state, because the Sepolia faucet keeps every wei it receives and has no refund
+  path: the faucet's `max_payout` covers the amount; the Lasna payer is wired to that faucet, is not paused, pays
+  100 lREACT per ETH, has a `max_payout` and a balance (above its gas reserve) that cover the payout, and owes the
+  system contract nothing. Above 5 ETH the whole request is lost, not just the excess; the 2 ETH cap stays below;
+- the input `sepolia_nonce` equals the account's Sepolia nonce, with nothing pending. Only this job sends from the
+  account on Sepolia, so a repeated dispatch or a re-run after anything was sent is refused. The summary prints the
+  value for a deliberate next run.
+
+A failed or unconfirmed faucet receipt stops the bridge. Credits are polled every 15 s for up to 15 minutes and count
+only when the balance rose by the expected amount. A missing or short Lasna credit fails the job (payouts land
+within seconds; do not resend). A missing Base Sepolia credit only warns (deposits can take longer). CI tests the
+script on three local anvil chains with mocks at the real addresses and simulated credits.
 
 Deployment (no owner setter: the circular dependency is broken by computing the next contract address):
 1. Base Sepolia: `DemoToken`, then `DemoVaultFactory`.

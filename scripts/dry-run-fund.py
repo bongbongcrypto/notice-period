@@ -162,9 +162,13 @@ exec "$FUND_REAL_CAST" "$@"
             snapshots[url] = rpc(url, "evm_snapshot", [])
 
     def restore_mining():
+        # evm_revert restores neither automine nor the EVM block env's base fee (anvil keeps the last mined block's),
+        # so mine one empty block at the low base fee; the next reset() reverts it.
         rpc(SEPOLIA, "anvil_dropAllTransactions", [])
         rpc(SEPOLIA, "evm_setAutomine", [True])
         rpc(SEPOLIA, "anvil_setNextBlockBaseFeePerGas", [hex(SEPOLIA_BASE_FEE)])
+        rpc(SEPOLIA, "evm_mine", [])
+        require(int(rpc(SEPOLIA, "eth_gasPrice", []), 16) == SEPOLIA_BASE_FEE, "Sepolia anvil base fee not restored")
 
     def check(name, body):
         try:
