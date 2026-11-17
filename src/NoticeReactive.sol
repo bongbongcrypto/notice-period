@@ -9,8 +9,8 @@ import { INoticeExit } from "./lib/INoticeExit.sol";
 /// @title NoticeReactive
 /// @notice Reactive contract of Notice Period on Reactive Lasna. Learns about watches from the exit contract's
 ///         events, subscribes to the watched vaults at runtime, and asks for the exit callback when a watched kind
-///         of change is scheduled ("leave now") or is still pending shortly before it can run ("leave if still
-///         pending"). Rules: SPEC.md sections 6, 8 and 9.
+///         of change is scheduled ("leave now") or is still pending here, unrevoked, shortly before it can run
+///         ("leave if still pending"). Every exit request ends the watch. Rules: SPEC.md sections 6, 8 and 9.
 /// @dev No owner and no setter: every address and limit is fixed at deployment. react() never reverts on a log it
 ///      does not want (a revert is billed); it counts the log and returns.
 contract NoticeReactive is AbstractReactive {
@@ -106,7 +106,8 @@ contract NoticeReactive is AbstractReactive {
     /// @param originChainId_ Chain of the vaults and of the exit contract (84532 for Base Sepolia).
     /// @param exit_ The exit (callback) contract; its address is computed before it is deployed.
     /// @param cronTopic_ CRON event used while a change is stored (Cron10 topic for the demo).
-    /// @param lead_ Seconds before executableAt at which a stored change is fled.
+    /// @param lead_ Seconds before executableAt at which a stored change is fled. One exit is asked for per tick, so
+    ///        the deployment sets it to cover maxActive_ ticks plus the callback's trip (SPEC.md section 6).
     /// @param maxWait_ Longest wait, in seconds, the contract pays ticks for; a later change is fled at once.
     /// @param callbackGas_ Gas limit of the exit callback (at least 100,000).
     /// @param maxActive_ Most watches armed at the same time.
@@ -286,9 +287,14 @@ contract NoticeReactive is AbstractReactive {
             if (w.status != ST_ARMED || w.mode != MODE_IF_PENDING) continue;
             w.reactions += 1;
             if (h != bytes32(0) && _removePending(id, w, h)) emit ChangeRevoked(id, h);
+            // One Revoke filter serves the whole vault, so a revoke of any kind is billed to this watch: the budget is
+            // enforced here too, or a curator could bill the float without end with changes nobody watches.
+            if (w.reactions > MAX_REACTIONS) _fireOverBudget(id, w, log_.txHash);
         }
     }
 
+    /// @dev Asks for at most one exit per tick (an exit releases filters, the costly part of a reaction): the most
+    ///      urgent stored change first, so the order of the pending list cannot delay a watch.
     function _onTick() internal {
         if (filterRefs[_cronKey()] == 0) {
             _stray(block.chainid, CRON_SOURCE, CRON_TOPIC, REACTIVE_IGNORE, REACTIVE_IGNORE);
@@ -296,26 +302,26 @@ contract NoticeReactive is AbstractReactive {
         }
         ticks += 1;
         uint256[] memory ids = _pendingWatches;
-        bool fired;
+        uint256 pick;
+        uint8 pickReason;
+        uint256 pickAt = type(uint256).max;
         for (uint256 i = 0; i < ids.length; i++) {
             uint256 id = ids[i];
             Watch storage w = watches[id];
             if (w.status != ST_ARMED || w.pendingCount == 0) continue;
             w.reactions += 1;
-            if (fired) continue; // at most one exit per tick (gas cap per reactive transaction)
-            uint256 j = _earliest(id, w.pendingCount);
-            Pending storage p = _pending[id][j];
+            uint256 at = _pending[id][_earliest(id, w.pendingCount)].executableAt;
             uint8 reason;
-            if (w.reactions > MAX_REACTIONS) reason = R_BUDGET;
-            else if (uint256(p.executableAt) <= block.timestamp + LEAD) reason = R_DEADLINE;
-            if (reason != 0) {
-                bytes memory data = p.data;
-                bytes32 h = p.dataHash;
-                uint256 originTxHash = p.originTxHash;
-                _fire(id, data, h, originTxHash, reason);
-                fired = true;
+            if (at <= block.timestamp + LEAD) reason = R_DEADLINE;
+            else if (w.reactions > MAX_REACTIONS) reason = R_BUDGET;
+            else continue;
+            if (at < pickAt) {
+                pick = id;
+                pickReason = reason;
+                pickAt = at;
             }
         }
+        if (pickReason != 0) _fireStored(pick, watches[pick], pickReason);
     }
 
     function _unknown(LogRecord calldata log_) internal {
@@ -416,10 +422,33 @@ contract NoticeReactive is AbstractReactive {
         }
     }
 
+    /// @dev Asks for the exit with the earliest change the watch stores.
+    function _fireStored(uint256 id_, Watch storage w_, uint8 reason_) internal {
+        Pending storage p = _pending[id_][_earliest(id_, w_.pendingCount)];
+        bytes memory data = p.data;
+        bytes32 h = p.dataHash;
+        uint256 originTxHash = p.originTxHash;
+        _fire(id_, data, h, originTxHash, reason_);
+    }
+
+    /// @dev Ends a watch that used its reaction budget with an exit (reason Budget), never by dropping it silently:
+    ///      with the earliest stored change if there is one, else with the selector alone of its first watched kind,
+    ///      which the exit contract accepts (it checks the kind of a change, not whether the vault still holds it).
+    function _fireOverBudget(uint256 id_, Watch storage w_, uint256 originTxHash_) internal {
+        if (w_.pendingCount > 0) {
+            _fireStored(id_, w_, R_BUDGET);
+            return;
+        }
+        bytes memory selector = abi.encodePacked(NoticeKinds.selectorsOf(w_.kinds)[0]);
+        _fire(id_, selector, bytes32(0), originTxHash_, R_BUDGET);
+    }
+
     /// @dev Asks the network for the exit callback, then closes the watch. `data_` is the change when it is at most
-    ///      MAX_DATA_LENGTH bytes, else its selector alone; `dataHash_` is 0 in the second case.
+    ///      MAX_DATA_LENGTH bytes, else its selector alone; `dataHash_` is 0 in the second case. The payload names the
+    ///      vault this contract recorded, and the exit contract refuses it for any other vault.
     function _fire(uint256 id_, bytes memory data_, bytes32 dataHash_, uint256 originTxHash_, uint8 reason_) internal {
-        bytes memory payload = abi.encodeCall(INoticeExit.exit, (address(0), id_, data_, originTxHash_, reason_));
+        bytes memory payload =
+            abi.encodeCall(INoticeExit.exit, (address(0), id_, watches[id_].vault, data_, originTxHash_, reason_));
         SYSTEM.requestCallbackV_1_0(
             ISystemContract.CallbackConfiguration_V_1_0({
                 chainId: ORIGIN_CHAIN_ID, recipient: EXIT, gasLimit: CALLBACK_GAS, payload: payload

@@ -29,6 +29,11 @@ contract HelloReactive is AbstractReactive {
         SYSTEM.subscribe(originChainId_, origin_, PING_TOPIC, REACTIVE_IGNORE, REACTIVE_IGNORE, REACTIVE_IGNORE);
     }
 
+    /// @notice Settles debt to the system contract from this contract's balance. Open to anyone.
+    function coverDebt() external {
+        _coverDebt();
+    }
+
     function react(LogRecord calldata log_) external onlySystem {
         // A revert is billed, so an unwanted log is counted and dropped.
         if (

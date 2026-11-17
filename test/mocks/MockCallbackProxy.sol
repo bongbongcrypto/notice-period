@@ -12,12 +12,18 @@ contract MockCallbackProxy {
     bool public lastOk;
     bytes public lastReturn;
 
+    /// @dev Debt per contract, set by a test; a payment from the contract settles it (the docs: "pay their debts").
+    mapping(address account => uint256) public debt;
+
     event Delivered(address indexed recipient, address indexed requester, bool ok, bytes ret);
 
-    receive() external payable { }
+    receive() external payable {
+        uint256 d = debt[msg.sender];
+        debt[msg.sender] = msg.value >= d ? 0 : d - msg.value;
+    }
 
-    function debt(address) external pure returns (uint256) {
-        return 0;
+    function setDebt(address account_, uint256 amount_) external {
+        debt[account_] = amount_;
     }
 
     function deliver(address recipient_, bytes memory payload_, address requester_)

@@ -10,12 +10,11 @@ interface IVaultRegistry {
     function isVault(address vault_) external view returns (bool);
 }
 
-/// @dev The ERC-4626 and Vault V2 functions the exit contract calls.
+/// @dev The ERC-4626 functions the exit contract calls.
 interface IExitVault {
     function asset() external view returns (address);
     function balanceOf(address account_) external view returns (uint256);
     function allowance(address owner_, address spender_) external view returns (uint256);
-    function executableAt(bytes calldata data_) external view returns (uint256);
     function redeem(uint256 shares_, address receiver_, address owner_) external returns (uint256 assets);
 }
 
@@ -33,18 +32,17 @@ interface IBalanceOf {
 contract NoticeExit is AbstractCallback, INoticeExit {
     uint8 public constant MODE_NOW = 0;
     uint8 public constant MODE_IF_PENDING = 1;
-    /// @notice Reason code of NoticeReactive for "stored change due within LEAD" (its R_DEADLINE).
-    uint8 public constant REASON_DEADLINE = 2;
     uint8 public constant DEFAULT_KINDS = NoticeKinds.DEFAULT;
 
     uint8 public constant STATUS_NONE = 0;
     uint8 public constant STATUS_ACTIVE = 1;
     uint8 public constant STATUS_CANCELLED = 2;
     uint8 public constant STATUS_ENDED = 3;
+    uint8 public constant STATUS_EXPIRED = 4;
 
     uint8 public constant OUTCOME_REDEEMED = 0;
     uint8 public constant OUTCOME_NOTHING_TO_REDEEM = 1;
-    uint8 public constant OUTCOME_CHANGE_NOT_PENDING = 2;
+    /// @dev Code 2 (ChangeNotPending) is retired: no exit is re-checked against the vault any more (SPEC.md section 6).
     uint8 public constant OUTCOME_REDEEM_FAILED = 3;
 
     struct Watch {
@@ -59,9 +57,12 @@ contract NoticeExit is AbstractCallback, INoticeExit {
     IVaultRegistry public immutable REGISTRY;
     uint256 public immutable MAX_ARMS_PER_ADDRESS_PER_DAY;
     uint256 public immutable MAX_ARMS_PER_DAY;
+    /// @notice Seconds after arming from which anyone may end a watch with expire() (frees its place on Lasna).
+    uint256 public immutable LIFETIME;
 
     uint256 public nextWatchId = 1;
     mapping(uint256 watchId => Watch) public watches;
+    mapping(uint256 watchId => uint256) public armedAt;
     mapping(address owner => mapping(address vault => uint256 watchId)) public activeWatchOf;
     mapping(address owner => mapping(uint256 day => uint256)) public armsByAddressOnDay;
     mapping(uint256 day => uint256) public armsOnDay;
@@ -75,7 +76,9 @@ contract NoticeExit is AbstractCallback, INoticeExit {
         uint8 mode,
         uint256 maxShares
     );
+    /// @notice Emitted when the owner cancels a watch and when anyone expires it; the reactive contract then drops it.
     event WatchCancelled(uint256 indexed watchId, address indexed owner, address indexed vault);
+    event WatchExpired(uint256 indexed watchId);
     event WatchEnded(
         uint256 indexed watchId,
         uint256 indexed originTxHash,
@@ -99,6 +102,8 @@ contract NoticeExit is AbstractCallback, INoticeExit {
     error DailyCapReached();
     error NotWatchOwner();
     error WatchNotActive(uint256 watchId);
+    error WatchNotExpired(uint256 watchId, uint256 expiresAt);
+    error WrongVault(uint256 watchId, address vault);
     error KindNotWatched(bytes4 selector);
     error AssetsNotReceived(uint256 expected, uint256 received);
 
@@ -112,16 +117,25 @@ contract NoticeExit is AbstractCallback, INoticeExit {
     /// @param callbackProxy_ Callback proxy of this chain (the only caller of exit).
     /// @param reactive_ Our reactive contract on Lasna (the only accepted requester).
     /// @param registry_ The factory that lists the vaults watches may be armed on.
+    /// @param lifetime_ Seconds after arming from which anyone may expire a watch.
     constructor(
         IPayable callbackProxy_,
         address reactive_,
         IVaultRegistry registry_,
         uint256 maxArmsPerAddressPerDay_,
-        uint256 maxArmsPerDay_
+        uint256 maxArmsPerDay_,
+        uint256 lifetime_
     ) payable AbstractCallback(callbackProxy_, reactive_) {
         REGISTRY = registry_;
         MAX_ARMS_PER_ADDRESS_PER_DAY = maxArmsPerAddressPerDay_;
         MAX_ARMS_PER_DAY = maxArmsPerDay_;
+        LIFETIME = lifetime_;
+    }
+
+    /// @notice Settles this contract's debt to the callback proxy from its fee reserve. Open to anyone: after a top-up,
+    ///         sending ETH alone does not clear a debt, and any debt stops every callback.
+    function coverDebt() external {
+        _coverDebt();
     }
 
     // ------------------------------------------------------------------
@@ -157,6 +171,7 @@ contract NoticeExit is AbstractCallback, INoticeExit {
         watches[watchId] = Watch({
             owner: msg.sender, kinds: kinds_, mode: mode_, status: STATUS_ACTIVE, vault: vault_, maxShares: maxShares_
         });
+        armedAt[watchId] = block.timestamp;
         activeWatchOf[msg.sender][vault_] = watchId;
         emit WatchArmed(watchId, msg.sender, vault_, kinds_, mode_, maxShares_);
     }
@@ -171,6 +186,19 @@ contract NoticeExit is AbstractCallback, INoticeExit {
         emit WatchCancelled(watchId_, w.owner, w.vault);
     }
 
+    /// @notice Ends a watch armed at least LIFETIME seconds ago. Open to anyone, so a watch nobody uses cannot hold a
+    ///         place on the reactive side for ever (SPEC.md section 9). Moves nothing: the shares stay with the owner.
+    function expire(uint256 watchId_) external nonReentrant {
+        Watch storage w = watches[watchId_];
+        if (w.status != STATUS_ACTIVE) revert WatchNotActive(watchId_);
+        uint256 expiresAt = armedAt[watchId_] + LIFETIME;
+        if (block.timestamp < expiresAt) revert WatchNotExpired(watchId_, expiresAt);
+        w.status = STATUS_EXPIRED;
+        activeWatchOf[w.owner][w.vault] = 0;
+        emit WatchExpired(watchId_);
+        emit WatchCancelled(watchId_, w.owner, w.vault);
+    }
+
     // ------------------------------------------------------------------
     // Callback
     // ------------------------------------------------------------------
@@ -178,36 +206,35 @@ contract NoticeExit is AbstractCallback, INoticeExit {
     /// @notice Redeems the watch owner's shares to the watch owner. Callable only through the callback proxy, on
     ///         request of our reactive contract.
     /// @param sender_ Overwritten by the network with the requesting reactive contract's address.
+    /// @param vault_ The vault the reactive contract recorded for this watch; must be the watch's vault.
     /// @param data_ The scheduled call that triggered the exit: the whole call when it is at most 256 bytes, else its
     ///        selector alone. Its selector must be a watched kind.
-    /// @param originTxHash_ Transaction hash of the vault's Submit, carried for the hash chain.
-    /// @param reason_ Why the reactive contract asked (SPEC.md section 6). Recorded in WatchEnded; for a mode-1 watch,
-    ///        only reason Deadline (2) makes this contract re-check that the change is still pending.
-    function exit(address sender_, uint256 watchId_, bytes calldata data_, uint256 originTxHash_, uint8 reason_)
-        external
-        onlyServiceProvider
-        onlyCallbackSender(sender_)
-        nonReentrant
-    {
+    /// @param originTxHash_ Transaction hash of the vault event that triggered the exit, carried for the hash chain.
+    /// @param reason_ Why the reactive contract asked (SPEC.md section 6). Recorded in WatchEnded.
+    function exit(
+        address sender_,
+        uint256 watchId_,
+        address vault_,
+        bytes calldata data_,
+        uint256 originTxHash_,
+        uint8 reason_
+    ) external onlyServiceProvider onlyCallbackSender(sender_) nonReentrant {
         Watch storage w = watches[watchId_];
         if (w.status != STATUS_ACTIVE) revert WatchNotActive(watchId_);
+        if (w.vault != vault_) revert WrongVault(watchId_, vault_);
         bytes4 selector = bytes4(data_);
         if (NoticeKinds.kindOf(selector) & w.kinds == 0) revert KindNotWatched(selector);
+        _end(watchId_, w, originTxHash_, reason_);
+    }
 
-        address owner = w.owner;
-        address vault = w.vault;
-        // Effects before any external call: this watch can never exit twice.
-        w.status = STATUS_ENDED;
+    /// @dev Ends the watch (effects before any external call: a watch can never exit twice), then redeems.
+    function _end(uint256 watchId_, Watch storage w_, uint256 originTxHash_, uint8 reason_) internal {
+        address owner = w_.owner;
+        address vault = w_.vault;
+        w_.status = STATUS_ENDED;
         activeWatchOf[owner][vault] = 0;
 
-        // Only a Deadline exit carries the full stored change and is re-checked; the other mode-1 reasons mean the
-        // reactive contract chose to leave at once, and `data_` may then be the selector alone (SPEC.md section 6).
-        if (w.mode == MODE_IF_PENDING && reason_ == REASON_DEADLINE && IExitVault(vault).executableAt(data_) == 0) {
-            emit WatchEnded(watchId_, originTxHash_, OUTCOME_CHANGE_NOT_PENDING, reason_, 0, 0);
-            return;
-        }
-
-        uint256 shares = _redeemable(vault, owner, w.maxShares);
+        uint256 shares = _redeemable(vault, owner, w_.maxShares);
         if (shares == 0) {
             emit WatchEnded(watchId_, originTxHash_, OUTCOME_NOTHING_TO_REDEEM, reason_, 0, 0);
             return;

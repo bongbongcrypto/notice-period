@@ -123,3 +123,36 @@ contract RedirectingVault {
         return shares_;
     }
 }
+
+/// @notice A contract wallet that owns shares and watches. Its hook lets it call back into the exit contract while a
+///         redeem pays it, as the watch owner: without the reentrancy guard such a call would succeed, so a test
+///         that uses this wallet shows the guard, not some other check, is what stops it.
+contract OwnerWallet {
+    address public reenterTarget;
+    bytes public reenterCall;
+
+    function exec(address to_, bytes calldata data_) external returns (bytes memory ret) {
+        bool ok;
+        (ok, ret) = to_.call(data_);
+        if (!ok) {
+            assembly {
+                revert(add(ret, 32), mload(ret))
+            }
+        }
+    }
+
+    function setReenter(address target_, bytes calldata call_) external {
+        reenterTarget = target_;
+        reenterCall = call_;
+    }
+
+    /// @notice Called by the token's hook while the wallet is being paid. Bubbles any revert.
+    function reenter() external {
+        (bool ok, bytes memory ret) = reenterTarget.call(reenterCall);
+        if (!ok) {
+            assembly {
+                revert(add(ret, 32), mload(ret))
+            }
+        }
+    }
+}

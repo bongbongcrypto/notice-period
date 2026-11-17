@@ -34,6 +34,19 @@ for rpc in "$BASE_RPC" "$LASNA_RPC"; do
   done
 done
 
+# Self-test of the loop's timing check: it must refuse an exit at or after executableAt.
+# shellcheck source=scripts/chain.sh
+(source scripts/chain.sh; check_exit_timing 199 200 "self-test early") || { echo "timing check refused an early exit"; exit 1; }
+if (source scripts/chain.sh; check_exit_timing 200 200 "self-test late") 2>/dev/null; then
+  echo "timing check accepted a late exit"
+  exit 1
+fi
+if (source scripts/chain.sh; check_exit_timing 100 0 "self-test unknown") 2>/dev/null; then
+  echo "timing check accepted an unknown executableAt"
+  exit 1
+fi
+echo "timing check self-test passed"
+
 forge build >/dev/null
 cast rpc --rpc-url "$LASNA_RPC" anvil_setCode "$SYSTEM" "$(forge inspect test/mocks/MockSystem.sol:MockSystem deployedBytecode)" >/dev/null
 cast rpc --rpc-url "$LASNA_RPC" anvil_setCode "$CRON" "$(forge inspect test/mocks/CronSource.sol:CronSource deployedBytecode)" >/dev/null

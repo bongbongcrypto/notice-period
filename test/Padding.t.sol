@@ -103,3 +103,38 @@ contract PaddingTest is NoticeSetup {
         assertEq(sys.callbackCount(), 0);
     }
 }
+
+/// @notice The costliest Revoke reaction: a padded Revoke that uses up a watch's budget, so the reaction asks for the
+///         exit and releases every filter in the same transaction.
+contract PaddedBudgetTest is NoticeSetup {
+    function setUp() public {
+        cfgMaxReactions = 3;
+        _deploy();
+    }
+
+    function test_budget_exit_on_padded_revoke_fits() public {
+        DemoVault v = _vaultWithDeposit(alice, 100e6);
+        uint256 id = _arm(alice, v, NoticeKinds.DEFAULT, 1, type(uint256).max);
+        _submit(alice, v, _adapterCall(address(1))); // 1
+        _submit(alice, v, _adapterCall(address(2))); // 2
+        _submit(alice, v, _allocatorCall(address(3))); // 3
+        assertEq(_rPendingCount(id), 3);
+        assertEq(sys.callbackCount(), 0);
+        // a cap change is not watched: only its Revoke reaches the watch, as reaction 4 of a budget of 3
+        bytes memory big = abi.encodePacked(_capCall(1e12), new bytes(100_000));
+        vm.startPrank(alice);
+        v.submit(big);
+        v.revoke(big);
+        vm.stopPrank();
+        _pump(address(reactive));
+        console.log("padded budget revoke: last react gas", sys.lastReactGas());
+        assertEq(sys.reverts(), 0);
+        assertEq(sys.overGasLimit(), 0, "fits the 900,000 gas cap");
+        assertEq(sys.callbackCount(), 1);
+        (,,, uint8 reason) = _callbackArgs(0);
+        assertEq(reason, reactive.R_BUDGET());
+        assertTrue(proxy.lastOk());
+        assertEq(token.balanceOf(alice), 100e6);
+        assertEq(sys.activeCount(address(reactive)), 2, "only the two permanent filters remain");
+    }
+}

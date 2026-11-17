@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Deploys the system in the order of SPEC.md section 7:
 #   Base Sepolia: DemoToken, DemoVaultFactory -> compute NoticeExit's address ->
-#   Lasna: NoticeReactive (funded with lREACT) -> Base Sepolia: NoticeExit (funded with ETH for callback fees),
-# then checks NoticeExit landed on the computed address. Caps are the demo values of SPEC.md section 9.
+#   Lasna: NoticeReactive -> Base Sepolia: NoticeExit, then checks NoticeExit landed on the computed address and
+# only then funds both (lREACT for reactions, ETH for callback fees) and settles any debt they ran up meanwhile.
+# Nothing is sent to a contract before the wiring is checked. Caps are the demo values of SPEC.md section 9.
 #
 # Environment: BASE_RPC, LASNA_RPC, CALLBACK_PROXY, DEPLOY_KEY,
 #   REACTIVE_FUND (lREACT for NoticeReactive, whole coins), EXIT_FUND (Base ETH for NoticeExit),
@@ -14,13 +15,14 @@ source scripts/chain.sh
 
 # Demo values (SPEC.md sections 4, 6, 9)
 VAULT_TIMELOCK=180
-LEAD=60
+LEAD=120 # covers MAX_ACTIVE Cron10 ticks (8 x 10.7 s) plus the callback trip (SPEC.md section 6)
 MAX_WAIT=900
 CALLBACK_GAS=600000
 MAX_ACTIVE=8
 MAX_REACTIONS=80
 ARMS_PER_ADDRESS_PER_DAY=2
 ARMS_PER_DAY=10
+LIFETIME=86400 # anyone can expire a watch after one day (SPEC.md section 9)
 
 need_env BASE_RPC LASNA_RPC CALLBACK_PROXY REACTIVE_FUND EXIT_FUND
 need_key
@@ -45,13 +47,14 @@ read -r factory factory_tx <<<"$res"
 predicted_exit="$(next_address "$BASE_RPC")"
 echo "NoticeExit will be at $predicted_exit"
 
-res="$(deploy "$LASNA_RPC" "NoticeReactive (Lasna)" src/NoticeReactive.sol:NoticeReactive "$reactive_fund" \
+res="$(deploy "$LASNA_RPC" "NoticeReactive (Lasna)" src/NoticeReactive.sol:NoticeReactive 0 \
   --constructor-args "$BASE_CHAIN_ID" "$predicted_exit" "$CRON10_TOPIC" "$LEAD" "$MAX_WAIT" "$CALLBACK_GAS" \
   "$MAX_ACTIVE" "$MAX_REACTIONS")"
 read -r reactive reactive_tx <<<"$res"
 
-res="$(deploy "$BASE_RPC" "NoticeExit (Base Sepolia)" src/NoticeExit.sol:NoticeExit "$exit_fund" \
-  --constructor-args "$CALLBACK_PROXY" "$reactive" "$factory" "$ARMS_PER_ADDRESS_PER_DAY" "$ARMS_PER_DAY")"
+res="$(deploy "$BASE_RPC" "NoticeExit (Base Sepolia)" src/NoticeExit.sol:NoticeExit 0 \
+  --constructor-args "$CALLBACK_PROXY" "$reactive" "$factory" "$ARMS_PER_ADDRESS_PER_DAY" "$ARMS_PER_DAY" \
+  "$LIFETIME")"
 read -r exit_c exit_tx <<<"$res"
 
 same_address "$exit_c" "$predicted_exit" \
@@ -60,6 +63,14 @@ same_address "$exit_c" "$predicted_exit" \
 # Read back the wiring (read-only calls)
 same_address "$(cast call --rpc-url "$LASNA_RPC" "$reactive" 'EXIT()(address)')" "$exit_c" || die "NoticeReactive.EXIT mismatch"
 same_address "$(cast call --rpc-url "$BASE_RPC" "$exit_c" 'REGISTRY()(address)')" "$factory" || die "NoticeExit.REGISTRY mismatch"
+[ "$(cast call --rpc-url "$BASE_RPC" "$exit_c" 'LIFETIME()(uint256)' | awk '{print $1}')" = "$LIFETIME" ] \
+  || die "NoticeExit.LIFETIME mismatch"
+
+# Wiring checked: fund both, then settle whatever debt they ran up while empty (a debt blocks delivery).
+send "$LASNA_RPC" "fund NoticeReactive" "$reactive" --value "$reactive_fund" >/dev/null
+send "$BASE_RPC" "fund NoticeExit" "$exit_c" --value "$exit_fund" >/dev/null
+send "$LASNA_RPC" "NoticeReactive.coverDebt" "$reactive" 'coverDebt()' >/dev/null
+send "$BASE_RPC" "NoticeExit.coverDebt" "$exit_c" 'coverDebt()' >/dev/null
 
 summary "### Notice Period deployment"
 summary ""

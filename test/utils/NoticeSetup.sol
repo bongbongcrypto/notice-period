@@ -14,13 +14,15 @@ import { NoticeKinds } from "../../src/lib/NoticeKinds.sol";
 /// @notice Deploys the full system with the demo values of SPEC.md section 9, in the deployment order of section 7.
 abstract contract NoticeSetup is Network {
     uint256 internal constant TIMELOCK = 180;
-    uint256 internal constant LEAD = 60;
+    /// @dev Covers MAX_ACTIVE Cron10 ticks (8 x 10.7 s) plus the callback's trip: one exit is asked for per tick.
+    uint256 internal constant LEAD = 120;
     uint256 internal constant MAX_WAIT = 900;
     uint64 internal constant CB_GAS = 600_000;
     uint256 internal constant MAX_ACTIVE = 8;
     uint256 internal constant MAX_REACTIONS = 80;
     uint256 internal constant PER_ADDRESS = 2;
     uint256 internal constant PER_DAY = 10;
+    uint256 internal constant LIFETIME = 1 days;
     uint256 internal constant START = 1_800_000_000;
 
     /// @dev Reaction budget used by _deploy; a test contract may lower it before calling _deploy.
@@ -49,7 +51,8 @@ abstract contract NoticeSetup is Network {
             address(reactive),
             IVaultRegistry(address(factory)),
             PER_ADDRESS,
-            PER_DAY
+            PER_DAY,
+            LIFETIME
         );
         assertEq(address(exitC), predicted, "exit address computed before deployment");
         _drainLogs();
@@ -124,12 +127,12 @@ abstract contract NoticeSetup is Network {
         return abi.encodeCall(DemoVault.setIsAllocator, (who_, true));
     }
 
-    function _exitPayload(uint256 id_, bytes memory data_, uint256 origin_, uint8 reason_)
+    function _exitPayload(uint256 id_, address vault_, bytes memory data_, uint256 origin_, uint8 reason_)
         internal
         pure
         returns (bytes memory)
     {
-        return abi.encodeCall(INoticeExit.exit, (address(0), id_, data_, origin_, reason_));
+        return abi.encodeCall(INoticeExit.exit, (address(0), id_, vault_, data_, origin_, reason_));
     }
 
     function _status(uint256 id_) internal view returns (uint8 s) {
@@ -159,6 +162,6 @@ abstract contract NoticeSetup is Network {
         for (uint256 k = 0; k < args.length; k++) {
             args[k] = payload[k + 4];
         }
-        (, id, data, origin, reason) = abi.decode(args, (address, uint256, bytes, uint256, uint8));
+        (, id,, data, origin, reason) = abi.decode(args, (address, uint256, address, bytes, uint256, uint8));
     }
 }

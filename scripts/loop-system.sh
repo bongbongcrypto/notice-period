@@ -64,6 +64,8 @@ sleep "${SUBSCRIBE_GRACE:-15}"
 adapter="$(cast compute-address --nonce 0 "$vault" | awk '{print $NF}')" # any address; only the event matters
 data="$(cast calldata 'addAdapter(address)' "$adapter")"
 hash1="$(send "$BASE_RPC" "1. curator schedules a new adapter (Base Sepolia)" "$vault" "submit(bytes)" "$data")"
+executable_at="$(cast call --rpc-url "$BASE_RPC" "$vault" 'executableAt(bytes)(uint256)' "$data" | awk '{print $1}')"
+echo "the change can run from $executable_at"
 
 # 5. reactive transaction: hash 2; 6. callback: hash 3
 hash2="$(wait_log "$LASNA_RPC" "2. ExitRequested on Lasna" "$lasna_from" "$NP_REACTIVE" \
@@ -74,6 +76,8 @@ hash3="$(wait_log "$BASE_RPC" "3. WatchEnded on Base Sepolia" "$base_from" "$NP_
 t1="$(tx_block_time "$BASE_RPC" "$hash1")"
 t3="$(tx_block_time "$BASE_RPC" "$hash3")"
 [ "$t3" -ge "$t1" ] || die "the exit $hash3 is older than the curator action $hash1: wrong log"
+check_exit_timing "$t3" "$executable_at" "exit timing"
+read -r outcome reason ended_shares ended_assets <<<"$(watch_ended_fields "$BASE_RPC" "$hash3" "$NP_EXIT" "$watch_topic")"
 tokens_after="$(cast call --rpc-url "$BASE_RPC" "$NP_TOKEN" 'balanceOf(address)(uint256)' "$DEPLOYER" | awk '{print $1}')"
 shares_after="$(cast call --rpc-url "$BASE_RPC" "$vault" 'balanceOf(address)(uint256)' "$DEPLOYER" | awk '{print $1}')"
 
@@ -85,6 +89,11 @@ summary "| 1. Curator schedules a new adapter | Base Sepolia | \`$hash1\` |"
 summary "| 2. Reactive transaction (ExitRequested) | Lasna | \`$hash2\` |"
 summary "| 3. Exit (WatchEnded, shares redeemed) | Base Sepolia | \`$hash3\` |"
 summary ""
-summary "Seconds from 1 to 3 (block times): $((t3 - t1))"
+summary "Seconds from 1 to 3 (block times): $((t3 - t1)); the change could run $((executable_at - t3)) s after the exit."
+summary "WatchEnded: outcome $outcome (0 = redeemed), reason $reason, shares $ended_shares, assets $ended_assets."
 summary "Vault: $vault, watch $watch_id. Shares $shares -> $shares_after. Wallet demo tokens $tokens_before -> $tokens_after (6 decimals)."
+[ "$outcome" = 0 ] || die "the exit did not redeem (outcome $outcome)"
+[ "$ended_shares" = "$shares" ] || die "WatchEnded reports $ended_shares shares, the watch covered $shares"
+received="$(python3 -c 'import sys; print(int(sys.argv[2]) - int(sys.argv[1]))' "$tokens_before" "$tokens_after")"
+[ "$received" = "$ended_assets" ] || die "the wallet received $received, WatchEnded reports $ended_assets"
 [ "$shares_after" = 0 ] || die "shares are still in the vault after the exit"

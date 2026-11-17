@@ -405,8 +405,42 @@ contract NoticeReactiveTest is NoticeSetup {
         _deliverCallbacks();
         assertTrue(proxy.lastOk());
         assertEq(_status(id), exitC.STATUS_ENDED());
-        assertEq(vault.balanceOf(alice), DEPOSIT, "change no longer pending: nothing moves");
-        assertEq(token.balanceOf(alice), 0);
+        // Base does not ask the vault again (SPEC.md section 6): once the tick asked for the exit, the depositor
+        // leaves even though the change was revoked in the seconds before the callback.
+        assertEq(vault.balanceOf(alice), 0);
+        assertEq(token.balanceOf(alice), DEPOSIT);
+    }
+
+    /// @dev Two watches due on the same tick: the one whose change can run first leaves first, whatever the order
+    ///      in which the changes were stored.
+    function test_tick_fires_most_urgent_first() public {
+        DemoVault vb = _vaultWithDeposit(bob, 300e6);
+        // bob's vault gets a longer timelock (before anyone watches it), so his change is stored first but can run
+        // later
+        bytes memory longer = abi.encodeCall(DemoVault.increaseTimelock, (NoticeKinds.ADD_ADAPTER, TIMELOCK + 60));
+        vm.prank(bob);
+        vb.submit(longer);
+        vm.warp(block.timestamp + TIMELOCK);
+        (bool ok,) = address(vb).call(longer);
+        assertTrue(ok, "timelock raised");
+        assertEq(vb.timelock(NoticeKinds.ADD_ADAPTER), TIMELOCK + 60);
+        uint256 idB = _arm(bob, vb, NoticeKinds.DEFAULT, 1, type(uint256).max);
+        uint256 idA = _arm(alice, vault, NoticeKinds.DEFAULT, 1, type(uint256).max);
+        bytes memory change = _adapterCall(address(0xA1));
+        _submit(bob, vb, change);
+        _submit(alice, vault, change);
+        uint256 atA = vault.executableAt(change);
+        uint256 atB = vb.executableAt(change);
+        assertLt(atA, atB);
+        vm.warp(atB - LEAD); // both are within LEAD of their deadline
+        _tickAndPump();
+        assertEq(sys.callbackCount(), 1, "one exit per tick");
+        (uint256 first,,,) = _callbackArgs(0);
+        assertEq(first, idA, "the change that can run first leaves first");
+        _tickAndPump();
+        assertEq(sys.callbackCount(), 2);
+        (uint256 second,,,) = _callbackArgs(1);
+        assertEq(second, idB);
     }
 
     /// @dev A curator stores a decoy and a real change, waits for the exit request of the decoy (ExitRequested is
@@ -733,6 +767,91 @@ contract NoticeReactiveTest is NoticeSetup {
     function test_cover_debt_is_open() public {
         vm.prank(bob);
         reactive.coverDebt();
+    }
+
+    function test_cover_debt_pays_the_system_contract() public {
+        vm.deal(address(reactive), 2 ether);
+        sys.setDebt(address(reactive), 0.5 ether);
+        uint256 before = address(sys).balance;
+        vm.prank(bob);
+        reactive.coverDebt();
+        assertEq(address(sys).balance - before, 0.5 ether);
+        assertEq(sys.debt(address(reactive)), 0);
+        assertEq(address(reactive).balance, 1.5 ether);
+    }
+
+    // ---------------------------------------------------------------- topic counts (opCode = number of topics)
+
+    function _armedRecord(uint256 id_, uint8 opCode_) internal view returns (IReactive.LogRecord memory r) {
+        r.chainId = ORIGIN_CHAIN;
+        r.contractAddress = address(exitC);
+        r.topic0 = reactive.WATCH_ARMED_TOPIC();
+        r.topic1 = id_;
+        r.topic2 = uint256(uint160(alice));
+        r.topic3 = uint256(uint160(address(vault)));
+        r.opCode = opCode_;
+        r.data = abi.encode(NoticeKinds.DEFAULT, uint8(0), type(uint256).max);
+    }
+
+    function test_watch_armed_with_wrong_topic_count_is_ignored() public {
+        sys.forceDeliver(address(reactive), _armedRecord(90, 4));
+        assertEq(_rStatus(90), reactive.ST_ARMED(), "sibling: four topics arm the watch");
+        sys.forceDeliver(address(reactive), _armedRecord(91, 3));
+        assertEq(_rStatus(91), reactive.ST_NONE(), "three topics: not our event");
+        assertEq(reactive.unknownEvents(), 1);
+        assertEq(reactive.activeWatches(), 1);
+    }
+
+    function test_watch_cancelled_with_wrong_topic_count_is_ignored() public {
+        uint256 id = _arm(alice, vault, NoticeKinds.DEFAULT, 0, type(uint256).max);
+        IReactive.LogRecord memory r;
+        r.chainId = ORIGIN_CHAIN;
+        r.contractAddress = address(exitC);
+        r.topic0 = reactive.WATCH_CANCELLED_TOPIC();
+        r.topic1 = id;
+        r.topic2 = uint256(uint160(alice));
+        r.topic3 = uint256(uint160(address(vault)));
+        r.opCode = 3;
+        sys.forceDeliver(address(reactive), r);
+        assertEq(_rStatus(id), reactive.ST_ARMED(), "three topics: not our event");
+        assertEq(reactive.unknownEvents(), 1);
+        r.opCode = 4;
+        sys.forceDeliver(address(reactive), r);
+        assertEq(_rStatus(id), reactive.ST_CANCELLED(), "sibling: four topics cancel the watch");
+    }
+
+    function test_revoke_with_wrong_topic_count_is_ignored() public {
+        uint256 id = _arm(alice, vault, NoticeKinds.DEFAULT, 1, type(uint256).max);
+        bytes memory data = _adapterCall(address(0xA1));
+        _submit(alice, vault, data);
+        assertEq(_rPendingCount(id), 1);
+        IReactive.LogRecord memory r;
+        r.chainId = ORIGIN_CHAIN;
+        r.contractAddress = address(vault);
+        r.topic0 = NoticeKinds.REVOKE_TOPIC;
+        r.topic1 = uint256(uint160(alice));
+        r.topic2 = NoticeKinds.selectorTopic(NoticeKinds.ADD_ADAPTER);
+        r.opCode = 4;
+        r.data = abi.encode(data);
+        sys.forceDeliver(address(reactive), r);
+        assertEq(_rPendingCount(id), 1, "four topics: not a vault Revoke");
+        assertEq(reactive.unknownEvents(), 1);
+        r.opCode = 3;
+        sys.forceDeliver(address(reactive), r);
+        assertEq(_rPendingCount(id), 0, "sibling: three topics remove the change");
+    }
+
+    /// @dev A Revoke concerns only "leave if still pending" watches; a "leave now" watch on the same vault is not
+    ///      billed for it.
+    function test_revoke_does_not_bill_a_leave_now_watch() public {
+        uint256 idNow = _arm(alice, vault, NoticeKinds.DEFAULT, 0, type(uint256).max);
+        _deposit(bob, vault, 10e6);
+        uint256 idPending = _arm(bob, vault, NoticeKinds.DEFAULT, 1, type(uint256).max);
+        bytes memory d = abi.encodeCall(DemoVault.increaseTimelock, (NoticeKinds.ADD_ADAPTER, 1000));
+        _submit(alice, vault, d);
+        _revokeChange(alice, vault, d);
+        assertEq(_rReactions(idPending), 1, "sibling: the pending watch is billed");
+        assertEq(_rReactions(idNow), 0);
     }
 }
 

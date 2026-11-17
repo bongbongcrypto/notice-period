@@ -80,10 +80,16 @@ contract MockSystem {
         else _added += modelled_ - spent;
     }
 
-    receive() external payable { }
+    /// @dev Debt per contract, set by a test; a payment from the contract settles it.
+    mapping(address account => uint256) public debt;
 
-    function debt(address) external pure returns (uint256) {
-        return 0;
+    receive() external payable {
+        uint256 d = debt[msg.sender];
+        debt[msg.sender] = msg.value >= d ? 0 : d - msg.value;
+    }
+
+    function setDebt(address account_, uint256 amount_) external {
+        debt[account_] = amount_;
     }
 
     function subscribe(uint256 chainId_, address source_, uint256 t0_, uint256 t1_, uint256 t2_, uint256 t3_)

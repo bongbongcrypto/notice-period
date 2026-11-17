@@ -58,10 +58,11 @@ contract FixturesTest is Network {
         for (uint256 k = 0; k < args.length; k++) {
             args[k] = payload[k + 4];
         }
-        (, uint256 id, bytes memory data, uint256 origin, uint8 reason) =
-            abi.decode(args, (address, uint256, bytes, uint256, uint8));
+        (, uint256 id, address vault, bytes memory data, uint256 origin, uint8 reason) =
+            abi.decode(args, (address, uint256, address, bytes, uint256, uint8));
         (bytes memory realData,) = abi.decode(real.data, (bytes, uint256));
         assertEq(id, 1);
+        assertEq(vault, real.contractAddress, "the payload names the vault the log came from");
         assertGt(realData.length, reactive.MAX_DATA_LENGTH(), "this real change is 388 bytes");
         assertEq(data, abi.encodePacked(bytes4(realData)), "a change over 256 bytes travels as its selector");
         assertEq(origin, real.txHash, "the real origin transaction hash is carried");
@@ -79,7 +80,7 @@ contract FixturesTest is Network {
         assertEq(sys.callbackCount(), 1);
         // six days of timelock is far beyond the demo's MAX_WAIT: the contract will not pay ticks for it
         bytes memory payload = sys.callbackAt(0).payload;
-        uint8 reason = uint8(uint256(_word(payload, 4)));
+        uint8 reason = uint8(uint256(_word(payload, 5)));
         assertEq(reason, reactive.R_WAIT_TOO_LONG());
     }
 

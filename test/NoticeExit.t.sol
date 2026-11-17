@@ -11,7 +11,7 @@ import { DemoVaultFactory } from "../src/demo/DemoVaultFactory.sol";
 import { NoticeExit, IVaultRegistry } from "../src/NoticeExit.sol";
 import { INoticeExit } from "../src/lib/INoticeExit.sol";
 import { NoticeKinds } from "../src/lib/NoticeKinds.sol";
-import { AllowAllRegistry, ReentrantToken, RedirectingVault } from "./mocks/Hostile.sol";
+import { AllowAllRegistry, ReentrantToken, RedirectingVault, OwnerWallet } from "./mocks/Hostile.sol";
 
 /// @notice Unit and attack tests of the exit (callback) contract. Callbacks are delivered by the mock proxy with the
 ///         requester set to our reactive contract, exactly as the network would.
@@ -35,7 +35,7 @@ contract NoticeExitTest is NoticeSetup {
     }
 
     function _deliverReason(uint256 id_, bytes memory data_, uint8 reason_) internal {
-        proxy.deliverOrRevert(address(exitC), _exitPayload(id_, data_, 0xABC, reason_), address(reactive));
+        proxy.deliverOrRevert(address(exitC), _exitPayload(id_, address(vault), data_, 0xABC, reason_), address(reactive));
     }
 
     function _lastOutcome() internal returns (uint8 outcome, uint256 shares, uint256 assets) {
@@ -210,10 +210,22 @@ contract NoticeExitTest is NoticeSetup {
         assertEq(exitC.activeWatchOf(alice, address(vault)), 0);
     }
 
+    /// @dev Sibling of test_exit_redeems_to_owner: same watch and change, but the payload names another vault.
+    function test_exit_refuses_wrong_vault() public {
+        uint256 id = _armAlice(0);
+        DemoVault other = _vaultWithDeposit(bob, 10e6);
+        vm.expectRevert(abi.encodeWithSelector(NoticeExit.WrongVault.selector, id, address(other)));
+        proxy.deliverOrRevert(
+            address(exitC), _exitPayload(id, address(other), _adapterCall(address(0xA1)), 1, 1), address(reactive)
+        );
+        assertEq(_status(id), exitC.STATUS_ACTIVE(), "a refused exit changes nothing");
+        assertEq(vault.balanceOf(alice), DEPOSIT);
+    }
+
     function test_exit_refuses_direct_caller() public {
         uint256 id = _armAlice(0);
         vm.expectRevert(abi.encodeWithSelector(AbstractPayer.NotAuthorized.selector, address(this), address(proxy)));
-        exitC.exit(address(reactive), id, _adapterCall(address(0xA1)), 1, 1);
+        exitC.exit(address(reactive), id, address(vault), _adapterCall(address(0xA1)), 1, 1);
     }
 
     function test_exit_refuses_wrong_reactive_identity() public {
@@ -221,13 +233,15 @@ contract NoticeExitTest is NoticeSetup {
         vm.expectRevert(
             abi.encodeWithSelector(AbstractCallback.CallbackNotAuthorized.selector, address(0xBAD), address(reactive))
         );
-        proxy.deliverOrRevert(address(exitC), _exitPayload(id, _adapterCall(address(0xA1)), 1, 1), address(0xBAD));
+        proxy.deliverOrRevert(
+            address(exitC), _exitPayload(id, address(vault), _adapterCall(address(0xA1)), 1, 1), address(0xBAD)
+        );
         assertEq(_status(id), exitC.STATUS_ACTIVE());
     }
 
     function test_exit_refuses_replay() public {
         uint256 id = _armAlice(0);
-        bytes memory payload = _exitPayload(id, _adapterCall(address(0xA1)), 1, 1);
+        bytes memory payload = _exitPayload(id, address(vault), _adapterCall(address(0xA1)), 1, 1);
         proxy.deliverOrRevert(address(exitC), payload, address(reactive));
         vm.expectRevert(abi.encodeWithSelector(NoticeExit.WatchNotActive.selector, id));
         proxy.deliverOrRevert(address(exitC), payload, address(reactive));
@@ -268,19 +282,22 @@ contract NoticeExitTest is NoticeSetup {
         _deliver(id, "");
     }
 
+    /// @dev Mode 1: the decision "still pending" is made on Lasna, where a revoke that arrives before the tick
+    ///      removes the stored change. Once the exit is asked for, Base does not ask the vault again (SPEC.md
+    ///      section 6): a curator who revokes after the tick cannot keep the depositor in.
     function test_exit_if_pending_redeems_while_pending() public {
         uint256 id = _armAlice(1);
         bytes memory data = _adapterCall(address(0xA1));
         vm.prank(alice);
         vault.submit(data);
         vm.recordLogs();
-        _deliverReason(id, data, exitC.REASON_DEADLINE());
+        _deliverReason(id, data, 2); // Deadline
         (uint8 outcome,,) = _lastOutcome();
         assertEq(outcome, exitC.OUTCOME_REDEEMED());
         assertEq(token.balanceOf(alice), DEPOSIT);
     }
 
-    function test_exit_if_pending_does_nothing_after_vault_revoke() public {
+    function test_exit_after_a_late_vault_revoke_still_redeems() public {
         uint256 id = _armAlice(1);
         bytes memory data = _adapterCall(address(0xA1));
         vm.startPrank(alice);
@@ -288,15 +305,15 @@ contract NoticeExitTest is NoticeSetup {
         vault.revoke(data);
         vm.stopPrank();
         vm.recordLogs();
-        _deliverReason(id, data, exitC.REASON_DEADLINE());
+        _deliverReason(id, data, 2); // Deadline
         (uint8 outcome,,) = _lastOutcome();
-        assertEq(outcome, exitC.OUTCOME_CHANGE_NOT_PENDING());
-        assertEq(vault.balanceOf(alice), DEPOSIT, "shares stay");
+        assertEq(outcome, exitC.OUTCOME_REDEEMED(), "revoked after the request: the depositor still leaves");
+        assertEq(token.balanceOf(alice), DEPOSIT);
         assertEq(_status(id), exitC.STATUS_ENDED());
     }
 
-    /// @dev The other mode-1 reasons mean "leave at once"; the payload may hold the selector alone, so no re-check.
-    function test_exit_if_pending_leave_at_once_reason_skips_recheck() public {
+    /// @dev A change over 256 bytes travels as its selector alone, and is accepted as such.
+    function test_exit_accepts_the_selector_alone() public {
         uint256 id = _armAlice(1);
         vm.recordLogs();
         _deliverReason(id, abi.encodePacked(NoticeKinds.ADD_ADAPTER), 5); // DataTooLong, selector only
@@ -305,9 +322,9 @@ contract NoticeExitTest is NoticeSetup {
         assertEq(token.balanceOf(alice), DEPOSIT);
     }
 
-    /// @dev Pins a limit of SPEC.md section 11: if the change already ran before a Deadline callback lands, the vault
-    ///      reports it as not pending (V2 clears executableAt on run as on revoke) and the depositor stays.
-    function test_exit_if_pending_stays_when_change_already_ran() public {
+    /// @dev Even if the change already ran when the callback lands (it can only be late, never skipped), the
+    ///      depositor leaves; before the re-check was retired, this case left the depositor in.
+    function test_exit_after_the_change_ran_still_redeems() public {
         uint256 id = _armAlice(1);
         bytes memory data = _adapterCall(address(0xA1));
         vm.prank(alice);
@@ -315,10 +332,10 @@ contract NoticeExitTest is NoticeSetup {
         vm.warp(block.timestamp + TIMELOCK);
         vault.addAdapter(address(0xA1));
         vm.recordLogs();
-        _deliverReason(id, data, exitC.REASON_DEADLINE());
+        _deliverReason(id, data, 2); // Deadline
         (uint8 outcome,,) = _lastOutcome();
-        assertEq(outcome, exitC.OUTCOME_CHANGE_NOT_PENDING());
-        assertEq(vault.balanceOf(alice), DEPOSIT, "the change ran and the depositor is still in");
+        assertEq(outcome, exitC.OUTCOME_REDEEMED());
+        assertEq(token.balanceOf(alice), DEPOSIT);
     }
 
     function test_exit_now_mode_ignores_pending_state() public {
@@ -411,7 +428,7 @@ contract NoticeExitTest is NoticeSetup {
     function test_attack_vault_paying_someone_else_is_refused() public {
         AllowAllRegistry anyRegistry = new AllowAllRegistry();
         NoticeExit exitH = new NoticeExit(
-            IPayable(payable(address(proxy))), address(reactive), IVaultRegistry(address(anyRegistry)), 5, 50
+            IPayable(payable(address(proxy))), address(reactive), IVaultRegistry(address(anyRegistry)), 5, 50, LIFETIME
         );
         address thief = makeAddr("thief");
         RedirectingVault bad = new RedirectingVault(address(token), thief);
@@ -421,74 +438,208 @@ contract NoticeExitTest is NoticeSetup {
         vm.prank(alice);
         uint256 id = exitH.arm(address(bad), NoticeKinds.DEFAULT, 0, type(uint256).max);
         vm.expectRevert(abi.encodeWithSelector(NoticeExit.AssetsNotReceived.selector, 100e6, 0));
-        proxy.deliverOrRevert(address(exitH), _exitPayload(id, _adapterCall(address(1)), 1, 1), address(reactive));
+        proxy.deliverOrRevert(
+            address(exitH), _exitPayload(id, address(bad), _adapterCall(address(1)), 1, 1), address(reactive)
+        );
         assertEq(token.balanceOf(thief), 0, "the whole callback reverted");
         assertEq(bad.balanceOf(alice), 100e6);
         (,,, uint8 st,,) = exitH.watches(id);
         assertEq(st, exitH.STATUS_ACTIVE());
     }
 
-    function test_attack_reentrancy_through_token_is_blocked() public {
-        ReentrantToken evil = new ReentrantToken();
-        DemoVaultFactory evilFactory = new DemoVaultFactory(address(evil), TIMELOCK);
-        NoticeExit exitR = new NoticeExit(
-            IPayable(payable(address(proxy))), address(reactive), IVaultRegistry(address(evilFactory)), 5, 50
-        );
-        vm.prank(alice);
-        DemoVault v = DemoVault(evilFactory.create());
-        evil.mint(alice, 100e6);
-        vm.startPrank(alice);
-        evil.approve(address(v), 100e6);
-        v.deposit(100e6, alice);
-        v.approve(address(exitR), type(uint256).max);
-        uint256 id = exitR.arm(address(v), NoticeKinds.DEFAULT, 0, type(uint256).max);
-        vm.stopPrank();
-        // during the redeem's token transfer, the token calls back into the exit contract
-        evil.setHook(address(exitR), abi.encodeCall(NoticeExit.cancel, (id)));
+    // ---------------------------------------------------------------- reentrancy
+    // A contract wallet owns shares in two vaults of a token that calls the wallet while paying it. During the
+    // exit's redeem the wallet calls back into the exit contract as an owner. Each refusal test starts from
+    // test_reentry_sibling_exit_pays_the_wallet, where the same exit succeeds with a harmless hook.
 
-        vm.recordLogs();
-        proxy.deliverOrRevert(address(exitR), _exitPayload(id, _adapterCall(address(1)), 1, 1), address(reactive));
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        bytes memory reason;
-        for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].emitter == address(exitR) && logs[i].topics[0] == NoticeExit.RedeemReverted.selector) {
-                reason = abi.decode(logs[i].data, (bytes));
-            }
-        }
-        assertEq(reason, abi.encodeWithSelector(NoticeExit.Reentrancy.selector), "the re-entry hit the guard");
-        assertEq(v.balanceOf(alice), 100e6, "redeem rolled back, shares stay");
-        assertEq(evil.balanceOf(alice), 0);
-        (,,, uint8 st,,) = exitR.watches(id);
-        assertEq(st, exitR.STATUS_ENDED());
+    struct Reentry {
+        NoticeExit exitR;
+        ReentrantToken evil;
+        OwnerWallet wallet;
+        DemoVault v1;
+        DemoVault v2;
+        uint256 id1;
     }
 
-    function test_attack_reentrancy_into_arm_is_blocked() public {
-        ReentrantToken evil = new ReentrantToken();
-        DemoVaultFactory evilFactory = new DemoVaultFactory(address(evil), TIMELOCK);
-        NoticeExit exitR = new NoticeExit(
-            IPayable(payable(address(proxy))), address(reactive), IVaultRegistry(address(evilFactory)), 5, 50
+    function _walletDeposit(Reentry memory r_, DemoVault v_) internal {
+        r_.evil.mint(address(r_.wallet), 100e6);
+        r_.wallet.exec(address(r_.evil), abi.encodeCall(ReentrantToken.approve, (address(v_), 100e6)));
+        r_.wallet.exec(address(v_), abi.encodeCall(DemoVault.deposit, (100e6, address(r_.wallet))));
+        r_.wallet.exec(address(v_), abi.encodeCall(DemoVault.approve, (address(r_.exitR), type(uint256).max)));
+    }
+
+    function _reentrySetup() internal returns (Reentry memory r) {
+        r.evil = new ReentrantToken();
+        DemoVaultFactory evilFactory = new DemoVaultFactory(address(r.evil), TIMELOCK);
+        r.exitR = new NoticeExit(
+            IPayable(payable(address(proxy))), address(reactive), IVaultRegistry(address(evilFactory)), 5, 50, LIFETIME
         );
-        vm.prank(alice);
-        DemoVault v = DemoVault(evilFactory.create());
-        evil.mint(alice, 100e6);
+        r.wallet = new OwnerWallet();
         vm.startPrank(alice);
-        evil.approve(address(v), 100e6);
-        v.deposit(100e6, alice);
-        v.approve(address(exitR), type(uint256).max);
-        uint256 id = exitR.arm(address(v), NoticeKinds.DEFAULT, 0, type(uint256).max);
+        r.v1 = DemoVault(evilFactory.create());
+        r.v2 = DemoVault(evilFactory.create());
         vm.stopPrank();
-        evil.setHook(address(exitR), abi.encodeCall(NoticeExit.arm, (address(v), NoticeKinds.ALL, 0, 1)));
+        _walletDeposit(r, r.v1);
+        _walletDeposit(r, r.v2);
+        bytes memory ret = r.wallet.exec(
+            address(r.exitR),
+            abi.encodeCall(NoticeExit.arm, (address(r.v1), NoticeKinds.DEFAULT, 0, type(uint256).max))
+        );
+        r.id1 = abi.decode(ret, (uint256));
+        // the token calls the wallet whenever it moves tokens out (the redeem pays the wallet)
+        r.evil.setHook(address(r.wallet), abi.encodeCall(OwnerWallet.reenter, ()));
+    }
+
+    function _armV2(Reentry memory r_) internal returns (uint256 id2) {
+        bytes memory ret = r_.wallet.exec(
+            address(r_.exitR),
+            abi.encodeCall(NoticeExit.arm, (address(r_.v2), NoticeKinds.DEFAULT, 0, type(uint256).max))
+        );
+        id2 = abi.decode(ret, (uint256));
+    }
+
+    /// @dev Delivers the exit of the wallet's first watch; returns the RedeemReverted reason (empty if none).
+    function _exitV1(Reentry memory r_) internal returns (bytes memory reason, uint8 outcome) {
         vm.recordLogs();
-        proxy.deliverOrRevert(address(exitR), _exitPayload(id, _adapterCall(address(1)), 1, 1), address(reactive));
+        proxy.deliverOrRevert(
+            address(r_.exitR), _exitPayload(r_.id1, address(r_.v1), _adapterCall(address(1)), 1, 1), address(reactive)
+        );
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        bytes memory reason;
+        outcome = 255;
         for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].emitter == address(exitR) && logs[i].topics[0] == NoticeExit.RedeemReverted.selector) {
-                reason = abi.decode(logs[i].data, (bytes));
+            if (logs[i].emitter != address(r_.exitR)) continue;
+            if (logs[i].topics[0] == NoticeExit.RedeemReverted.selector) reason = abi.decode(logs[i].data, (bytes));
+            if (logs[i].topics[0] == NoticeExit.WatchEnded.selector) {
+                (outcome,,,) = abi.decode(logs[i].data, (uint8, uint8, uint256, uint256));
             }
         }
-        assertEq(reason, abi.encodeWithSelector(NoticeExit.Reentrancy.selector));
-        assertEq(exitR.nextWatchId(), id + 1, "no watch was created by the re-entry");
+    }
+
+    function _st(NoticeExit exitR_, uint256 id_) internal view returns (uint8 st) {
+        (,,, st,,) = exitR_.watches(id_);
+    }
+
+    function test_reentry_sibling_exit_pays_the_wallet() public {
+        Reentry memory r = _reentrySetup();
+        uint256 id2 = _armV2(r);
+        // a harmless hook: reading a view succeeds
+        r.wallet.setReenter(address(r.exitR), abi.encodeCall(NoticeExit.redeemableShares, (id2)));
+        (bytes memory reason, uint8 outcome) = _exitV1(r);
+        assertEq(reason.length, 0);
+        assertEq(outcome, r.exitR.OUTCOME_REDEEMED());
+        assertEq(r.evil.balanceOf(address(r.wallet)), 100e6);
+        assertEq(_st(r.exitR, id2), r.exitR.STATUS_ACTIVE());
+    }
+
+    function test_reentry_into_arm_is_blocked() public {
+        Reentry memory r = _reentrySetup();
+        r.wallet.setReenter(
+            address(r.exitR), abi.encodeCall(NoticeExit.arm, (address(r.v2), NoticeKinds.ALL, 0, type(uint256).max))
+        );
+        (bytes memory reason, uint8 outcome) = _exitV1(r);
+        assertEq(reason, abi.encodeWithSelector(NoticeExit.Reentrancy.selector), "the re-entry hit the guard");
+        assertEq(outcome, r.exitR.OUTCOME_REDEEM_FAILED());
+        assertEq(r.exitR.activeWatchOf(address(r.wallet), address(r.v2)), 0, "no watch was created");
+        assertEq(r.exitR.nextWatchId(), r.id1 + 1);
+        assertEq(r.v1.balanceOf(address(r.wallet)), 100e6, "redeem rolled back, shares stay");
+    }
+
+    function test_reentry_into_cancel_is_blocked() public {
+        Reentry memory r = _reentrySetup();
+        uint256 id2 = _armV2(r);
+        r.wallet.setReenter(address(r.exitR), abi.encodeCall(NoticeExit.cancel, (id2)));
+        (bytes memory reason,) = _exitV1(r);
+        assertEq(reason, abi.encodeWithSelector(NoticeExit.Reentrancy.selector), "the re-entry hit the guard");
+        assertEq(_st(r.exitR, id2), r.exitR.STATUS_ACTIVE(), "the other watch was not cancelled");
+        assertEq(_st(r.exitR, r.id1), r.exitR.STATUS_ENDED());
+    }
+
+    function test_reentry_into_expire_is_blocked() public {
+        Reentry memory r = _reentrySetup();
+        uint256 id2 = _armV2(r);
+        vm.warp(block.timestamp + LIFETIME);
+        r.wallet.setReenter(address(r.exitR), abi.encodeCall(NoticeExit.expire, (id2)));
+        (bytes memory reason,) = _exitV1(r);
+        assertEq(reason, abi.encodeWithSelector(NoticeExit.Reentrancy.selector), "the re-entry hit the guard");
+        assertEq(_st(r.exitR, id2), r.exitR.STATUS_ACTIVE(), "the other watch did not expire");
+    }
+
+    /// @dev Only the network's proxy can call exit(); the mock proxy can be called by anyone, which lets the test
+    ///      reach exit() from inside a redeem.
+    function test_reentry_into_exit_is_blocked() public {
+        Reentry memory r = _reentrySetup();
+        uint256 id2 = _armV2(r);
+        r.wallet.setReenter(
+            address(proxy),
+            abi.encodeCall(
+                proxy.deliverOrRevert,
+                (address(r.exitR), _exitPayload(id2, address(r.v2), _adapterCall(address(1)), 2, 1), address(reactive))
+            )
+        );
+        (bytes memory reason,) = _exitV1(r);
+        assertEq(reason, abi.encodeWithSelector(NoticeExit.Reentrancy.selector), "the re-entry hit the guard");
+        assertEq(_st(r.exitR, id2), r.exitR.STATUS_ACTIVE(), "the other watch did not exit");
+        assertEq(r.v2.balanceOf(address(r.wallet)), 100e6);
+    }
+
+    // ---------------------------------------------------------------- expire
+
+    function test_expire_after_lifetime() public {
+        uint256 id = _armAlice(0);
+        vm.warp(block.timestamp + LIFETIME);
+        vm.expectEmit(true, true, true, true, address(exitC));
+        emit NoticeExit.WatchExpired(id);
+        vm.expectEmit(true, true, true, true, address(exitC));
+        emit NoticeExit.WatchCancelled(id, alice, address(vault));
+        vm.prank(carol);
+        exitC.expire(id);
+        assertEq(_status(id), exitC.STATUS_EXPIRED());
+        assertEq(exitC.activeWatchOf(alice, address(vault)), 0);
+        assertEq(vault.balanceOf(alice), DEPOSIT, "expiry moves no shares");
+        vm.prank(alice);
+        exitC.arm(address(vault), NoticeKinds.DEFAULT, 0, type(uint256).max);
+    }
+
+    function test_expire_refuses_before_lifetime() public {
+        uint256 id = _armAlice(0);
+        uint256 at = block.timestamp + LIFETIME;
+        vm.warp(at - 1);
+        vm.expectRevert(abi.encodeWithSelector(NoticeExit.WatchNotExpired.selector, id, at));
+        vm.prank(carol);
+        exitC.expire(id);
+        assertEq(_status(id), exitC.STATUS_ACTIVE());
+    }
+
+    function test_expire_refuses_ended_watch() public {
+        uint256 id = _armAlice(0);
+        vm.prank(alice);
+        exitC.cancel(id);
+        vm.warp(block.timestamp + LIFETIME);
+        vm.expectRevert(abi.encodeWithSelector(NoticeExit.WatchNotActive.selector, id));
+        exitC.expire(id);
+        assertEq(_status(id), exitC.STATUS_CANCELLED());
+    }
+
+    function test_exit_refuses_expired_watch() public {
+        uint256 id = _armAlice(0);
+        vm.warp(block.timestamp + LIFETIME);
+        exitC.expire(id);
+        vm.expectRevert(abi.encodeWithSelector(NoticeExit.WatchNotActive.selector, id));
+        _deliver(id, _adapterCall(address(0xA1)));
+        assertEq(vault.balanceOf(alice), DEPOSIT);
+    }
+
+    // ---------------------------------------------------------------- fee reserve
+
+    function test_cover_debt_pays_the_proxy() public {
+        vm.deal(address(exitC), 1 ether);
+        proxy.setDebt(address(exitC), 0.4 ether);
+        uint256 before = address(proxy).balance;
+        vm.prank(carol);
+        exitC.coverDebt();
+        assertEq(address(proxy).balance - before, 0.4 ether);
+        assertEq(proxy.debt(address(exitC)), 0);
+        assertEq(address(exitC).balance, 0.6 ether);
     }
 
     // ---------------------------------------------------------------- fuzz
@@ -523,6 +674,6 @@ contract NoticeExitTest is NoticeSetup {
 
     function test_exit_selector_matches_interface() public pure {
         assertEq(NoticeExit.exit.selector, INoticeExit.exit.selector);
-        assertEq(NoticeExit.exit.selector, bytes4(keccak256("exit(address,uint256,bytes,uint256,uint8)")));
+        assertEq(NoticeExit.exit.selector, bytes4(keccak256("exit(address,uint256,address,bytes,uint256,uint8)")));
     }
 }

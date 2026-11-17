@@ -95,4 +95,27 @@ contract HelloTest is Network {
         assertEq(sys.callbackCount(), 0);
         assertEq(sys.reverts(), 0);
     }
+
+    /// @dev Anyone can make the callback contract settle a debt to the proxy from its own fee reserve.
+    function test_cover_debt_pays_the_proxy() public {
+        vm.deal(address(callback), 1 ether);
+        proxy.setDebt(address(callback), 0.25 ether);
+        uint256 before = address(proxy).balance;
+        vm.prank(address(0xC0FFEE));
+        callback.coverDebt();
+        assertEq(address(proxy).balance - before, 0.25 ether);
+        assertEq(proxy.debt(address(callback)), 0);
+        assertEq(address(callback).balance, 0.75 ether);
+    }
+
+    function test_reactive_cover_debt_pays_the_system_contract() public {
+        vm.deal(address(reactive), 1 ether);
+        sys.setDebt(address(reactive), 0.1 ether);
+        uint256 before = address(sys).balance;
+        vm.prank(address(0xC0FFEE));
+        reactive.coverDebt();
+        assertEq(address(sys).balance - before, 0.1 ether);
+        assertEq(sys.debt(address(reactive)), 0);
+        assertEq(address(reactive).balance, 0.9 ether);
+    }
 }

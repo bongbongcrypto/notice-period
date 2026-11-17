@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Deploys the hello-world pair: HelloOrigin and HelloCallback on Base Sepolia, HelloReactive on Lasna.
 # Order (no setter anywhere): origin -> compute the callback's address -> reactive -> callback, then check the
-# callback landed on the computed address.
+# callback landed on the computed address, and only then funds the reactive contract and the callback and settles
+# any debt they ran up while empty. Nothing is sent to a contract before the wiring is checked.
 #
 # Environment: BASE_RPC, LASNA_RPC, CALLBACK_PROXY, DEPLOY_KEY,
 #   REACTIVE_FUND (lREACT sent to HelloReactive, whole coins), CALLBACK_FUND (Base ETH sent to HelloCallback),
@@ -31,16 +32,21 @@ read -r origin origin_tx <<<"$res"
 predicted_callback="$(next_address "$BASE_RPC")"
 echo "HelloCallback will be at $predicted_callback"
 
-res="$(deploy "$LASNA_RPC" "HelloReactive (Lasna)" src/hello/HelloReactive.sol:HelloReactive "$reactive_fund" \
+res="$(deploy "$LASNA_RPC" "HelloReactive (Lasna)" src/hello/HelloReactive.sol:HelloReactive 0 \
   --constructor-args "$BASE_CHAIN_ID" "$origin" "$predicted_callback")"
 read -r reactive reactive_tx <<<"$res"
 
-res="$(deploy "$BASE_RPC" "HelloCallback (Base Sepolia)" src/hello/HelloCallback.sol:HelloCallback "$callback_fund" \
+res="$(deploy "$BASE_RPC" "HelloCallback (Base Sepolia)" src/hello/HelloCallback.sol:HelloCallback 0 \
   --constructor-args "$CALLBACK_PROXY" "$reactive")"
 read -r callback callback_tx <<<"$res"
 
 same_address "$callback" "$predicted_callback" \
   || die "HelloCallback landed at $callback, not at the computed $predicted_callback: the reactive contract points elsewhere"
+
+send "$LASNA_RPC" "fund HelloReactive" "$reactive" --value "$reactive_fund" >/dev/null
+send "$BASE_RPC" "fund HelloCallback" "$callback" --value "$callback_fund" >/dev/null
+send "$LASNA_RPC" "HelloReactive.coverDebt" "$reactive" 'coverDebt()' >/dev/null
+send "$BASE_RPC" "HelloCallback.coverDebt" "$callback" 'coverDebt()' >/dev/null
 
 summary "### Hello-world deployment"
 summary ""

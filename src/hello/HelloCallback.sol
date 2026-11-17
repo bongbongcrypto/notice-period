@@ -17,6 +17,11 @@ contract HelloCallback is AbstractCallback {
 
     constructor(IPayable callbackProxy_, address reactive_) payable AbstractCallback(callbackProxy_, reactive_) { }
 
+    /// @notice Settles debt to the callback proxy from this contract's balance. Open to anyone.
+    function coverDebt() external {
+        _coverDebt();
+    }
+
     function pong(address reactive_, uint256 originTxHash_, uint256 nonce_, address pinger_)
         external
         onlyServiceProvider

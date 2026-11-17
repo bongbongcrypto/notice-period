@@ -31,25 +31,37 @@ def add(id_, rule, file, old, new, contract, test):
 
 # ---------------------------------------------------------------- exit contract (origin chain)
 add("exit-only-proxy", "exit() only from the callback proxy", X,
-    "        onlyServiceProvider\n        onlyCallbackSender(sender_)",
-    "        onlyCallbackSender(sender_)",
+    "external onlyServiceProvider onlyCallbackSender(sender_) nonReentrant {",
+    "external onlyCallbackSender(sender_) nonReentrant {",
     E, "test_exit_refuses_direct_caller")
 add("exit-only-our-reactive", "exit() only on request of our reactive contract", X,
-    "        onlyCallbackSender(sender_)\n        nonReentrant",
-    "        nonReentrant",
+    "external onlyServiceProvider onlyCallbackSender(sender_) nonReentrant {",
+    "external onlyServiceProvider nonReentrant {",
     E, "test_exit_refuses_wrong_reactive_identity")
-add("exit-reentrancy-guard", "no re-entry during exit()", X,
-    "        onlyCallbackSender(sender_)\n        nonReentrant\n    {",
-    "        onlyCallbackSender(sender_)\n    {",
-    E, "test_attack_reentrancy_through_token_is_blocked")
+# Reentrancy: an owner's contract wallet calls back while the redeem pays it, so only the guard stops the call.
+add("exit-reentrancy-guard", "no exit() from inside exit()", X,
+    "external onlyServiceProvider onlyCallbackSender(sender_) nonReentrant {",
+    "external onlyServiceProvider onlyCallbackSender(sender_) {",
+    E, "test_reentry_into_exit_is_blocked")
 add("arm-reentrancy-guard", "no arm() from inside exit()", X,
     "        external\n        nonReentrant\n        returns (uint256 watchId)",
     "        external\n        returns (uint256 watchId)",
-    E, "test_attack_reentrancy_into_arm_is_blocked")
+    E, "test_reentry_into_arm_is_blocked")
 add("cancel-reentrancy-guard", "no cancel() from inside exit()", X,
     "function cancel(uint256 watchId_) external nonReentrant {",
     "function cancel(uint256 watchId_) external {",
-    E, "test_attack_reentrancy_through_token_is_blocked")
+    E, "test_reentry_into_cancel_is_blocked")
+add("expire-reentrancy-guard", "no expire() from inside exit()", X,
+    "function expire(uint256 watchId_) external nonReentrant {",
+    "function expire(uint256 watchId_) external {",
+    E, "test_reentry_into_expire_is_blocked")
+add("expire-only-active", "expire only an active watch", X,
+    "        if (w.status != STATUS_ACTIVE) revert WatchNotActive(watchId_);\n        uint256 expiresAt",
+    "        uint256 expiresAt",
+    E, "test_expire_refuses_ended_watch")
+add("expire-after-lifetime", "expire only after LIFETIME", X,
+    "if (block.timestamp < expiresAt) revert WatchNotExpired(watchId_, expiresAt);", "",
+    E, "test_expire_refuses_before_lifetime")
 add("arm-unknown-vault", "arm only on vaults of our factory", X,
     "if (!REGISTRY.isVault(vault_)) revert UnknownVault(vault_);", "",
     E, "test_arm_refuses_unknown_vault")
@@ -88,23 +100,18 @@ add("cancel-only-active", "cancel only an active watch", X,
     "        w.status = STATUS_CANCELLED;",
     E, "test_cancel_refuses_twice")
 add("exit-only-active", "exit only an active watch (replay)", X,
-    "        if (w.status != STATUS_ACTIVE) revert WatchNotActive(watchId_);\n        bytes4 selector = bytes4(data_);",
-    "        bytes4 selector = bytes4(data_);",
+    "        if (w.status != STATUS_ACTIVE) revert WatchNotActive(watchId_);\n        if (w.vault != vault_)",
+    "        if (w.vault != vault_)",
     E, "test_exit_refuses_replay")
+add("exit-vault-bound", "exit only for the watch's own vault", X,
+    "if (w.vault != vault_) revert WrongVault(watchId_, vault_);", "",
+    E, "test_exit_refuses_wrong_vault")
 add("exit-ends-watch-first", "a watch exits at most once", X,
-    "        w.status = STATUS_ENDED;\n", "",
+    "        w_.status = STATUS_ENDED;\n", "",
     E, "test_exit_refuses_second_exit_of_same_watch")
 add("exit-kind-watched", "exit only for a watched kind", X,
     "if (NoticeKinds.kindOf(selector) & w.kinds == 0) revert KindNotWatched(selector);", "",
     E, "test_exit_refuses_unwatched_kind")
-add("exit-pending-recheck", "mode 1 re-checks that the change is still pending", X,
-    "w.mode == MODE_IF_PENDING && reason_ == REASON_DEADLINE && IExitVault(vault).executableAt(data_) == 0",
-    "false",
-    E, "test_exit_if_pending_does_nothing_after_vault_revoke")
-add("exit-recheck-deadline-only", "only a Deadline exit is re-checked (others may carry the selector alone)", X,
-    "w.mode == MODE_IF_PENDING && reason_ == REASON_DEADLINE && ",
-    "w.mode == MODE_IF_PENDING && ",
-    E, "test_exit_if_pending_leave_at_once_reason_skips_recheck")
 add("exit-receiver-is-owner", "redeem pays the watch owner only", X,
     "redeem(shares_, owner_, owner_)", "redeem(shares_, msg.sender, owner_)",
     E, "test_exit_redeems_to_owner")
@@ -136,6 +143,15 @@ add("react-exit-source", "watches only from our exit contract", R,
     "if (log_.contractAddress == EXIT) {",
     "if (log_.contractAddress == EXIT || log_.topic0 == WATCH_ARMED_TOPIC) {",
     NR, "test_watch_armed_from_another_contract_is_ignored")
+add("armed-shape", "a WatchArmed must have its real topic count", R,
+    "log_.topic0 == WATCH_ARMED_TOPIC && log_.opCode == 4", "log_.topic0 == WATCH_ARMED_TOPIC",
+    NR, "test_watch_armed_with_wrong_topic_count_is_ignored")
+add("cancelled-shape", "a WatchCancelled must have its real topic count", R,
+    "log_.topic0 == WATCH_CANCELLED_TOPIC && log_.opCode == 4", "log_.topic0 == WATCH_CANCELLED_TOPIC",
+    NR, "test_watch_cancelled_with_wrong_topic_count_is_ignored")
+add("revoke-shape", "a Revoke must have its real topic count", R,
+    "log_.topic0 == NoticeKinds.REVOKE_TOPIC && log_.opCode == 3", "log_.topic0 == NoticeKinds.REVOKE_TOPIC",
+    NR, "test_revoke_with_wrong_topic_count_is_ignored")
 add("react-submit-shape", "a Submit must have its real topic count", R,
     "log_.topic0 == NoticeKinds.SUBMIT_TOPIC && log_.opCode == 2", "log_.topic0 == NoticeKinds.SUBMIT_TOPIC",
     NR, "test_unknown_logs_are_counted_not_reverted")
@@ -188,14 +204,24 @@ add("wait-pending-full", "too many stored changes: leave at once", R,
     "if (w_.pendingCount >= MAX_PENDING) return R_PENDING_FULL;", "",
     NR, "test_leaves_at_once_when_pending_full")
 add("tick-budget", "ticks count toward the budget", R,
-    "if (w.reactions > MAX_REACTIONS) reason = R_BUDGET;", "if (false) reason = R_BUDGET;",
+    "else if (w.reactions > MAX_REACTIONS) reason = R_BUDGET;", "else if (false) reason = R_BUDGET;",
     NB, "test_ticks_count_toward_budget")
 add("tick-deadline", "leave shortly before the change can run", R,
-    "else if (uint256(p.executableAt) <= block.timestamp + LEAD) reason = R_DEADLINE;", "",
+    "if (at <= block.timestamp + LEAD) reason = R_DEADLINE;", "if (false) reason = R_DEADLINE;",
     NR, "test_pending_mode_waits_then_exits_shortly_before_deadline")
 add("tick-one-exit", "at most one exit per tick", R,
-    "if (fired) continue; // at most one exit per tick (gas cap per reactive transaction)", "",
+    "            if (at < pickAt) {\n                pick = id;",
+    "            if (at < pickAt) {\n                _fireStored(id, w, reason);\n                pick = id;",
     NR, "test_one_exit_per_tick")
+add("tick-urgency", "the change that can run first leaves first", R,
+    "if (at < pickAt) {", "if (pickReason == 0) {",
+    NR, "test_tick_fires_most_urgent_first")
+add("revoke-budget", "the budget also ends a watch spammed through Revoke", R,
+    "if (w.reactions > MAX_REACTIONS) _fireOverBudget(id, w, log_.txHash);", "",
+    NR, "test_unwatched_revoke_spam_is_bounded_by_budget")
+add("revoke-mode-only", "a Revoke bills only leave-if-still-pending watches", R,
+    "if (w.status != ST_ARMED || w.mode != MODE_IF_PENDING) continue;", "if (w.status != ST_ARMED) continue;",
+    NR, "test_revoke_does_not_bill_a_leave_now_watch")
 add("submit-malformed", "a malformed Submit is counted, never decoded blindly", R,
     "if (!ok || log_.data.length < 64) {", "if (false) {",
     NR, "test_malformed_submit_is_counted_not_reverted")

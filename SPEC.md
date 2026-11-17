@@ -59,15 +59,18 @@ owner actions that take effect at once and emit no `Submit`, so no watch can fle
 | any action that moves the token | — | the token's own revert data is passed on unchanged; `TransferFailed()` if the token reverts with no data or answers `false` |
 | `constructor(asset, curator, timelock)` | the factory | `ZeroAddress()` if `asset` or `curator` is 0 |
 
-`DemoVaultFactory`: `constructor(asset)` refuses `asset` 0 with `ZeroAddress()`; `create()` is open to anyone
-and makes the caller the curator of a new vault.
+`DemoVaultFactory`: `constructor(asset, timelock)` refuses `asset` 0 with `ZeroAddress()` and gives every vault
+it makes that starting timelock (180 s in the demo deployment); `create()` is open to anyone and makes the
+caller the curator of a new vault.
 
 `DemoToken` (ours, test token, 6 decimals): `mint(to, amount)` is open to anyone, at most 1,000 tokens per
 call: `MintTooLarge(amount, max)`, `ZeroAddress()` for receiver 0. `transfer`, `transferFrom`:
 `ZeroAddress()` for receiver 0, `InsufficientBalance()`, `InsufficientAllowance()`.
 
-Every curator selector starts with a 180-second timelock. A `decreaseTimelock(sel, x)` waits for the
-current timelock of `sel`, as in Vault V2. Each vault has its own curator (the address that created it),
+Every curator selector except `decreaseTimelock` starts with the factory's timelock (180 s). As in Vault V2,
+`decreaseTimelock` has no timelock of its own: `decreaseTimelock(sel, x)` waits for the current timelock of
+`sel`, and neither `increaseTimelock` nor `decreaseTimelock` can target the `decreaseTimelock` selector
+(`AutomaticallyTimelocked()`). Each vault has its own curator (the address that created it),
 so one visitor's curator action is an event on their own vault only and cannot touch a watch on another
 visitor's vault.
 
@@ -81,7 +84,13 @@ virtual asset: `shares = assets * (supply + 1) / (totalAssets + 1)`.
 |---|---|---|
 | `arm(vault, kinds, mode, maxShares)` | any share owner, for their own shares only (the owner is always `msg.sender`) | `Reentrancy()`; `UnknownVault(vault)` if the factory did not make it; `NoKinds()`; `UnknownKinds(kinds)` for bits above 8; `BadMode(mode)` for a mode other than 0 or 1; `ZeroMaxShares()`; `NoShares()`; `NoAllowance()` if the owner has not approved this contract for any shares; `AlreadyWatching(watchId)` if the owner already has an active watch on this vault; `DailyCapForAddress()`; `DailyCapReached()` |
 | `cancel(watchId)` | the watch owner | `Reentrancy()`; `NotWatchOwner()`; `WatchNotActive(watchId)` |
-| `exit(sender, watchId, data, originTxHash, reason)` | the callback proxy only, and only when the network-injected `sender` is our reactive contract | `NotAuthorized(msg.sender, proxy)` for any other caller; `CallbackNotAuthorized(sender, reactive)` for any other reactive contract; `Reentrancy()`; `WatchNotActive(watchId)` for an unknown, cancelled or finished watch (this is what stops a replay or a second exit); `KindNotWatched(selector)` if `data` is not a kind this watch chose; `AssetsNotReceived(expected, received)` if the owner did not receive the assets the vault reported |
+| `expire(watchId)` | anyone, once `LIFETIME` (1 day in the demo deployment) has passed since the arm | `Reentrancy()`; `WatchNotActive(watchId)`; `WatchNotExpired(watchId, expiresAt)` before `armedAt + LIFETIME`. Sets status `Expired` (4), emits `WatchExpired` and `WatchCancelled` (so Lasna drops it like a cancel). Moves no shares |
+| `exit(sender, watchId, vault, data, originTxHash, reason)` | the callback proxy only, and only when the network-injected `sender` is our reactive contract | `NotAuthorized(msg.sender, proxy)` for any other caller; `CallbackNotAuthorized(sender, reactive)` for any other reactive contract; `Reentrancy()`; `WatchNotActive(watchId)` for an unknown, cancelled, expired or finished watch (this is what stops a replay or a second exit); `WrongVault(watchId, vault)` if `vault` is not the watch's vault; `KindNotWatched(selector)` if `data` is not a kind this watch chose (empty `data` reads as selector 0); `AssetsNotReceived(expected, received)` if the owner did not receive the assets the vault reported |
+| `coverDebt()` | anyone | pays the proxy's recorded debt of this contract from its fee reserve; `InsufficientFunds(required, available)` if the reserve is short |
+
+`constructor(proxy, reactive, registry, armsPerAddressPerDay, armsPerDay, lifetime)`: all immutable. The
+payload carries the vault the reactive contract recorded for the watch, so a payload built for one vault can
+never end a watch on another.
 
 A refused `exit` reverts and changes nothing. An `exit` that is accepted always ends the watch, with one
 of these outcomes in `WatchEnded`:
@@ -90,7 +99,7 @@ of these outcomes in `WatchEnded`:
 |---|---|---|
 | `Redeemed` | 0 | Shares redeemed, assets in the owner's wallet |
 | `NothingToRedeem` | 1 | The owner holds no shares or allows none to this contract |
-| `ChangeNotPending` | 2 | Mode "leave if still pending", reason `Deadline`, and the vault says the change is no longer pending (revoked or already run) |
+| (retired) | 2 | Was `ChangeNotPending`: Base Sepolia no longer asks the vault again (section 6). The code is not reused |
 | `RedeemFailed` | 3 | The vault's `redeem` reverted (for example short of liquidity). The revert data is in `RedeemReverted`. Shares stay with the owner |
 
 ### NoticeReactive
@@ -98,6 +107,10 @@ of these outcomes in `WatchEnded`:
 Only the system contract (`0x8888…8888`) can call `react()`; anyone else gets `NotAuthorized(sender,
 system)`. `react()` never reverts on an event it does not want, because a revert is billed: it counts the
 event and returns. Anyone can send it lREACT or call `coverDebt()`. Nobody can take lREACT out.
+`HelloReactive` and `HelloCallback` have the same open `coverDebt()`.
+
+`WatchArmed` and `WatchCancelled` are taken only with four topics, `Submit` only with two, `Revoke` only with
+three (the topic count is the log's `opCode`); any other count is counted in `unknownEvents`.
 
 A `WatchArmed` it cannot take is refused with `WatchRefused(watchId, code)`, checked in this order: 1 bad kinds
 (none, or bits above 8), 2 bad mode, 3 too many active watches, 4 vault full (section 9). A `Submit` or
@@ -119,8 +132,10 @@ contract checks that the owner's asset balance rose by at least the amount the v
 whole callback reverts. NoticeExit never holds shares or tokens: they go straight from the vault to the
 owner.
 
-An allowance larger than the watch is safe: only `maxShares` is redeemed, and no other function can use
-the allowance. To stop all exits a user can cancel, or set the share allowance to zero.
+An allowance larger than the watch does not let one exit take more than `maxShares`, and no other function
+can use the allowance. It does outlive the watch: the leftover stays approved until the owner lowers it, and a
+later watch by the same owner can use it. The page therefore approves exactly `maxShares`. To stop all exits a
+user can cancel, or set the share allowance to zero.
 
 ## 6. The two modes
 
@@ -129,11 +144,19 @@ contract asks for the exit at once (reason 1, `Scheduled`) and ends the watch.
 
 **Mode 1, "leave if still pending".** When the vault emits `Submit` for a watched kind, the reactive
 contract stores the change (hash of `data`, `data`, `executableAt`, the origin transaction hash) and turns
-on a CRON tick (Cron10, about every 10.7 s on Lasna). On each tick, if a stored change is due
-(`executableAt - LEAD <= now`, with `LEAD` 60 s in the demo deployment) it asks for the exit (reason 2,
-`Deadline`). On Base Sepolia the exit contract asks the vault once more whether the change is still
-pending; if not, the watch ends with `ChangeNotPending` and nothing moves. Only a `Deadline` exit is
-re-checked: every other reason below means "leave at once", and its payload may hold the selector alone.
+on a CRON tick (Cron10, about every 10.7 s on Lasna). On each tick every watch that stores a change is
+billed one reaction; a watch is due when its earliest stored change has `executableAt <= now + LEAD`
+(reason 2, `Deadline`) or when it has used its reaction budget (reason 7, `Budget`). Of the due watches, the
+one whose change can run first gets its exit asked for; the others wait for the next tick (one exit per
+tick, because an exit releases filters, the costly part of a reaction). `LEAD` is 120 s in the demo
+deployment: it covers `MAX_ACTIVE` (8) ticks of about 10.7 s, so even 8 watches due together are all served,
+plus the callback's trip to Base Sepolia (`test/Timing.t.sol`).
+
+"Still pending" is decided on Lasna only. The exit contract does not ask the vault again: an exit asked for is
+carried out. A decoy is why: a curator could store a decoy change and a real one, wait for the public
+`ExitRequested` of the decoy and revoke the decoy before the callback lands; a re-check on Base Sepolia would
+then keep the depositor in while the real change stays pending (review finding, pinned by
+`test_decoy_revoked_after_the_tick_does_not_disarm_the_watch`).
 
 A vault revoke of a stored change removes it (matched by the hash of the full `data`, so revoking one
 change does not disarm another change of the same kind). When a watch has no stored change left it stops
@@ -144,26 +167,32 @@ The exit is asked for at once, instead of waiting, when (reason code in brackets
 - the change is due later than `MAX_WAIT` (900 s in the demo deployment), which would cost too many ticks (4, `WaitTooLong`);
 - `data` is longer than 256 bytes (5, `DataTooLong`);
 - the watch already stores `MAX_PENDING` (3) changes (6, `PendingFull`);
-- the watch has used its reaction budget while a change is pending (7, `Budget`).
+- the watch has used its reaction budget (7, `Budget`), on a `Submit`, a `Revoke` or a tick.
 
 All of these protect the depositor: when the contract cannot afford to wait, it leaves.
 
-Race between a vault revoke and the tick: if the revoke reaches the reactive contract first, nothing is
-sent. If the tick fires first, the exit is on its way; the exit contract then asks the vault, and if the
-revoke landed on Base Sepolia before the callback, the watch ends with `ChangeNotPending` and nothing
-moves. A revoke that lands after the redeem is too late: the depositor has left. A curator who revokes in
-the last `LEAD` seconds may therefore still see the depositor leave.
+Race between a vault revoke and the tick: if the revoke reaches the reactive contract first, the change is
+removed and nothing is sent. If the tick fires first, the exit is on its way and is carried out, whatever the
+vault says by then. So a curator who revokes in the last `LEAD` seconds may still see the depositor leave,
+and a mode-1 watch ends with every fire: once a depositor has left, a new change needs a new watch.
+
+A `Revoke` of any kind reaches every mode-1 watch on the vault (one `Revoke` filter per vault, see section 8)
+and is billed to each as a reaction. When that pushes a watch over its budget, the watch leaves (reason 7)
+with its earliest stored change, or with the selector of its first watched kind when it stores none. A
+mode-0 watch is never billed for a `Revoke`.
 
 ## 7. Order of operations
 
 Deployment (no owner setter: the circular dependency is broken by computing the next contract address):
 1. Base Sepolia: `DemoToken`, then `DemoVaultFactory`.
 2. Read the deployer's Base Sepolia nonce `n`; the exit contract will live at `CREATE(deployer, n)`.
-3. Lasna: `NoticeReactive` with that address, funded with lREACT at deployment. Its constructor subscribes
-   to `WatchArmed` and `WatchCancelled` of that address.
-4. Base Sepolia: `NoticeExit` with the reactive contract's address. The workflow stops if the address is not
-   the one computed in step 2.
-5. Fund `NoticeExit` with a little Base Sepolia ETH; the callback proxy takes callback fees from it.
+3. Lasna: `NoticeReactive` with that address, sent no value. Its constructor subscribes to `WatchArmed` and
+   `WatchCancelled` of that address.
+4. Base Sepolia: `NoticeExit` with the reactive contract's address, sent no value. The workflow stops if the
+   address is not the one computed in step 2, or if the read-back wiring differs.
+5. Only then: send lREACT to `NoticeReactive` and a little Base Sepolia ETH to `NoticeExit` (the callback
+   proxy takes callback fees from it), and call `coverDebt()` on both in case either ran up a debt while
+   empty. The hello-world deployment follows the same order.
 
 A watch, "leave now":
 1. Depositor: `factory.create()` (own vault), `token.mint`, `token.approve(vault)`, `vault.deposit`.
@@ -184,6 +213,11 @@ The origin transaction hash travels in the payload and is an indexed topic of bo
 | (84532, NoticeExit, `WatchCancelled`, any, any, any) | constructor | never |
 | (84532, vault, `Submit`, selector, any, any), one per selector of the watched kinds | arming | when the last watch that needs it ends |
 | (84532, vault, `Revoke`, any, any, any), mode 1 only | arming | when the last mode-1 watch on that vault ends |
+
+The `Revoke` filter takes any selector on purpose. `Revoke` carries the selector in `topic2`, so one filter per
+watched selector would be possible, but it would double the subscriptions of a mode-1 watch (up to 5 more per
+watch, each a costly subscribe and unsubscribe inside a reaction). The price is that revokes of unwatched kinds
+reach mode-1 watches; the reaction budget bounds what that can cost (section 9).
 | (5318007, `0x…fffFfF`, `Cron10`, any, any, any) | first stored change of any watch | when no watch stores a change |
 
 A real Cron10 log read on Lasna (2026-11-17) carries its counter as indexed `topic1` and empty data, not in data
@@ -214,10 +248,11 @@ unknown topic) are counted in `unknownEvents` and ignored.
 | Arms per address per UTC day | NoticeExit | 2 | One visitor's spend |
 | Arms per UTC day, all addresses | NoticeExit | 10 | Total daily spend |
 | One active watch per owner and vault | NoticeExit | 1 | Duplicate watches |
+| Watch lifetime (`LIFETIME`) | NoticeExit | 1 day | How long an unused watch can hold a place: after it, anyone can `expire` it |
 | Active watches | NoticeReactive | 8 | Work per tick and per event |
 | Watches per vault | NoticeReactive | 3 | Work per `Submit` |
 | Stored changes per watch | NoticeReactive | 3 | Work per tick |
-| Reactions per watch (events about its vault plus ticks while it stores a change) | NoticeReactive | 80 | Spam of submit and revoke on one vault |
+| Reactions per watch (mode 1: every `Submit` of a watched kind, every `Revoke` on its vault, every tick while it stores a change; mode 0 leaves on its first reaction) | NoticeReactive | 80 | Spam of submit and revoke on one vault; ends with an exit, never by dropping the watch |
 | Exits per tick | NoticeReactive | 1 | Gas per tick (900,000 cap per reactive transaction) |
 | Callback gas limit | NoticeReactive | 600,000 | Gas paid by NoticeExit per exit |
 
@@ -226,7 +261,10 @@ can cancel it on Base Sepolia and arm again later.
 
 Computed, not measured: about 0.013 lREACT per reactive transaction plus about 0.05 per arming. With 80
 reactions per watch, one watch costs at most about 1.5 lREACT, and the 10 arms a day at most about 15
-lREACT a day. The real figures come from the first on-chain runs.
+lREACT a day. Two costs are outside this bound and must be watched on the live float: stray events after a
+silent unsubscribe (counted in `strayEvents`, billed by the network), and callbacks that anyone can make the
+proxy bill to `NoticeExit` through their own reactive contracts (section 11). The real figures come from the
+first on-chain runs.
 
 ## 10. Events
 
@@ -259,11 +297,19 @@ lREACT a day. The real figures come from the first on-chain runs.
 - The demo pays for watches from an operator float; user-paid watches are later scope.
 - One origin chain (Base Sepolia) in this version.
 - The exit runs in seconds, not in the same block. A change with no timelock cannot be fled.
-- The check that the change is still pending is made on Base Sepolia when the callback lands. The vault
-  answers "not pending" both after a revoke and after the change has run, so a `Deadline` exit that lands
-  after the change already ran ends with `ChangeNotPending` and the depositor stays in. That needs the
-  change to run within `LEAD` (60 s) of its time and before the callback lands; a mode-1 watch accepts this
-  risk, mode 0 does not have it (pinned by `test_exit_if_pending_stays_when_change_already_ran`).
+- Mode 1 decides "still pending" on Lasna and is not re-checked on Base Sepolia (section 6). The cost: a
+  depositor can leave on a change the curator revoked in the seconds between the tick and the callback.
+- A change scheduled before the watch was armed is never seen: the watch only learns about `Submit` events
+  after its filters exist. The page must show the vault's pending changes before arming.
+- Anyone can fill the daily arm caps and the active-watch cap with watches of their own (one share is
+  enough). `expire` frees a place after `LIFETIME`, so the lockout is not permanent, but many addresses can
+  still use up a day's arms. This comes with an operator-paid demo; user-paid watches are later scope.
+- Anyone can deploy their own reactive contract and ask for callbacks to `NoticeExit`. They are refused
+  (`CallbackNotAuthorized`), but the proxy may still bill the failed call to `NoticeExit`'s fee reserve
+  (not yet measured). The reserve is small and refillable; `coverDebt()` settles debt, and the float watch
+  must read the proxy's `debt(NoticeExit)`.
+- Stray events after a silent unsubscribe are billed by the network and cannot be refused by the contract;
+  they are counted (`strayEvents`) and alerted on.
 - "No server, no key that can send the funds elsewhere": the exit right exists only through the vault's own
   event, the network's callback, and a redeem whose receiver is fixed to the owner.
 - If an exit callback reverts on Base Sepolia (`AssetsNotReceived`, or a failure of the callback itself), the
@@ -281,9 +327,12 @@ fixture tests.
 
 Checks in CI on every push: unit and attack tests (each refusal test next to a sibling call that succeeds), fuzz
 tests, an invariant run with random visitor, curator, clock and attacker actions (the exit contract never
-holds tokens or shares, tokens go only to their depositor, both chains agree on each watch's status, the CRON
+holds tokens or shares, tokens go only to their depositor, no visitor's wallet plus shares is ever worth more
+than they put in (rounding aside), both chains agree on each watch's status, the CRON
 subscription exists exactly while a change is stored, `react()` never reverts, every reaction fits the gas
-cap, padded curator calls included), a mutation check that removes
+cap, padded curator calls included; actions include deposits and watches in other visitors' vaults, revoke
+spam of unwatched kinds, a revoke or run of a change between a tick and its callback, expiry, and callbacks
+naming the wrong vault), a mutation check that removes
 each refusal rule in turn and requires its named test to fail (`scripts/mutations.py`), and a dry run of the
 deploy and loop scripts on two local anvil chains with the mock network contracts at the real addresses and a
 relay script that plays the network.
@@ -292,8 +341,13 @@ Gas, as far as a simulation can show it: the mock system contract measures the g
 out its own bookkeeping, adds what the real system contract would spend on a callback request, and counts every
 reaction above 900,000 (`overGasLimit`, required 0 in tests, invariants and the dry run). The mock proxy runs
 each callback with the gas limit the reactive contract asked for. Padded calls of 4 KB, 32 KB and 100 KB on a
-vault with three watches in both modes stay under the cap (`test/Padding.t.sol`). Not modelled: the real cost
-of `subscribe` and `unsubscribe`, and whether the network's cap also counts the calldata of a large log.
+vault with three watches in both modes stay under the cap (`test/Padding.t.sol`), and so does a padded `Revoke` that ends a watch over its budget.
+Each `subscribe` and `unsubscribe` is charged a modelled 60,000 gas (an estimate from Lasna transactions, not
+the network's code), whether the mock spent more or less. Not modelled: whether the network's cap also counts
+the calldata of a large log.
+
+Fees: both mocks keep a debt per contract that a test sets and a payment settles, so `coverDebt()` is tested
+against a non-zero debt. How the real proxy and system contract record and bill debt is not shown.
 
 Not shown until the real loop runs on Lasna and Base Sepolia: that the network injects our reactive
 contract's address (day-1 reading: yes, on chain), how soon a subscription added inside `react()` catches

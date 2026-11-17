@@ -19,6 +19,7 @@ contract NoticeHandler is NoticeSetup {
 
     uint256 public ghostBreaches; // an attack call that succeeded
     uint256 public ghostExpectedFailedCallbacks; // forged deliveries, each must fail
+    uint256 public ghostOps; // actions that can round (each leaves at most 1 unit of an asset to other holders)
     uint256 internal _salt;
 
     constructor() {
@@ -45,6 +46,7 @@ contract NoticeHandler is NoticeSetup {
         uint256 i = who_ % 3;
         amount_ = bound(amount_, 1, 1_000e6);
         minted[actors[i]] += amount_;
+        ghostOps += 1;
         _deposit(actors[i], vaults[i], amount_);
         _pump(address(reactive));
     }
@@ -57,6 +59,30 @@ contract NoticeHandler is NoticeSetup {
         _approveExit(a, vaults[i], maxShares_ % 3 == 0 ? cap / 2 + 1 : type(uint256).max);
         vm.prank(a);
         try exitC.arm(address(vaults[i]), kinds, pending_ ? 1 : 0, cap) { } catch { }
+        _pump(address(reactive));
+    }
+
+    /// @notice A visitor also deposits into another visitor's vault and arms a watch there (several depositors
+    ///         per vault, so an exit that paid the wrong owner would show).
+    function crossArm(uint256 who_, uint256 target_, uint256 amount_, bool pending_) external recorded {
+        uint256 i = who_ % 3;
+        uint256 t = (i + 1 + target_ % 2) % 3;
+        amount_ = bound(amount_, 1, 1_000e6);
+        minted[actors[i]] += amount_;
+        ghostOps += 1;
+        _deposit(actors[i], vaults[t], amount_);
+        _approveExit(actors[i], vaults[t], type(uint256).max);
+        vm.prank(actors[i]);
+        try exitC.arm(address(vaults[t]), NoticeKinds.DEFAULT, pending_ ? 1 : 0, type(uint256).max) { } catch { }
+        _pump(address(reactive));
+    }
+
+    /// @notice Anyone ends a watch armed at least LIFETIME ago.
+    function expireOne(uint256 id_) external recorded {
+        uint256 next = exitC.nextWatchId();
+        if (next == 1) return;
+        uint256 id = bound(id_, 1, next - 1);
+        try exitC.expire(id) { } catch { }
         _pump(address(reactive));
     }
 
@@ -73,6 +99,7 @@ contract NoticeHandler is NoticeSetup {
         uint256 i = who_ % 3;
         uint256 shares = vaults[i].balanceOf(actors[i]);
         if (shares == 0) return;
+        ghostOps += 1;
         vm.prank(actors[i]);
         try vaults[i].redeem(shares, actors[i], actors[i]) { } catch { }
         _pump(address(reactive));
@@ -136,6 +163,50 @@ contract NoticeHandler is NoticeSetup {
         _pump(address(reactive));
     }
 
+    /// @notice Submit and revoke of a kind nobody watches: reaches only "leave if still pending" watches, through
+    ///         the vault's one Revoke filter.
+    function unwatchedSpam(uint256 who_, uint256 n_) external recorded {
+        uint256 i = who_ % 3;
+        uint256 n = bound(n_, 1, 30);
+        for (uint256 k = 0; k < n; k++) {
+            _salt += 1;
+            bytes memory d = abi.encodeCall(DemoVault.increaseTimelock, (NoticeKinds.ADD_ADAPTER, 1000 + _salt));
+            vm.startPrank(actors[i]);
+            try vaults[i].submit(d) {
+                vaults[i].revoke(d);
+            } catch { }
+            vm.stopPrank();
+            ghostOps += 1;
+            _pump(address(reactive));
+        }
+    }
+
+    /// @notice A tick asks for an exit; before its callback lands, the curator revokes or runs a scheduled change.
+    function raceTick(uint256 who_, uint256 pick_, bool run_, uint256 dt_) external recorded {
+        uint256 i = who_ % 3;
+        vm.warp(block.timestamp + bound(dt_, 1, 120));
+        holdCallbacks = true;
+        _tickAndPump();
+        uint256 n = _scheduled[i].length;
+        if (n > 0) {
+            uint256 j = pick_ % n;
+            bytes memory data = _scheduled[i][j];
+            if (run_) {
+                (bool ok,) = address(vaults[i]).call(data);
+                if (ok) _forget(i, j);
+            } else {
+                vm.prank(actors[i]);
+                try vaults[i].revoke(data) { } catch { }
+                _forget(i, j);
+            }
+            _pump(address(reactive));
+        }
+        holdCallbacks = false;
+        ghostOps += 1;
+        _deliverCallbacks();
+        _pump(address(reactive));
+    }
+
     // ------------------------------------------------------------------
     // Clock
     // ------------------------------------------------------------------
@@ -157,7 +228,7 @@ contract NoticeHandler is NoticeSetup {
     function attackDirectExit(uint256 id_) external recorded {
         uint256 id = bound(id_, 1, exitC.nextWatchId());
         vm.prank(ATTACKER);
-        try exitC.exit(address(reactive), id, _adapterCall(ATTACKER), 1, 1) {
+        try exitC.exit(address(reactive), id, address(vaults[0]), _adapterCall(ATTACKER), 1, 1) {
             ghostBreaches += 1;
         } catch { }
     }
@@ -165,7 +236,9 @@ contract NoticeHandler is NoticeSetup {
     function attackForgedRequester(uint256 id_) external recorded {
         uint256 id = bound(id_, 1, exitC.nextWatchId());
         ghostExpectedFailedCallbacks += 1;
-        (bool ok,) = proxy.deliver(address(exitC), _exitPayload(id, _adapterCall(ATTACKER), 1, 1), ATTACKER);
+        (bool ok,) = proxy.deliver(
+            address(exitC), _exitPayload(id, address(vaults[id % 3]), _adapterCall(ATTACKER), 1, 1), ATTACKER
+        );
         if (ok) ghostBreaches += 1;
     }
 
@@ -176,6 +249,21 @@ contract NoticeHandler is NoticeSetup {
         try vaults[t].submit(_adapterCall(actors[i])) {
             ghostBreaches += 1;
         } catch { }
+    }
+
+    /// @notice A real request of our reactive contract, but naming another vault than the watch's.
+    function attackWrongVault(uint256 id_, uint256 v_) external recorded {
+        uint256 next = exitC.nextWatchId();
+        if (next == 1) return;
+        uint256 id = bound(id_, 1, next - 1);
+        (,,, uint8 st, address wv,) = exitC.watches(id);
+        DemoVault other = vaults[v_ % 3];
+        if (st != exitC.STATUS_ACTIVE() || address(other) == wv) return;
+        ghostExpectedFailedCallbacks += 1;
+        (bool ok,) = proxy.deliver(
+            address(exitC), _exitPayload(id, address(other), _adapterCall(ATTACKER), 1, 1), address(reactive)
+        );
+        if (ok) ghostBreaches += 1;
     }
 
     function attackArmOnSomeoneElsesShares(uint256 victim_) external recorded {
@@ -247,6 +335,7 @@ contract NoticeInvariantTest is Test {
     // Status numbers, from NoticeExit and NoticeReactive.
     uint8 internal constant EXIT_ENDED = 3;
     uint8 internal constant EXIT_CANCELLED = 2;
+    uint8 internal constant EXIT_EXPIRED = 4;
     uint8 internal constant R_EXITED = 2;
     uint8 internal constant R_CANCELLED = 3;
     uint8 internal constant R_REFUSED = 4;
@@ -260,7 +349,7 @@ contract NoticeInvariantTest is Test {
         sys = IHandlerCounters(s);
         proxy = IHandlerCounters(p);
 
-        bytes4[] memory sels = new bytes4[](14);
+        bytes4[] memory sels = new bytes4[](19);
         sels[0] = NoticeHandler.deposit.selector;
         sels[1] = NoticeHandler.arm.selector;
         sels[2] = NoticeHandler.cancel.selector;
@@ -275,6 +364,11 @@ contract NoticeInvariantTest is Test {
         sels[11] = NoticeHandler.attackOtherVault.selector;
         sels[12] = NoticeHandler.attackArmOnSomeoneElsesShares.selector;
         sels[13] = NoticeHandler.schedulePadded.selector;
+        sels[14] = NoticeHandler.crossArm.selector;
+        sels[15] = NoticeHandler.expireOne.selector;
+        sels[16] = NoticeHandler.unwatchedSpam.selector;
+        sels[17] = NoticeHandler.raceTick.selector;
+        sels[18] = NoticeHandler.attackWrongVault.selector;
         targetSelector(FuzzSelector({ addr: address(h), selectors: sels }));
         targetContract(address(h));
     }
@@ -291,6 +385,7 @@ contract NoticeInvariantTest is Test {
         invariant_exit_holds_nothing();
         invariant_tokens_go_only_to_their_owner();
         invariant_both_sides_agree();
+        invariant_no_visitor_gains();
     }
 
     function invariant_exit_holds_nothing() public view {
@@ -307,11 +402,27 @@ contract NoticeInvariantTest is Test {
             address a = h.actors(i);
             DemoVault v = h.vaults(i);
             sum += token.balanceOf(a) + token.balanceOf(address(v));
-            // a vault with one depositor rounds down, so a visitor never gets back more than they put in
-            assertLe(token.balanceOf(a), h.minted(a), "visitor received more than deposited");
         }
         assertEq(sum, token.totalSupply(), "tokens appeared outside the visitors and their vaults");
         assertEq(token.balanceOf(address(0xBAD)), 0);
+    }
+
+    /// @dev Per visitor: tokens in the wallet plus what the visitor's shares in every vault redeem for never exceed
+    ///      what the visitor put in. The vaults earn nothing, so only rounding can add, at most one unit per action
+    ///      that rounds (it leaves the remainder to the other holders). An exit that paid one visitor from another's
+    ///      shares would break this.
+    function invariant_no_visitor_gains() public view {
+        for (uint256 i = 0; i < 3; i++) {
+            address a = h.actors(i);
+            uint256 worth = token.balanceOf(a);
+            for (uint256 k = 0; k < 3; k++) {
+                DemoVault v = h.vaults(k);
+                worth += v.previewRedeem(v.balanceOf(a));
+            }
+            // each watch exits at most once, and each exit is one more redeem that rounds
+            uint256 slack = h.ghostOps() + IHandlerExit(exitAddr).nextWatchId();
+            assertLe(worth, h.minted(a) + slack, "a visitor gained");
+        }
     }
 
     function invariant_no_attack_succeeded() public view {
@@ -351,7 +462,9 @@ contract NoticeInvariantTest is Test {
             uint8 e = h.exitStatus(id);
             uint8 r = h.reactiveStatus(id);
             assertEq(e == EXIT_ENDED, r == R_EXITED, "ended on Base iff exit requested on Lasna");
-            if (e == EXIT_CANCELLED) assertTrue(r == R_CANCELLED || r == R_REFUSED, "cancel reached Lasna");
+            if (e == EXIT_CANCELLED || e == EXIT_EXPIRED) {
+                assertTrue(r == R_CANCELLED || r == R_REFUSED, "cancel or expiry reached Lasna");
+            }
         }
     }
 }

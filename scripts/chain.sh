@@ -182,6 +182,34 @@ PY
   done
 }
 
+# Stops unless the exit landed strictly before the change could run (both unix seconds).
+check_exit_timing() { # exit_time executable_at label
+  [[ "$1" =~ ^[0-9]+$ ]] && [[ "$2" =~ ^[0-9]+$ ]] || die "$3: exit time '$1' or executableAt '$2' unknown"
+  [ "$2" -gt 0 ] || die "$3: executableAt is 0 (the change was not pending when read)"
+  [ "$1" -lt "$2" ] || die "$3: the exit landed at $1, not before the change could run at $2"
+}
+
+# Prints "outcome reason shares assets" of the WatchEnded log of `watch_topic` emitted by `exit_addr` in `tx`.
+watch_ended_fields() { # rpc txhash exit_addr watch_topic
+  local r
+  r="$(cast receipt --json --rpc-url "$1" "$2" 2>/dev/null)" || die "receipt of $2 unknown"
+  python3 -c '
+import json, sys
+rec = json.loads(sys.argv[1])
+addr, topic1, topic0 = sys.argv[2].lower(), sys.argv[3].lower(), sys.argv[4].lower()
+for log in rec.get("logs", []):
+    t = [x.lower() for x in log.get("topics", [])]
+    if log.get("address", "").lower() == addr and len(t) == 3 and t[0] == topic0 and t[1] == topic1:
+        d = log["data"][2:]
+        if len(d) != 256:
+            sys.exit(3)
+        print(" ".join(str(int(d[i * 64:(i + 1) * 64], 16)) for i in range(4)))
+        sys.exit(0)
+sys.exit(4)
+' "$r" "$3" "$4" "$(cast keccak 'WatchEnded(uint256,uint256,uint8,uint8,uint256,uint256)')" \
+    || die "no well-formed WatchEnded for watch $4 in $2"
+}
+
 output() { # NAME value: appended to $DEPLOY_OUT when set (addresses only, for the next script)
   if [ -n "${DEPLOY_OUT:-}" ]; then echo "$1=$2" >> "$DEPLOY_OUT"; fi
 }

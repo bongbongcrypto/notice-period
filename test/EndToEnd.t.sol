@@ -46,13 +46,13 @@ contract EndToEndTest is NoticeSetup {
         assertEq(at, START + TIMELOCK);
         assertEq(token.balanceOf(alice), 0, "still invested while the change is only scheduled");
 
-        vm.warp(START + 60);
+        vm.warp(at - LEAD - 1);
         _tickAndPump();
-        assertEq(token.balanceOf(alice), 0, "120 s left is more than the 60 s lead");
+        assertEq(token.balanceOf(alice), 0, "more time left than the lead");
 
-        vm.warp(START + 120);
+        vm.warp(at - LEAD);
         _tickAndPump();
-        assertEq(token.balanceOf(alice), DEPOSIT, "out with 60 s to spare");
+        assertEq(token.balanceOf(alice), DEPOSIT, "out with the lead to spare");
         assertLt(block.timestamp, at, "left before the change could run");
         (,, uint256 cbOrigin, uint8 reason) = _callbackArgs(0);
         assertEq(cbOrigin, originTx);
