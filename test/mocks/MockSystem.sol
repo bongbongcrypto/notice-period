@@ -14,11 +14,15 @@ import { ISystemContract } from "@reactive/src/interfaces/ISystemContract.sol";
 ///      - a revert inside react() is caught (the network bills it and emits ReactiveContractReverted);
 ///      - gas: the network caps one reactive transaction at 900,000 gas. The mock measures the gas react() uses,
 ///        leaves out what its own bookkeeping costs (subscription storage, callback storage), adds what the real
-///        system contract would spend on a callback request (one log carrying the configuration, 8 gas per byte),
-///        and counts every reaction above the cap in `overGasLimit`. Unknown and not modelled: the real cost of
-///        subscribe and unsubscribe, and whether the cap also covers the transaction's calldata.
+///        system contract would spend instead (SUBSCRIBE_GAS per subscribe or unsubscribe; one log carrying the
+///        callback configuration, 8 gas per byte, per callback request), and counts every reaction above the cap
+///        in `overGasLimit`. SUBSCRIBE_GAS is an estimate from Lasna transactions read on 2026-11-17 (226,002 gas
+///        for a reaction with three subscribes), not a measurement of the network's code. Unknown and not modelled:
+///        whether the cap also covers the transaction's calldata.
 contract MockSystem {
     uint256 public constant REACT_GAS_LIMIT = 900_000;
+    /// @dev Modelled cost of one subscribe or unsubscribe inside react() (day-1 reading: roughly 50k to 70k).
+    uint256 public constant SUBSCRIBE_GAS = 60_000;
 
     uint256 internal constant IGNORE = 0xa65f96fc951c35ead38878e0f0b7a3c744a6f5ccc1476b313353ce31712313ad;
 
@@ -54,6 +58,7 @@ contract MockSystem {
     uint256 public maxReactGas;
     uint256 public lastReactGas;
     uint256 internal _excluded;
+    uint256 internal _added;
 
     event CallbackRequest(
         uint256 indexed chainId,
@@ -65,12 +70,14 @@ contract MockSystem {
     event ReactiveContractReverted(address indexed target, bytes reason);
     event ReactOverGasLimit(address indexed target, uint256 modelledGas);
 
-    /// @dev Leaves the gas of the mock's own bookkeeping out of the reaction's gas, then charges `modelled_` instead.
+    /// @dev Replaces the gas of the mock's own bookkeeping with `modelled_` in the reaction's gas, whether the mock
+    ///      spent more or less than that.
     modifier bookkeeping(uint256 modelled_) {
         uint256 g = gasleft();
         _;
         uint256 spent = g - gasleft();
-        _excluded += spent > modelled_ ? spent - modelled_ : 0;
+        if (spent > modelled_) _excluded += spent - modelled_;
+        else _added += modelled_ - spent;
     }
 
     receive() external payable { }
@@ -81,7 +88,7 @@ contract MockSystem {
 
     function subscribe(uint256 chainId_, address source_, uint256 t0_, uint256 t1_, uint256 t2_, uint256 t3_)
         external
-        bookkeeping(0)
+        bookkeeping(SUBSCRIBE_GAS)
     {
         subscribeCalls += 1;
         bytes32 key = keccak256(abi.encode(msg.sender, chainId_, source_, t0_, t1_, t2_, t3_));
@@ -96,7 +103,7 @@ contract MockSystem {
 
     function unsubscribe(uint256 chainId_, address source_, uint256 t0_, uint256 t1_, uint256 t2_, uint256 t3_)
         external
-        bookkeeping(0)
+        bookkeeping(SUBSCRIBE_GAS)
     {
         unsubscribeCalls += 1;
         bytes32 key = keccak256(abi.encode(msg.sender, chainId_, source_, t0_, t1_, t2_, t3_));
@@ -184,9 +191,10 @@ contract MockSystem {
         delivered += 1;
         bytes memory input = abi.encodeCall(IReactive.react, (log_));
         _excluded = 0;
+        _added = 0;
         uint256 g = gasleft();
         (bool ok, bytes memory ret) = target_.call(input);
-        uint256 used = g - gasleft();
+        uint256 used = g - gasleft() + _added;
         uint256 modelled = used > _excluded ? used - _excluded : 0;
         lastReactGas = modelled;
         if (modelled > maxReactGas) maxReactGas = modelled;

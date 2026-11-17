@@ -409,6 +409,70 @@ contract NoticeReactiveTest is NoticeSetup {
         assertEq(token.balanceOf(alice), 0);
     }
 
+    /// @dev A curator stores a decoy and a real change, waits for the exit request of the decoy (ExitRequested is
+    ///      public on Lasna) and revokes the decoy before the callback lands. The real change stays pending and will
+    ///      run, so the depositor must be out.
+    function test_decoy_revoked_after_the_tick_does_not_disarm_the_watch() public {
+        uint256 id = _arm(alice, vault, NoticeKinds.DEFAULT, 1, type(uint256).max);
+        bytes memory decoy = _adapterCall(address(0xDEC0));
+        bytes memory real = _allocatorCall(address(0xBAD1));
+        _submit(alice, vault, decoy);
+        _submit(alice, vault, real);
+        assertEq(_rPendingCount(id), 2);
+        vm.warp(vault.executableAt(decoy) - LEAD);
+        holdCallbacks = true;
+        _tickAndPump(); // the exit for the decoy is on its way
+        assertEq(sys.callbackCount(), 1);
+        _revokeChange(alice, vault, decoy); // lands on the vault's chain before the callback
+        holdCallbacks = false;
+        _deliverCallbacks();
+        _pump(address(reactive));
+        assertGt(vault.executableAt(real), 0, "the real change is still pending");
+        assertEq(token.balanceOf(alice), DEPOSIT, "the depositor is out before the real change can run");
+        assertEq(vault.balanceOf(alice), 0);
+        assertEq(_status(id), exitC.STATUS_ENDED());
+    }
+
+    /// @dev The one-change form of the same race: revoke after the tick, submit the same change again later.
+    function test_revoke_after_the_tick_then_resubmit_does_not_disarm_the_watch() public {
+        uint256 id = _arm(alice, vault, NoticeKinds.DEFAULT, 1, type(uint256).max);
+        bytes memory change = _adapterCall(address(0xA1));
+        _submit(alice, vault, change);
+        vm.warp(vault.executableAt(change) - LEAD);
+        holdCallbacks = true;
+        _tickAndPump();
+        _revokeChange(alice, vault, change);
+        holdCallbacks = false;
+        _deliverCallbacks();
+        _pump(address(reactive));
+        _submit(alice, vault, change); // the same change again, after the callback
+        assertGt(vault.executableAt(change), 0, "the change is pending again");
+        assertEq(token.balanceOf(alice), DEPOSIT, "the depositor is out");
+        assertEq(_status(id), exitC.STATUS_ENDED());
+    }
+
+    /// @dev A watch refused on Lasna is still active on Base; cancelling it there must not touch Lasna's counts.
+    function test_cancel_of_a_refused_watch_changes_nothing_on_lasna() public {
+        address dave = makeAddr("dave");
+        _arm(alice, vault, NoticeKinds.DEFAULT, 0, type(uint256).max);
+        _deposit(bob, vault, 1e6);
+        _arm(bob, vault, NoticeKinds.DEFAULT, 0, type(uint256).max);
+        _deposit(carol, vault, 1e6);
+        _arm(carol, vault, NoticeKinds.DEFAULT, 0, type(uint256).max);
+        _deposit(dave, vault, 1e6);
+        uint256 id = _arm(dave, vault, NoticeKinds.DEFAULT, 0, type(uint256).max);
+        assertEq(_rStatus(id), reactive.ST_REFUSED());
+        assertEq(_status(id), exitC.STATUS_ACTIVE(), "Base does not know about the refusal");
+        uint256 active = reactive.activeWatches();
+        vm.prank(dave);
+        exitC.cancel(id);
+        _pump(address(reactive));
+        assertEq(_rStatus(id), reactive.ST_REFUSED(), "a refused watch stays refused");
+        assertEq(reactive.activeWatches(), active, "the count of active watches is unchanged");
+        assertEq(reactive.vaultWatches(address(vault)).length, 3);
+        assertEq(sys.reverts(), 0);
+    }
+
     function test_cancel_releases_all_filters() public {
         uint256 id = _arm(alice, vault, NoticeKinds.DEFAULT, 1, type(uint256).max);
         _submit(alice, vault, _adapterCall(address(0xA1)));
@@ -535,6 +599,28 @@ contract NoticeReactiveTest is NoticeSetup {
         (,,, uint8 reason) = _callbackArgs(0);
         assertEq(reason, reactive.R_BUDGET());
         assertEq(_rStatus(id), reactive.ST_EXITED());
+    }
+
+    /// @dev Revokes of a kind the watch does not flee still reach it (one Revoke filter per vault, whatever the
+    ///      selector), and the matching Submits do not. Such a spam must not bill the operator float without end:
+    ///      the reaction budget ends the watch with an exit, and then nothing more is delivered.
+    function test_unwatched_revoke_spam_is_bounded_by_budget() public {
+        uint256 id = _arm(alice, vault, NoticeKinds.DEFAULT, 1, type(uint256).max);
+        uint256 d0 = sys.delivered();
+        for (uint256 i = 0; i < 200; i++) {
+            bytes memory d = abi.encodeCall(DemoVault.increaseTimelock, (NoticeKinds.ADD_ADAPTER, 1000 + i));
+            _submit(alice, vault, d);
+            _revokeChange(alice, vault, d);
+        }
+        assertEq(sys.delivered() - d0, MAX_REACTIONS + 1, "billed reactions stop at the budget");
+        assertEq(_rStatus(id), reactive.ST_EXITED());
+        assertEq(sys.callbackCount(), 1);
+        (,,, uint8 reason) = _callbackArgs(0);
+        assertEq(reason, reactive.R_BUDGET());
+        assertTrue(proxy.lastOk(), "the budget exit is accepted on Base");
+        assertEq(token.balanceOf(alice), DEPOSIT, "the depositor leaves instead of staying unwatched");
+        assertEq(_status(id), exitC.STATUS_ENDED());
+        assertEq(sys.reverts(), 0);
     }
 
     // ---------------------------------------------------------------- strays and unknown logs

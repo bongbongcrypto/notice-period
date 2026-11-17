@@ -355,10 +355,19 @@ contract DemoVaultTest is Test {
         vm.prank(user);
         vault.deposit(500e6, user);
         token.mint(address(vault), 7); // donation makes the price uneven
-        uint256 assetsForMint = vault.previewMint(3);
-        assertGe(assetsForMint, vault.convertToAssets(3));
-        uint256 sharesForWithdraw = vault.previewWithdraw(3);
-        assertGe(sharesForWithdraw, vault.convertToShares(3));
+        // supply 500e6 shares, 500e6 + 7 assets: 3 shares are worth 3.00000004 assets, 3 assets 2.99999996 shares
+        assertEq(vault.convertToAssets(3), 3);
+        assertEq(vault.previewMint(3), 4, "mint rounds the assets it takes up");
+        assertEq(vault.convertToShares(3), 2);
+        assertEq(vault.previewWithdraw(3), 3, "withdraw rounds the shares it burns up");
+        uint256 tokensBefore = token.balanceOf(user);
+        vm.prank(user);
+        vault.mint(3, user);
+        assertEq(tokensBefore - token.balanceOf(user), 4, "mint took the rounded-up assets");
+        uint256 sharesBefore = vault.balanceOf(user);
+        vm.prank(user);
+        vault.withdraw(3, user, user);
+        assertEq(sharesBefore - vault.balanceOf(user), 3, "withdraw burned the rounded-up shares");
     }
 
     function test_token_mint_cap() public {

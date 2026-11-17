@@ -157,6 +157,9 @@ add("armed-vault-cap", "cap on watches per vault (gas per reaction)", R,
     "else if (_vaultWatches[vault].length >= MAX_WATCHES_PER_VAULT) refusal = REFUSE_VAULT_FULL;",
     "else if (false) refusal = REFUSE_VAULT_FULL;",
     NR, "test_refuses_fourth_watch_on_one_vault")
+add("cancelled-only-armed", "a cancel on Base closes only a watch Lasna armed (not a refused one)", R,
+    "if (watches[id].status == ST_ARMED) _close(id, ST_CANCELLED);", "_close(id, ST_CANCELLED);",
+    NR, "test_cancel_of_a_refused_watch_changes_nothing_on_lasna")
 add("stray-submit", "a Submit after unsubscribe is a stray", R,
     "if (filterRefs[_submitKey(vault, log_.topic1)] == 0) {", "if (false) {",
     NR, "test_stray_submit_after_unsubscribe_is_counted")
@@ -284,6 +287,12 @@ add("vault-withdraw-zero", "no withdraw of zero assets", V,
 add("vault-redeem-zero", "no redeem for zero assets", V,
     "if (assets == 0) revert ZeroAssets();", "",
     DV, "test_redeem_refuses_zero_assets")
+add("vault-mint-rounds-up", "mint rounds the assets it takes up", V,
+    "return _toAssets(shares_, true);", "return _toAssets(shares_, false);",
+    DV, "test_mint_and_withdraw_round_up")
+add("vault-withdraw-rounds-up", "withdraw rounds the shares it burns up", V,
+    "return _toShares(assets_, true);", "return _toShares(assets_, false);",
+    DV, "test_mint_and_withdraw_round_up")
 add("vault-allowance", "redeeming someone else's shares needs their allowance", V,
     "if (allowed < shares_) revert InsufficientAllowance();", "",
     DV, "test_redeem_for_owner_needs_allowance")
