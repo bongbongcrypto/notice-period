@@ -190,7 +190,9 @@ mode-0 watch is never billed for a `Revoke`.
 Deployment (no owner setter: the circular dependency is broken by computing the next contract address):
 1. Base Sepolia: `DemoToken`, then `DemoVaultFactory`.
 2. Read the deployer's Base Sepolia nonce `n`; the exit contract will live at `CREATE(deployer, n)`.
-3. Lasna: `NoticeReactive` with that address, sent no value. Its constructor subscribes to `WatchArmed` and
+3. Lasna: `NoticeReactive` with that address, sent no value (not yet shown on Lasna: that a reactive
+   contract deployed with a zero balance keeps the subscriptions its constructor made; if the hello loop
+   sees no reaction, deploy with value instead). Its constructor subscribes to `WatchArmed` and
    `WatchCancelled` of that address.
 4. Base Sepolia: `NoticeExit` with the reactive contract's address, sent no value. The workflow stops if the
    address is not the one computed in step 2, or if the read-back wiring differs.
@@ -280,6 +282,7 @@ first on-chain runs.
 | DemoVaultFactory | `VaultCreated(address vault, address curator)` | both |
 | NoticeExit | `WatchArmed(uint256 watchId, address owner, address vault, uint8 kinds, uint8 mode, uint256 maxShares)` | watchId, owner, vault |
 | NoticeExit | `WatchCancelled(uint256 watchId, address owner, address vault)` | all three |
+| NoticeExit | `WatchExpired(uint256 watchId)` (followed by `WatchCancelled` for the same watch) | watchId |
 | NoticeExit | `WatchEnded(uint256 watchId, uint256 originTxHash, uint8 outcome, uint8 reason, uint256 shares, uint256 assets)` | watchId, originTxHash |
 | NoticeExit | `RedeemReverted(uint256 watchId, bytes reason)` | watchId |
 | NoticeReactive | `WatchSubscribed(uint256 watchId, address vault, uint8 kinds, uint8 mode)` | watchId, vault |
@@ -296,8 +299,8 @@ first on-chain runs.
 
 - The demo vault is ours. It imitates Vault V2's timelock and events; its "adapters" and "caps" are only
   recorded, the assets stay in the vault. Morpho's own `VaultV2Factory` is deployed on Base Sepolia, so a
-  real Vault V2 can replace it later; `NoticeExit` and `NoticeReactive` only rely on the event shapes,
-  `executableAt(bytes)` and ERC-4626 `redeem`.
+  real Vault V2 can replace it later; `NoticeExit` and `NoticeReactive` only rely on the event shapes and
+  ERC-4626 `redeem` (the deploy and loop scripts also read `executableAt(bytes)`).
 - The demo pays for watches from an operator float; user-paid watches are later scope.
 - One origin chain (Base Sepolia) in this version.
 - The exit runs in seconds, not in the same block. A change with no timelock cannot be fled.
@@ -312,6 +315,11 @@ first on-chain runs.
   (`CallbackNotAuthorized`), but the proxy may still bill the failed call to `NoticeExit`'s fee reserve
   (not yet measured). The reserve is small and refillable; `coverDebt()` settles debt, and the float watch
   must read the proxy's `debt(NoticeExit)`.
+- `expire` is open to anyone, the curator included. So a watch protects for `LIFETIME` (1 day) only: after
+  that the curator can expire it and then schedule a change, and an expiry that lands while an exit callback
+  is on its way makes that callback revert (`WatchNotActive`) and the depositor stays in. This trades
+  "set it and forget it" beyond one day for freeing places held by idle watches; the owner decides whether
+  to keep it, lengthen `LIFETIME`, or narrow who may expire.
 - Stray events after a silent unsubscribe are billed by the network and cannot be refused by the contract;
   they are counted (`strayEvents`) and alerted on.
 - "No server, no key that can send the funds elsewhere": the exit right exists only through the vault's own
@@ -319,7 +327,7 @@ first on-chain runs.
 - If an exit callback reverts on Base Sepolia (`AssetsNotReceived`, or a failure of the callback itself), the
   reactive contract has already closed the watch, while on Base Sepolia it is still `Active`. That watch no
   longer protects anything and blocks a new arm on the same vault (`AlreadyWatching`) until the owner cancels
-  it. The page must show the Lasna status next to the Base status.
+  it or anyone expires it after `LIFETIME`. The page must show the Lasna status next to the Base status.
 
 ## 12. What the Foundry simulation shows and what it cannot
 
