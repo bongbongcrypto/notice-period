@@ -58,9 +58,15 @@ contract HelloTest is Network {
         vm.cool(address(callback));
         _deliverCallbacks();
         console.log("pong: forwarded", proxy.lastForwarded(), "used", proxy.lastUsed());
+        assertEq(sys.callbackAt(0).gasLimit, reactive.CALLBACK_GAS());
         assertTrue(proxy.lastOk(), "pong ran within the gas the proxy forwarded");
         assertEq(callback.pongs(), 1);
-        assertGe(proxy.lastForwarded(), 2 * proxy.lastUsed(), "at least twice what pong uses");
+        assertGt(proxy.lastUsed(), 0);
+        // Slots written earlier in this test are cheaper to write again than in a transaction of their own; the
+        // cushion covers that (MockCallbackProxy.DIRTY_SLOT_CUSHION).
+        assertGe(
+            proxy.lastForwarded(), 2 * (proxy.lastUsed() + proxy.DIRTY_SLOT_CUSHION()), "at least twice what pong uses"
+        );
     }
 
     function test_callback_payload_reserves_first_argument() public {

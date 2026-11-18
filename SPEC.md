@@ -371,8 +371,9 @@ relay script that plays the network.
 
 Gas, as far as a simulation can show it: the mock system contract measures the gas each `react()` uses, leaves
 out its own bookkeeping, adds what the real system contract would spend on a callback request, and counts every
-reaction above 900,000 (`overGasLimit`, required 0 in tests, invariants and the dry run). The mock proxy runs
-each callback with the gas limit the reactive contract asked for. Padded calls of 4 KB, 32 KB and 100 KB on a
+reaction above 900,000 (`overGasLimit`, required 0 in tests, invariants and the dry run). The mock proxy gives
+each callback what the real Base Sepolia proxy would give it at the requested gas limit (see "Callback gas"
+below), and refuses a limit too low for the proxy's own share as the real one does. Padded calls of 4 KB, 32 KB and 100 KB on a
 vault with three watches in both modes stay under the cap (`test/Padding.t.sol`), and so does a padded `Revoke` that ends a watch over its budget.
 Each `subscribe` and `unsubscribe` is charged a modelled 60,000 gas (an estimate from Lasna transactions, not
 the network's code), whether the mock spent more or less. Not modelled: whether the network's cap also counts
@@ -380,8 +381,29 @@ the calldata of a large log.
 
 Fees: both mocks keep a debt per contract that a test sets and a payment settles, so `coverDebt()` is tested
 against a non-zero debt. No fee is charged per reaction or per callback, so how the real proxy and system
-contract record and bill debt, and what a spam loop costs, is not shown. The mock proxy gives the callback its
-whole gas limit; the real proxy keeps some gas back for its own bookkeeping first.
+contract record and bill debt, and what a spam loop costs, is not shown.
+
+Callback gas, measured 2026-11-18 on Base Sepolia (proxy `0x476F44b11F5C942c58f4c8E3d0300E5710743585`, an
+ERC-1967 stub; implementation `0x49E4AC6954E39c006B0a31955A26a9655c7CE059`, verified source `CallbackProxy`;
+live `_extraGas()` 80,000, `_maxChargeGas()` 50,000):
+- The delivery transaction's gas limit is the `gasLimit` the reactive contract asked for. The stub delegates
+  with 63/64 of what is left after the intrinsic gas; the implementation spends about 20,000 on its own checks,
+  refuses the whole delivery with `InsufficientGas` when what is left is not above 130,000 (no
+  `CallbackFailure`, nothing charged), and otherwise calls the recipient with what is left minus 130,000.
+- Measured with `eth_simulateV1` (recipient code replaced by a probe that logs `gasleft()`): forwarded =
+  floor((limit − intrinsic) × 63/64) − C, with C = 149,746 for a 36-byte payload, 149,800 for 132 (pong),
+  149,873 for 260 (an exit carrying a selector), 150,001 for 484 (an exit carrying a 256-byte change) and
+  150,887 for 2,000. So a limit below about 180,000 can never deliver, although the library accepts 100,000.
+- The first hello delivery (`0xd6559e81729f0ea110ff4ea560450543225402f08d9c2cae433e618fd9a1bc89`, limit
+  200,000) gave pong 23,253 gas; pong needs about 70,000, so it ended in `CallbackFailure`. `HelloReactive`
+  now asks for 400,000 (about 220,000 forwarded).
+- `NoticeExit.exit` at the deployed 600,000: about 415,000 forwarded, about 104,000 used with the exit
+  contract, vault and token cold (`test/CallbackGas.t.sol`, four exit paths). The tests require at least
+  twice the use.
+- The mock (`test/mocks/MockCallbackProxy.sol`) uses an upper bound of C, so it forwards 289 to 374 gas less
+  than the real proxy at every measured point and never more (`test/ProxyModel.t.sol` pins it to the points).
+- The fee charged to the recipient is (80,000 + gas used) × price × 1.1, so a higher limit costs nothing on
+  Base Sepolia unless it is used.
 
 Not shown until the real loop runs on Lasna and Base Sepolia: that the network injects our reactive
 contract's address (day-1 reading: yes, on chain), how soon a subscription added inside `react()` catches

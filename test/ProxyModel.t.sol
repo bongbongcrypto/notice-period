@@ -121,9 +121,21 @@ contract ProxyModelTest is Test {
         assertEq(b - a, 63_000);
     }
 
+    /// @dev A zero limit is not "no limit" on the network path: it cannot be sent either.
+    function test_zero_limit_refused_on_the_network_path() public {
+        address r = address(new HelloCallbackStub());
+        vm.expectPartialRevert(MockCallbackProxy.BelowIntrinsicGas.selector, address(proxy));
+        proxy.deliverWithGas(r, _helloPayload(), REQUESTER, 0);
+    }
+
     /// @dev A limit below the delivery's own intrinsic gas cannot even be sent.
     function test_limit_below_intrinsic_refused() public {
         vm.expectPartialRevert(MockCallbackProxy.BelowIntrinsicGas.selector, address(proxy));
         proxy.forwardedGas(21_000, RECIPIENT, _helloPayload());
     }
+}
+
+/// @dev Any contract with code; the zero-limit test never reaches it.
+contract HelloCallbackStub {
+    fallback() external { }
 }

@@ -24,6 +24,9 @@ contract MockCallbackProxy {
     uint256 public constant PRECALL_GAS_PER_WORD = 20;
     /// @dev The chain the real proxy serves (Base Sepolia); only used to size the delivery calldata.
     uint256 public constant DEST_CHAIN_ID = 84532;
+    /// @dev Gas a test adds to a callback's measured use when the slots it writes were already written earlier in the
+    ///      same test (a new transaction pays up to about 20,000 more for such writes).
+    uint256 public constant DIRTY_SLOT_CUSHION = 20_000;
     /// @dev `deliverCallback(uint8,bytes)`, the operator's entry point on the real proxy.
     bytes4 public constant DELIVER_SELECTOR = 0x8d1f0fa1;
 
@@ -60,14 +63,21 @@ contract MockCallbackProxy {
         public
         returns (bool ok, bytes memory ret)
     {
-        return deliverWithGas(recipient_, payload_, requester_, 0);
+        return _deliver(recipient_, payload_, requester_, false, 0);
     }
 
-    /// @notice As deliver, with the callback's gas limit (0 = no limit, for unit tests of the callback logic only).
-    ///         With a limit the recipient gets what the real proxy would give it (forwardedGas), and a limit too low
-    ///         for the proxy's own share reverts the whole delivery as on chain.
+    /// @notice As deliver, with the callback's gas limit: the recipient gets what the real proxy would give it
+    ///         (forwardedGas), and a limit too low for the proxy's own share (0 included) reverts the whole delivery
+    ///         as on chain. Only deliver() runs a callback without a limit, for unit tests of the callback logic.
     function deliverWithGas(address recipient_, bytes memory payload_, address requester_, uint256 gas_)
         public
+        returns (bool ok, bytes memory ret)
+    {
+        return _deliver(recipient_, payload_, requester_, true, gas_);
+    }
+
+    function _deliver(address recipient_, bytes memory payload_, address requester_, bool limited_, uint256 gas_)
+        internal
         returns (bool ok, bytes memory ret)
     {
         require(payload_.length >= 36, "payload too short");
@@ -75,17 +85,18 @@ contract MockCallbackProxy {
             // payload_ + 32 is the selector; the first argument word starts 4 bytes later.
             mstore(add(payload_, 36), requester_)
         }
-        if (gas_ == 0) {
+        if (!limited_) {
             (ok, ret) = recipient_.call(payload_);
         } else {
             uint256 fwd = forwardedGas(gas_, recipient_, payload_);
-            // The real proxy's call gets exactly fwd; make sure this call can too (EIP-150 keeps 1/64 back).
+            // The real proxy's call gets exactly fwd; make sure this call can too (EIP-150 keeps 1/64 back). Nothing
+            // is written between this check and the call.
             uint256 needed = fwd + fwd / 63 + 10_000;
-            if (gasleft() < needed) revert CallerGasTooLow(gasleft(), needed);
-            lastForwarded = fwd;
             uint256 g0 = gasleft();
+            if (g0 < needed) revert CallerGasTooLow(g0, needed);
             (ok, ret) = recipient_.call{ gas: fwd }(payload_);
             lastUsed = g0 - gasleft();
+            lastForwarded = fwd;
         }
         delivered += 1;
         if (!ok) failed += 1;
