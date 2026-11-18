@@ -5,6 +5,7 @@ import { IPayable } from "@reactive/src/interfaces/IPayable.sol";
 import { IReactive } from "@reactive/src/interfaces/IReactive.sol";
 import { AbstractPayer } from "@reactive/src/base/AbstractPayer.sol";
 import { AbstractCallback } from "@reactive/src/base/AbstractCallback.sol";
+import { console } from "forge-std/console.sol";
 import { Network } from "./utils/Network.sol";
 import { HelloOrigin } from "../src/hello/HelloOrigin.sol";
 import { HelloReactive } from "../src/hello/HelloReactive.sol";
@@ -46,6 +47,20 @@ contract HelloTest is Network {
         assertEq(callback.lastOriginTxHash(), lastTxHash);
         assertEq(sys.reverts(), 0);
         assertTrue(proxy.lastOk());
+    }
+
+    /// @dev The callback gas limit must leave pong at least twice what it uses once the real proxy keeps its share
+    ///      (MockCallbackProxy, measured against the Base Sepolia proxy). Pong runs with its storage cold, as on chain.
+    function test_callback_gas_leaves_pong_twice_its_need() public {
+        holdCallbacks = true;
+        origin.ping(7);
+        _pump(address(reactive));
+        vm.cool(address(callback));
+        _deliverCallbacks();
+        console.log("pong: forwarded", proxy.lastForwarded(), "used", proxy.lastUsed());
+        assertTrue(proxy.lastOk(), "pong ran within the gas the proxy forwarded");
+        assertEq(callback.pongs(), 1);
+        assertGe(proxy.lastForwarded(), 2 * proxy.lastUsed(), "at least twice what pong uses");
     }
 
     function test_callback_payload_reserves_first_argument() public {
