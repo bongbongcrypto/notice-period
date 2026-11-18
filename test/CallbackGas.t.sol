@@ -105,8 +105,9 @@ contract CallbackGasTest is NoticeSetup {
         DemoVault v = _vaultWithDeposit(alice, DEPOSIT);
         uint256 half = v.balanceOf(alice) / 2;
         _approveExit(alice, v, half);
+        uint8 modeNow = exitC.MODE_NOW(); // read before the prank, which the next call uses up
         vm.prank(alice);
-        uint256 id = exitC.arm(address(v), NoticeKinds.DEFAULT, exitC.MODE_NOW(), half);
+        uint256 id = exitC.arm(address(v), NoticeKinds.DEFAULT, modeNow, half);
         _pump(address(reactive));
         holdCallbacks = true;
         _submit(alice, v, _longestCarried());
