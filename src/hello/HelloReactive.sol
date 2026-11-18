@@ -8,7 +8,9 @@ import { HelloCallback } from "./HelloCallback.sol";
 /// @title HelloReactive
 /// @notice Reactive side of the hello-world loop on Lasna: a Ping on the origin chain becomes a pong callback.
 contract HelloReactive is AbstractReactive {
-    uint64 public constant CALLBACK_GAS = 200_000;
+    /// @dev The delivery's whole gas limit. The Base Sepolia proxy keeps about 150,000 plus 1/64 of it, so pong (about
+    ///      70,000) gets about 220,000. At 200,000 it got 23,253 and failed on chain (SPEC.md section 12).
+    uint64 public constant CALLBACK_GAS = 400_000;
     /// @dev Equal to HelloOrigin.Ping.selector (checked in the tests).
     uint256 public constant PING_TOPIC = uint256(keccak256("Ping(address,uint256)"));
 
