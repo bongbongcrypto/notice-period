@@ -280,7 +280,7 @@ unknown topic) are counted in `unknownEvents` and ignored.
 | Stored changes per watch | NoticeReactive | 3 | Work per tick |
 | Reactions per watch (mode 1: every `Submit` of a watched kind, every `Revoke` on its vault, every tick while it stores a change; mode 0 leaves on its first reaction) | NoticeReactive | 80 | Spam of submit and revoke on one vault; ends with an exit, never by dropping the watch |
 | Exits per tick | NoticeReactive | 1 | Gas per tick (900,000 cap per reactive transaction) |
-| Callback gas limit | NoticeReactive | 600,000 | Gas paid by NoticeExit per exit |
+| Callback gas limit | NoticeReactive | 600,000 | Gas limit of the exit delivery; about 415,000 reaches `exit` after the proxy's share, and `NoticeExit` is billed for gas used, not for the limit (section 12) |
 
 A watch the reactive contract refuses (caps above) is reported by `WatchRefused` on Lasna; the depositor
 can cancel it on Base Sepolia and arm again later.
@@ -289,8 +289,24 @@ Computed, not measured: about 0.013 lREACT per reactive transaction plus about 0
 reactions per watch, one watch costs at most about 1.5 lREACT, and the 10 arms a day at most about 15
 lREACT a day. Two costs are outside this bound and must be watched on the live float: stray events after a
 silent unsubscribe (counted in `strayEvents`, billed by the network), and callbacks that anyone can make the
-proxy bill to `NoticeExit` through their own reactive contracts (section 11). The real figures come from the
-first on-chain runs.
+proxy bill to `NoticeExit` through their own reactive contracts (section 11).
+
+Measured on 2026-11-18 (testnet deployment of that day: `NoticeReactive`
+`0x00E4996c7255B919B619902E1Ac4b254D3c3f014` on Lasna, `NoticeExit` `0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8`
+on Base Sepolia; balances read before and after each loop; reactive gas price 100 gwei):
+- Mode 0, one watch from arming to exit: 0.0491812 lREACT from `NoticeReactive` (arm reaction
+  `0x9d183f32d43cb8319aa4a646d327aac360fa303e9ab1f181387eabaf28035f52`, 255,293 gas; exit reaction
+  `0x1a6b032aa7afc9f89e25fdef852bebbffad4ee1b750ba4fd4cc5bb6a5f84aa3e`, 141,892 gas). Gas × price is
+  0.0397185; the remaining 0.0094627 is not attributed.
+- Mode 1, one watch from arming to the deadline exit 62 s later: 0.1606827 lREACT (arm reaction
+  `0xfc9cbe8e9c4acd00e683b65243d96f8ae81a3da1d98d3acb8fcee774e14903d6`, 285,385 gas; deadline reaction
+  `0x98b822a593a99bf8ab4d085d94f7d77a0986830755a3f15223e3c47023efc530`, 198,489 gas; plus the Cron10 ticks
+  while the change was stored). A mode-1 watch that waits the whole 180 s timelock costs more; not measured.
+- Hello reaction: 0.0147093 lREACT at callback limit 200,000 and again at 400,000 (106,806 gas both times), so
+  the lREACT charge does not grow with the requested callback gas limit.
+- Base Sepolia, per exit: `NoticeExit`'s reserve went down by 1,239,473,400,000 wei (mode 0) and
+  1,126,613,400,000 wei (mode 1) at 0.006 gwei, i.e. (80,000 + gas used) × price × 1.1 as in the proxy's
+  source. The proxy's `debt(NoticeExit)` read 0 afterwards.
 
 ## 10. Events
 
@@ -397,18 +413,29 @@ live `_extraGas()` 80,000, `_maxChargeGas()` 50,000):
 - The first hello delivery (`0xd6559e81729f0ea110ff4ea560450543225402f08d9c2cae433e618fd9a1bc89`, limit
   200,000) gave pong 23,253 gas; pong needs about 70,000, so it ended in `CallbackFailure`. `HelloReactive`
   now asks for 400,000 (about 220,000 forwarded).
-- `NoticeExit.exit` at the deployed 600,000: about 415,000 forwarded, about 104,000 used with the exit
-  contract, vault and token cold (`test/CallbackGas.t.sol`, four exit paths). The tests require at least
-  twice the use.
+- `NoticeExit.exit` at the deployed 600,000: about 415,000 forwarded, 104,000 to 107,400 used with the exit
+  contract, vault and token cold (`test/CallbackGas.t.sol`, five exit paths). The tests require at least
+  twice the use plus a 20,000 cushion for slots the same test wrote before.
+- On chain after the fix (2026-11-18): hello delivery `0xc90d8a9ed266ffd83cc5430186bf79fa83e6057a436f652c2c496a3e0398e25a`
+  (limit 400,000, 139,253 used, `Ponged`; billed for 72,567 of recipient gas, CI measured 72,115); exit
+  deliveries `0x7f6456d9b7938e6a205c87a86d0e95ae5e347ec160a39c1e7a7251caebc67b04` (mode 0, limit 600,000,
+  156,350 used, billed for 107,799 of recipient gas) and
+  `0x681bd1f976e0b708c29ffe7639d9a987701bf2f8fc89480ae97e8ace77470b47` (mode 1, 142,670 used), both
+  `WatchEnded` with outcome redeemed.
 - The mock (`test/mocks/MockCallbackProxy.sol`) uses an upper bound of C, so it forwards 289 to 374 gas less
   than the real proxy at every measured point and never more (`test/ProxyModel.t.sol` pins it to the points).
 - The fee charged to the recipient is (80,000 + gas used) × price × 1.1, so a higher limit costs nothing on
   Base Sepolia unless it is used.
 
-Not shown until the real loop runs on Lasna and Base Sepolia: that the network injects our reactive
-contract's address (day-1 reading: yes, on chain), how soon a subscription added inside `react()` catches
-events, real gas against the 900,000 cap, real fees and debt behaviour, whether an unsubscribe really goes
-silent, and the clock difference between the two chains (measured about 1 to 2 s on 2026-11-17).
+Shown by the first real loops (2026-11-18, hashes above and in section 9): the network injects our reactive
+contract's address; a subscription added inside `react()` caught the curator's `Submit` after the loop's 15 s
+grace (mode 0: `WatchSubscribed` at Lasna 1794963864, `Submit` at Base 1794963886, reacted in the same
+second); real reaction gas 106,806 to 285,385, far under the 900,000 cap; the exit reached the depositor 2 s
+(mode 0) and 62 s (mode 1, at the deadline, 118 s before the change could run) after the curator's
+transaction; no stray or unknown events afterwards. Still not shown: how much shorter than 15 s the
+subscription delay can be, whether an unsubscribe really goes silent (strayEvents stayed 0 but no event was
+sent after the watches closed), the gas of a large padded log on chain, and the cost of a mode-1 watch over a
+whole timelock.
 
 ## 13. Build targets
 
