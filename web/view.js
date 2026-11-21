@@ -264,7 +264,7 @@
     setBusy(check, state === 'loading');
     clear(check);
     if (state === 'loading') check.textContent = 'Recorded copy. ' + NP.copy.checking;
-    else if (state === 'ok') check.textContent = 'Re-read from both chains at ' + fmt.time(Date.now() / 1000) + ' UTC: three receipts and their block times.';
+    else if (state === 'ok') check.textContent = 'Three receipts re-read from both chains at ' + fmt.time(Date.now() / 1000) + ' UTC.';
     else {
       check.textContent = fillText(NP.copy.checkFail, { date: fmt.isoDate(NP.recorded.readAt) }) + ' ';
       if (retry) check.appendChild(retryButton('latest-retry', 'Try again', retry));
@@ -283,9 +283,8 @@
       var s = d.nowTimes.slice().sort(function (a, b) { return a - b; });
       var mid = s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
       txt += ' “Leave now” runs: median ' + mid + ' s over ' + s.length + ' runs.';
-    } else if (d.nowTimes.length) {
-      txt += ' “Leave now” runs: latest ' + d.nowTimes[0] + ' s.';
     }
+    /* below that many runs the caption above already gives the latest time */
     if (d.unlisted > 0) txt += ' ' + d.unlisted + fmt.plural(d.unlisted, ' run is', ' runs are') + ' older than this page can list.';
     $('proof').textContent = txt;
   }

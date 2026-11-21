@@ -26,7 +26,7 @@ headless Microsoft Edge with a fresh profile for each capture.
 |---|---|
 | Console of the shipped page under the shipped policy | No error, no policy violation. Two info lines (`state: idle`, `state: no-wallet`) |
 | Hosts contacted by a full load (resource entries) | The page's own origin (1 stylesheet, 9 scripts), `api.morpho.org` (1), `base-sepolia-rpc.publicnode.com` (7), `lasna-rpc.rnk.dev` (9). `sepolia.base.org` is contacted only as the fallback |
-| Recorded runs re-read by receipt | Run 1 and run 2: three receipts each, status 1, the `Submit`, `ExitRequested` and `WatchEnded` logs linked by watch id and by the origin transaction hash, the token `Transfer` from the vault to the depositor equal to the redeemed assets, block times from both chains. Page line: `Re-read from both chains at 13:22:38 UTC: three receipts and their block times.` |
+| Recorded runs re-read by receipt | Run 1 and run 2: three receipts each, status 1, the `Submit`, `ExitRequested` and `WatchEnded` logs linked by watch id and by the origin transaction hash, the token `Transfer` from the vault to the depositor equal to the redeemed assets, block times from both chains. Page line: `Three receipts re-read from both chains at 13:25:19 UTC.` |
 | Seconds from live block times | Run 1: Reactive +0 s, deposit back +2 s, 178 s of notice left. Run 2: +61 s (timer), +62 s, 118 s |
 | `refTx` on the Lasna receipt | Run 1 (leave now): the Base Sepolia transaction, `refChainId` `0x14a34`. Run 2 (deadline): a Lasna transaction, `refChainId` `0x512577`, and the Base Sepolia hash as topic 2 of its `ExitRequested` log |
 | Live values | `nextWatchId` 3 (2 runs), 10 of 10 runs left today, float 4.79 lREACT, both debts 0, `LEAD()` 120 |
