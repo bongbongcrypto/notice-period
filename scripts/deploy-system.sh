@@ -3,10 +3,10 @@
 #   Base Sepolia: DemoToken, DemoVaultFactory -> compute NoticeExit's address ->
 #   Lasna: NoticeReactive -> Base Sepolia: NoticeExit, then checks NoticeExit landed on the computed address and
 # only then funds both (lREACT for reactions, ETH for callback fees) and settles any debt they ran up meanwhile.
-# Nothing is sent to a contract before the wiring is checked. Caps are the demo values of SPEC.md section 9.
+# Nothing is sent to a contract before the wiring is checked. Caps are the deployment values of SPEC.md section 9.
 #
 # Environment: BASE_RPC, LASNA_RPC, CALLBACK_PROXY, DEPLOY_KEY,
-#   REACTIVE_FUND (lREACT for NoticeReactive, whole coins), EXIT_FUND (Base ETH for NoticeExit),
+#   REACTIVE_FUND (lREACT for NoticeReactive, in coins, decimals allowed), EXIT_FUND (Base ETH for NoticeExit),
 #   BASE_GAS_MARGIN, LASNA_GAS_MARGIN.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -15,14 +15,15 @@ source scripts/chain.sh
 
 # Demo values (SPEC.md sections 4, 6, 9)
 VAULT_TIMELOCK=180
-LEAD=120 # covers MAX_ACTIVE Cron10 ticks (8 x 10.7 s) plus the callback trip (SPEC.md section 6)
+LEAD=120 # covers MAX_TIMED (8) Cron10 ticks of 10.7 s plus the callback trip (SPEC.md section 6)
 MAX_WAIT=900
 CALLBACK_GAS=600000
 MAX_ACTIVE=8
 MAX_REACTIONS=80
 ARMS_PER_ADDRESS_PER_DAY=2
 ARMS_PER_DAY=10
-LIFETIME=86400 # anyone can expire a watch after one day (SPEC.md section 9)
+LIFETIME=86400 # anyone can expire a timer watch after one day; a leave-now watch has no expiry (SPEC.md section 9)
+TIMED_ARMS_PER_DAY=4 # timer-mode arms per UTC day, all addresses together (SPEC.md section 9)
 
 need_env BASE_RPC LASNA_RPC CALLBACK_PROXY REACTIVE_FUND EXIT_FUND
 need_key
@@ -54,7 +55,7 @@ read -r reactive reactive_tx <<<"$res"
 
 res="$(deploy "$BASE_RPC" "NoticeExit (Base Sepolia)" src/NoticeExit.sol:NoticeExit 0 \
   --constructor-args "$CALLBACK_PROXY" "$reactive" "$factory" "$ARMS_PER_ADDRESS_PER_DAY" "$ARMS_PER_DAY" \
-  "$LIFETIME")"
+  "$LIFETIME" "$TIMED_ARMS_PER_DAY")"
 read -r exit_c exit_tx <<<"$res"
 
 same_address "$exit_c" "$predicted_exit" \
@@ -65,6 +66,8 @@ same_address "$(cast call --rpc-url "$LASNA_RPC" "$reactive" 'EXIT()(address)')"
 same_address "$(cast call --rpc-url "$BASE_RPC" "$exit_c" 'REGISTRY()(address)')" "$factory" || die "NoticeExit.REGISTRY mismatch"
 [ "$(cast call --rpc-url "$BASE_RPC" "$exit_c" 'LIFETIME()(uint256)' | awk '{print $1}')" = "$LIFETIME" ] \
   || die "NoticeExit.LIFETIME mismatch"
+[ "$(cast call --rpc-url "$BASE_RPC" "$exit_c" 'MAX_TIMED_ARMS_PER_DAY()(uint256)' | awk '{print $1}')" = "$TIMED_ARMS_PER_DAY" ] \
+  || die "NoticeExit.MAX_TIMED_ARMS_PER_DAY mismatch"
 
 # Wiring checked: fund both, then settle whatever debt they ran up while empty (a debt blocks delivery).
 send "$LASNA_RPC" "fund NoticeReactive" "$reactive" --value "$reactive_fund" >/dev/null

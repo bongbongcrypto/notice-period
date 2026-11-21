@@ -77,7 +77,7 @@ contract NoticeHandler is NoticeSetup {
         _pump(address(reactive));
     }
 
-    /// @notice Anyone ends a watch armed at least LIFETIME ago.
+    /// @notice Anyone tries to end a watch armed at least LIFETIME ago (only a timer watch can expire).
     function expireOne(uint256 id_) external recorded {
         uint256 next = exitC.nextWatchId();
         if (next == 1) return;
@@ -287,6 +287,14 @@ contract NoticeHandler is NoticeSetup {
         return _rStatus(id_);
     }
 
+    function exitMode(uint256 id_) external view returns (uint8 m) {
+        (,, m,,,) = exitC.watches(id_);
+    }
+
+    function reactiveMode(uint256 id_) external view returns (uint8 m) {
+        (,, m,,,) = reactive.watches(id_);
+    }
+
     function _forget(uint256 i_, uint256 j_) internal {
         uint256 last = _scheduled[i_].length - 1;
         if (j_ != last) _scheduled[i_][j_] = _scheduled[i_][last];
@@ -316,6 +324,7 @@ interface IHandlerReactive {
     function MAX_ACTIVE() external view returns (uint256);
     function cronFilterRefs() external view returns (uint256);
     function pendingWatchIds() external view returns (uint256[] memory);
+    function timedWatches() external view returns (uint256);
 }
 
 interface IHandlerCounters {
@@ -336,6 +345,7 @@ contract NoticeInvariantTest is Test {
     uint8 internal constant EXIT_ENDED = 3;
     uint8 internal constant EXIT_CANCELLED = 2;
     uint8 internal constant EXIT_EXPIRED = 4;
+    uint8 internal constant R_ARMED = 1;
     uint8 internal constant R_EXITED = 2;
     uint8 internal constant R_CANCELLED = 3;
     uint8 internal constant R_REFUSED = 4;
@@ -446,6 +456,24 @@ contract NoticeInvariantTest is Test {
 
     function invariant_active_watches_bounded() public view {
         assertLe(reactive.activeWatches(), reactive.MAX_ACTIVE());
+    }
+
+    /// @dev The timer count on Lasna is exactly the number of armed timer ("leave if still pending") watches.
+    function invariant_timed_count_matches() public view {
+        uint256 next = IHandlerExit(exitAddr).nextWatchId();
+        uint256 timed;
+        for (uint256 id = 1; id < next; id++) {
+            if (h.reactiveStatus(id) == R_ARMED && h.reactiveMode(id) == 1) timed += 1;
+        }
+        assertEq(reactive.timedWatches(), timed);
+    }
+
+    /// @dev Nobody ends a "leave now" watch by expiry, however old it is.
+    function invariant_leave_now_never_expired() public view {
+        uint256 next = IHandlerExit(exitAddr).nextWatchId();
+        for (uint256 id = 1; id < next; id++) {
+            if (h.exitMode(id) == 0) assertTrue(h.exitStatus(id) != EXIT_EXPIRED, "a leave-now watch expired");
+        }
     }
 
     /// @dev The CRON subscription exists exactly while some watch stores a pending change.

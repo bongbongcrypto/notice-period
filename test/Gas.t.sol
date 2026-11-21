@@ -10,7 +10,9 @@ import { NoticeKinds } from "../src/lib/NoticeKinds.sol";
 ///         subscribe and unsubscribe charged at its modelled cost (MockSystem.SUBSCRIBE_GAS). Each must fit the
 ///         network's 900,000 gas cap. This is a model: the real costs are measured on Lasna (SPEC.md section 12).
 contract GasTest is NoticeSetup {
+    /// @dev Room for 1,000 armed watches, as deployed: the tick bound below is then MAX_TIMED, the real bound.
     function setUp() public {
+        cfgMaxActive = 1000;
         _deploy();
     }
 
@@ -42,10 +44,12 @@ contract GasTest is NoticeSetup {
         _fits("three watches leave on a 100 KB change: max react gas");
     }
 
-    /// @dev Eight watches each storing three changes of the longest stored length, then one tick when all are due.
+    /// @dev MAX_TIMED (8) timer watches each storing three changes of the longest stored length, then one tick when
+    ///      all are due.
     function test_tick_over_eight_full_watches_fits() public {
         uint256 at;
-        for (uint256 i = 0; i < MAX_ACTIVE; i++) {
+        uint256 n = reactive.MAX_TIMED();
+        for (uint256 i = 0; i < n; i++) {
             address u = vm.addr(4000 + i);
             DemoVault v = _vaultWithDeposit(u, 1e6);
             _arm(u, v, NoticeKinds.DEFAULT, 1, type(uint256).max);
@@ -56,7 +60,7 @@ contract GasTest is NoticeSetup {
                 at = v.executableAt(d);
             }
         }
-        assertEq(reactive.pendingWatchIds().length, MAX_ACTIVE);
+        assertEq(reactive.pendingWatchIds().length, n);
         vm.warp(at);
         _tickAndPump();
         assertGt(sys.callbackCount(), 0);

@@ -3,12 +3,14 @@ pragma solidity 0.8.30;
 
 import { Vm } from "forge-std/Test.sol";
 import { IPayable } from "@reactive/src/interfaces/IPayable.sol";
+import { IReactive } from "@reactive/src/interfaces/IReactive.sol";
 import { AbstractPayer } from "@reactive/src/base/AbstractPayer.sol";
 import { AbstractCallback } from "@reactive/src/base/AbstractCallback.sol";
 import { NoticeSetup } from "./utils/NoticeSetup.sol";
 import { DemoVault } from "../src/demo/DemoVault.sol";
 import { DemoVaultFactory } from "../src/demo/DemoVaultFactory.sol";
 import { NoticeExit, IVaultRegistry } from "../src/NoticeExit.sol";
+import { NoticeReactive } from "../src/NoticeReactive.sol";
 import { INoticeExit } from "../src/lib/INoticeExit.sol";
 import { NoticeKinds } from "../src/lib/NoticeKinds.sol";
 import { AllowAllRegistry, ReentrantToken, RedirectingVault, OwnerWallet } from "./mocks/Hostile.sol";
@@ -428,7 +430,13 @@ contract NoticeExitTest is NoticeSetup {
     function test_attack_vault_paying_someone_else_is_refused() public {
         AllowAllRegistry anyRegistry = new AllowAllRegistry();
         NoticeExit exitH = new NoticeExit(
-            IPayable(payable(address(proxy))), address(reactive), IVaultRegistry(address(anyRegistry)), 5, 50, LIFETIME
+            IPayable(payable(address(proxy))),
+            address(reactive),
+            IVaultRegistry(address(anyRegistry)),
+            5,
+            50,
+            LIFETIME,
+            50
         );
         address thief = makeAddr("thief");
         RedirectingVault bad = new RedirectingVault(address(token), thief);
@@ -472,7 +480,13 @@ contract NoticeExitTest is NoticeSetup {
         r.evil = new ReentrantToken();
         DemoVaultFactory evilFactory = new DemoVaultFactory(address(r.evil), TIMELOCK);
         r.exitR = new NoticeExit(
-            IPayable(payable(address(proxy))), address(reactive), IVaultRegistry(address(evilFactory)), 5, 50, LIFETIME
+            IPayable(payable(address(proxy))),
+            address(reactive),
+            IVaultRegistry(address(evilFactory)),
+            5,
+            50,
+            LIFETIME,
+            50
         );
         r.wallet = new OwnerWallet();
         vm.startPrank(alice);
@@ -490,10 +504,10 @@ contract NoticeExitTest is NoticeSetup {
         r.evil.setHook(address(r.wallet), abi.encodeCall(OwnerWallet.reenter, ()));
     }
 
-    function _armV2(Reentry memory r_) internal returns (uint256 id2) {
+    function _armV2(Reentry memory r_, uint8 mode_) internal returns (uint256 id2) {
         bytes memory ret = r_.wallet.exec(
             address(r_.exitR),
-            abi.encodeCall(NoticeExit.arm, (address(r_.v2), NoticeKinds.DEFAULT, 0, type(uint256).max))
+            abi.encodeCall(NoticeExit.arm, (address(r_.v2), NoticeKinds.DEFAULT, mode_, type(uint256).max))
         );
         id2 = abi.decode(ret, (uint256));
     }
@@ -521,7 +535,7 @@ contract NoticeExitTest is NoticeSetup {
 
     function test_reentry_sibling_exit_pays_the_wallet() public {
         Reentry memory r = _reentrySetup();
-        uint256 id2 = _armV2(r);
+        uint256 id2 = _armV2(r, 0);
         // a harmless hook: reading a view succeeds
         r.wallet.setReenter(address(r.exitR), abi.encodeCall(NoticeExit.redeemableShares, (id2)));
         (bytes memory reason, uint8 outcome) = _exitV1(r);
@@ -546,7 +560,7 @@ contract NoticeExitTest is NoticeSetup {
 
     function test_reentry_into_cancel_is_blocked() public {
         Reentry memory r = _reentrySetup();
-        uint256 id2 = _armV2(r);
+        uint256 id2 = _armV2(r, 0);
         r.wallet.setReenter(address(r.exitR), abi.encodeCall(NoticeExit.cancel, (id2)));
         (bytes memory reason,) = _exitV1(r);
         assertEq(reason, abi.encodeWithSelector(NoticeExit.Reentrancy.selector), "the re-entry hit the guard");
@@ -554,9 +568,11 @@ contract NoticeExitTest is NoticeSetup {
         assertEq(_st(r.exitR, r.id1), r.exitR.STATUS_ENDED());
     }
 
+    /// @dev The second watch is a timer watch, the only kind expire() can end, so without the guard the re-entered
+    ///      expire() would succeed and both asserts fail.
     function test_reentry_into_expire_is_blocked() public {
         Reentry memory r = _reentrySetup();
-        uint256 id2 = _armV2(r);
+        uint256 id2 = _armV2(r, 1);
         vm.warp(block.timestamp + LIFETIME);
         r.wallet.setReenter(address(r.exitR), abi.encodeCall(NoticeExit.expire, (id2)));
         (bytes memory reason,) = _exitV1(r);
@@ -568,7 +584,7 @@ contract NoticeExitTest is NoticeSetup {
     ///      reach exit() from inside a redeem.
     function test_reentry_into_exit_is_blocked() public {
         Reentry memory r = _reentrySetup();
-        uint256 id2 = _armV2(r);
+        uint256 id2 = _armV2(r, 0);
         r.wallet.setReenter(
             address(proxy),
             abi.encodeCall(
@@ -583,9 +599,10 @@ contract NoticeExitTest is NoticeSetup {
     }
 
     // ---------------------------------------------------------------- expire
+    // Only a "leave if still pending" (timer) watch can expire, so the expire tests below arm one.
 
     function test_expire_after_lifetime() public {
-        uint256 id = _armAlice(0);
+        uint256 id = _armAlice(1);
         vm.warp(block.timestamp + LIFETIME);
         vm.expectEmit(true, true, true, true, address(exitC));
         emit NoticeExit.WatchExpired(id);
@@ -601,7 +618,7 @@ contract NoticeExitTest is NoticeSetup {
     }
 
     function test_expire_refuses_before_lifetime() public {
-        uint256 id = _armAlice(0);
+        uint256 id = _armAlice(1);
         uint256 at = block.timestamp + LIFETIME;
         vm.warp(at - 1);
         vm.expectRevert(abi.encodeWithSelector(NoticeExit.WatchNotExpired.selector, id, at));
@@ -611,7 +628,7 @@ contract NoticeExitTest is NoticeSetup {
     }
 
     function test_expire_refuses_ended_watch() public {
-        uint256 id = _armAlice(0);
+        uint256 id = _armAlice(1);
         vm.prank(alice);
         exitC.cancel(id);
         vm.warp(block.timestamp + LIFETIME);
@@ -621,12 +638,113 @@ contract NoticeExitTest is NoticeSetup {
     }
 
     function test_exit_refuses_expired_watch() public {
-        uint256 id = _armAlice(0);
+        uint256 id = _armAlice(1);
         vm.warp(block.timestamp + LIFETIME);
         exitC.expire(id);
         vm.expectRevert(abi.encodeWithSelector(NoticeExit.WatchNotActive.selector, id));
         _deliver(id, _adapterCall(address(0xA1)));
         assertEq(vault.balanceOf(alice), DEPOSIT);
+    }
+
+    /// @dev Bites `if (w.mode != MODE_IF_PENDING) revert NoExpiry(watchId_);` in expire(). A "leave now" watch cannot
+    ///      be expired by anyone, the curator included, neither young (without the line: WatchNotExpired) nor after
+    ///      LIFETIME (without the line: it expires). Sibling: a timer watch armed at the same time expires.
+    function test_expire_refuses_leave_now_watch() public {
+        uint256 id = _armAlice(0);
+        DemoVault vb = _vaultWithDeposit(bob, 10e6);
+        _approveExit(bob, vb, type(uint256).max);
+        vm.prank(bob);
+        uint256 idTimed = exitC.arm(address(vb), NoticeKinds.DEFAULT, 1, type(uint256).max);
+        vm.expectRevert(abi.encodeWithSelector(NoticeExit.NoExpiry.selector, id));
+        vm.prank(carol);
+        exitC.expire(id);
+        vm.warp(block.timestamp + LIFETIME);
+        vm.expectRevert(abi.encodeWithSelector(NoticeExit.NoExpiry.selector, id));
+        vm.prank(carol);
+        exitC.expire(id);
+        vm.expectRevert(abi.encodeWithSelector(NoticeExit.NoExpiry.selector, id));
+        vm.prank(alice); // alice is also the curator of her vault
+        exitC.expire(id);
+        assertEq(_status(id), exitC.STATUS_ACTIVE(), "the leave-now watch is still on");
+        vm.prank(carol);
+        exitC.expire(idTimed);
+        assertEq(_status(idTimed), exitC.STATUS_EXPIRED(), "sibling: the timer watch expires");
+    }
+
+    /// @dev Three strangers deposit dust into alice's vault and arm "leave now" watches first, so the reactive
+    ///      contract refuses alice's own watch with code 4 (vault full). The refusal is visible on both sides (Base:
+    ///      still active, Lasna: refused), and nobody can expire the three dust watches. An accepted limit
+    ///      (SPEC.md section 11): the cure is a fresh vault.
+    function test_vault_squat_is_permanent_and_visible() public {
+        address[3] memory strangers = [bob, carol, makeAddr("dave")];
+        uint256[3] memory ids;
+        for (uint256 i = 0; i < 3; i++) {
+            _deposit(strangers[i], vault, 1);
+            ids[i] = _arm(strangers[i], vault, NoticeKinds.DEFAULT, 0, type(uint256).max);
+            assertEq(_rStatus(ids[i]), reactive.ST_ARMED());
+        }
+        _approveExit(alice, vault, type(uint256).max);
+        vm.prank(alice);
+        uint256 id = exitC.arm(address(vault), NoticeKinds.DEFAULT, 0, type(uint256).max);
+        _drainLogs(); // the WatchArmed above is delivered by hand below, to read the exact refusal code
+        IReactive.LogRecord memory armed = _watchArmedLog(id, address(vault), 0);
+        uint8 code = reactive.REFUSE_VAULT_FULL();
+        vm.expectEmit(true, true, true, true, address(reactive));
+        emit NoticeReactive.WatchRefused(id, code);
+        sys.forceDeliver(address(reactive), armed);
+        assertEq(_status(id), exitC.STATUS_ACTIVE(), "Base: the refused watch stays on until its owner ends it");
+        assertEq(_rStatus(id), reactive.ST_REFUSED(), "Lasna: refused");
+        vm.warp(block.timestamp + LIFETIME);
+        for (uint256 i = 0; i < 3; i++) {
+            vm.expectRevert(abi.encodeWithSelector(NoticeExit.NoExpiry.selector, ids[i]));
+            vm.prank(alice);
+            exitC.expire(ids[i]);
+            assertEq(_rStatus(ids[i]), reactive.ST_ARMED(), "the dust watch keeps its place");
+        }
+        assertEq(reactive.vaultWatches(address(vault)).length, 3);
+    }
+
+    /// @dev Bites `if (mode_ == MODE_IF_PENDING && timedArmsOnDay[day] >= MAX_TIMED_ARMS_PER_DAY) revert
+    ///      DailyCapForTimed();` in arm(). Uses an exit contract that takes 2 timer arms and 50 arms a day: the setup's
+    ///      exit contract takes as many timer arms as arms, so its overall cap would answer first. A "leave now" arm
+    ///      neither uses a timer place nor is refused by the cap; the next UTC day the cap is free again.
+    function test_arm_refuses_timed_over_daily_cap() public {
+        NoticeExit exitT = new NoticeExit(
+            IPayable(payable(address(proxy))),
+            address(reactive),
+            IVaultRegistry(address(factory)),
+            5,
+            50,
+            LIFETIME,
+            2
+        );
+        _armOn(exitT, vm.addr(5000), 0); // a leave-now arm first: it must not use a timer place
+        _armOn(exitT, vm.addr(5001), 1);
+        _armOn(exitT, vm.addr(5002), 1);
+        assertEq(exitT.timedArmsOnDay(block.timestamp / 1 days), 2);
+        address late = vm.addr(5003);
+        DemoVault v = _vaultWithDeposit(late, 1e6);
+        vm.prank(late);
+        v.approve(address(exitT), 1e6);
+        vm.expectRevert(NoticeExit.DailyCapForTimed.selector);
+        vm.prank(late);
+        exitT.arm(address(v), NoticeKinds.DEFAULT, 1, 1e6);
+        // sibling: a leave-now arm the same day is still taken
+        _armOn(exitT, vm.addr(5004), 0);
+        // next UTC day the timer cap is free again
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(late);
+        exitT.arm(address(v), NoticeKinds.DEFAULT, 1, 1e6);
+        assertEq(exitT.timedArmsOnDay(block.timestamp / 1 days), 1);
+    }
+
+    /// @dev Arms `user_`'s watch on `exit_` over a fresh vault of `user_`'s own.
+    function _armOn(NoticeExit exit_, address user_, uint8 mode_) internal returns (uint256 id) {
+        DemoVault v = _vaultWithDeposit(user_, 1e6);
+        vm.prank(user_);
+        v.approve(address(exit_), 1e6);
+        vm.prank(user_);
+        id = exit_.arm(address(v), NoticeKinds.DEFAULT, mode_, 1e6);
     }
 
     // ---------------------------------------------------------------- fee reserve

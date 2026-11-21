@@ -212,6 +212,19 @@ contract NoticeReactiveTest is NoticeSetup {
         assertEq(reactive.activeWatches(), MAX_ACTIVE);
     }
 
+    /// @dev Bites `if (callbackGas_ < MIN_CALLBACK_GAS) revert CallbackGasTooLow(callbackGas_);` in the constructor:
+    ///      399,999 is refused, 400,000 deploys.
+    function test_constructor_refuses_low_callback_gas() public {
+        uint64 floor = reactive.MIN_CALLBACK_GAS();
+        assertEq(floor, 400_000);
+        vm.expectRevert(abi.encodeWithSelector(NoticeReactive.CallbackGasTooLow.selector, floor - 1));
+        new NoticeReactive(ORIGIN_CHAIN, address(0xE717), CRON10_TOPIC, LEAD, MAX_WAIT, floor - 1, MAX_ACTIVE, 80);
+        // sibling: the floor itself is taken
+        NoticeReactive ok =
+            new NoticeReactive(ORIGIN_CHAIN, address(0xE717), CRON10_TOPIC, LEAD, MAX_WAIT, floor, MAX_ACTIVE, 80);
+        assertEq(ok.CALLBACK_GAS(), floor);
+    }
+
     // ---------------------------------------------------------------- leave now
 
     function test_now_mode_exits_on_watched_submit() public {
@@ -877,5 +890,113 @@ contract NoticeReactiveBudgetTest is NoticeSetup {
         assertEq(reason, reactive.R_BUDGET());
         assertEq(_rStatus(id), reactive.ST_EXITED());
         assertEq(token.balanceOf(alice), 500e6);
+    }
+}
+
+/// @notice The cap on timer ("leave if still pending") watches on Lasna is its own cap. Deployed with room for 64 armed
+///         watches in total, so the total cap (code 3) cannot answer first and these tests reach the timer cap (code 5).
+contract NoticeReactiveTimedTest is NoticeSetup {
+    function setUp() public {
+        cfgMaxActive = 64;
+        _deploy();
+    }
+
+    function _user(uint256 i_) internal view returns (address) {
+        return vm.addr(6000 + i_);
+    }
+
+    /// @dev Arms a fresh user's watch over a fresh vault of their own, through the whole simulated network.
+    function _armUser(uint256 i_, uint8 mode_) internal returns (uint256 id) {
+        DemoVault v = _vaultWithDeposit(_user(i_), 1e6);
+        id = _arm(_user(i_), v, NoticeKinds.DEFAULT, mode_, type(uint256).max);
+    }
+
+    function _fillTimed() internal returns (uint256[] memory ids) {
+        uint256 n = reactive.MAX_TIMED();
+        ids = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) {
+            ids[i] = _armUser(i, 1);
+            assertEq(_rStatus(ids[i]), reactive.ST_ARMED());
+        }
+        assertEq(reactive.timedWatches(), n);
+    }
+
+    /// @dev Bites `else if (mode == MODE_IF_PENDING && timedWatches >= MAX_TIMED) refusal = REFUSE_TOO_MANY_TIMED;` in
+    ///      _onArmed: with eight timer watches armed, a ninth is refused with code 5. Sibling: the same event for a
+    ///      "leave now" watch is taken.
+    function test_refuses_ninth_timed_watch() public {
+        _fillTimed();
+        uint8 code = reactive.REFUSE_TOO_MANY_TIMED();
+        assertEq(code, 5);
+        IReactive.LogRecord memory ninth = _watchArmedLog(900, address(0xF9), 1); // built before expectEmit
+        vm.expectEmit(true, true, true, true, address(reactive));
+        emit NoticeReactive.WatchRefused(900, code);
+        sys.forceDeliver(address(reactive), ninth);
+        assertEq(_rStatus(900), reactive.ST_REFUSED());
+        assertEq(reactive.timedWatches(), reactive.MAX_TIMED());
+        sys.forceDeliver(address(reactive), _watchArmedLog(901, address(0xFA), 0));
+        assertEq(_rStatus(901), reactive.ST_ARMED(), "sibling: a leave-now watch is taken");
+        assertEq(reactive.timedWatches(), reactive.MAX_TIMED(), "and does not count as a timer watch");
+        assertEq(sys.reverts(), 0);
+    }
+
+    /// @dev Bites the `mode == MODE_IF_PENDING &&` part of the timer cap: a "leave now" watch is neither counted nor
+    ///      refused for lack of a timer place. One leave-now watch, all eight timer places, another leave-now watch.
+    function test_leave_now_not_counted_as_timed() public {
+        uint256 first = _armUser(20, 0);
+        assertEq(_rStatus(first), reactive.ST_ARMED());
+        assertEq(reactive.timedWatches(), 0);
+        _fillTimed();
+        uint256 last = _armUser(21, 0);
+        assertEq(_rStatus(last), reactive.ST_ARMED(), "a leave-now watch is taken while the timer places are full");
+        assertEq(reactive.activeWatches(), reactive.MAX_TIMED() + 2);
+        assertEq(reactive.timedWatches(), reactive.MAX_TIMED());
+    }
+
+    /// @dev Bites `if (w.mode == MODE_IF_PENDING) timedWatches -= 1;` in _close: the count goes down when a timer watch
+    ///      exits (deadline tick), when its owner cancels it, and when anyone expires it after LIFETIME.
+    function test_timed_count_released_on_exit_cancel_expire() public {
+        DemoVault va = _vaultWithDeposit(_user(40), 1e6);
+        uint256 idA = _arm(_user(40), va, NoticeKinds.DEFAULT, 1, type(uint256).max);
+        uint256 idB = _armUser(41, 1);
+        uint256 idC = _armUser(42, 1);
+        assertEq(reactive.timedWatches(), 3);
+        // exit: the change is stored, then fled by the tick that comes LEAD seconds before it can run
+        bytes memory d = _adapterCall(address(0xA1));
+        _submit(_user(40), va, d);
+        assertEq(_rPendingCount(idA), 1);
+        vm.warp(va.executableAt(d) - LEAD);
+        _tickAndPump();
+        assertEq(_rStatus(idA), reactive.ST_EXITED());
+        assertEq(reactive.timedWatches(), 2, "released on exit");
+        // cancel by the owner
+        vm.prank(_user(41));
+        exitC.cancel(idB);
+        _pump(address(reactive));
+        assertEq(_rStatus(idB), reactive.ST_CANCELLED());
+        assertEq(reactive.timedWatches(), 1, "released on cancel");
+        // expiry by anyone after LIFETIME
+        vm.warp(block.timestamp + LIFETIME);
+        vm.prank(carol);
+        exitC.expire(idC);
+        _pump(address(reactive));
+        assertEq(_rStatus(idC), reactive.ST_CANCELLED());
+        assertEq(reactive.timedWatches(), 0, "released on expiry");
+        assertEq(reactive.activeWatches(), 0);
+    }
+
+    /// @dev Recovery from a timer squat: after LIFETIME anyone expires one timer watch on Base, Lasna closes it and
+    ///      frees its place, and a new timer watch is taken.
+    function test_timed_place_freed_by_expiry() public {
+        uint256[] memory ids = _fillTimed();
+        vm.warp(block.timestamp + LIFETIME);
+        vm.prank(carol);
+        exitC.expire(ids[0]);
+        _pump(address(reactive));
+        assertEq(_rStatus(ids[0]), reactive.ST_CANCELLED());
+        assertEq(reactive.timedWatches(), reactive.MAX_TIMED() - 1);
+        uint256 again = _armUser(30, 1);
+        assertEq(_rStatus(again), reactive.ST_ARMED());
+        assertEq(reactive.timedWatches(), reactive.MAX_TIMED());
     }
 }

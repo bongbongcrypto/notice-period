@@ -2,6 +2,7 @@
 pragma solidity 0.8.30;
 
 import { IPayable } from "@reactive/src/interfaces/IPayable.sol";
+import { IReactive } from "@reactive/src/interfaces/IReactive.sol";
 import { Network } from "./Network.sol";
 import { DemoToken } from "../../src/demo/DemoToken.sol";
 import { DemoVault } from "../../src/demo/DemoVault.sol";
@@ -11,10 +12,11 @@ import { NoticeReactive } from "../../src/NoticeReactive.sol";
 import { INoticeExit } from "../../src/lib/INoticeExit.sol";
 import { NoticeKinds } from "../../src/lib/NoticeKinds.sol";
 
-/// @notice Deploys the full system with the demo values of SPEC.md section 9, in the deployment order of section 7.
+/// @notice Deploys the full system in the deployment order of SPEC.md section 7, with test values, not the deployed
+///         ones: the caps here are small so each is reached in a few calls (deployed values: SPEC.md section 9).
 abstract contract NoticeSetup is Network {
     uint256 internal constant TIMELOCK = 180;
-    /// @dev Covers MAX_ACTIVE Cron10 ticks (8 x 10.7 s) plus the callback's trip: one exit is asked for per tick.
+    /// @dev Covers MAX_TIMED Cron10 ticks (8 x 10.7 s) plus the callback's trip: one exit is asked for per tick.
     uint256 internal constant LEAD = 120;
     uint256 internal constant MAX_WAIT = 900;
     uint64 internal constant CB_GAS = 600_000;
@@ -27,6 +29,8 @@ abstract contract NoticeSetup is Network {
 
     /// @dev Reaction budget used by _deploy; a test contract may lower it before calling _deploy.
     uint256 internal cfgMaxReactions = MAX_REACTIONS;
+    /// @dev Cap on armed watches (both modes) used by _deploy; a test contract may raise it before calling _deploy.
+    uint256 internal cfgMaxActive = MAX_ACTIVE;
 
     DemoToken internal token;
     DemoVaultFactory internal factory;
@@ -44,7 +48,7 @@ abstract contract NoticeSetup is Network {
         factory = new DemoVaultFactory(address(token), TIMELOCK);
         address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
         reactive = new NoticeReactive(
-            ORIGIN_CHAIN, predicted, CRON10_TOPIC, LEAD, MAX_WAIT, CB_GAS, MAX_ACTIVE, cfgMaxReactions
+            ORIGIN_CHAIN, predicted, CRON10_TOPIC, LEAD, MAX_WAIT, CB_GAS, cfgMaxActive, cfgMaxReactions
         );
         exitC = new NoticeExit(
             IPayable(payable(address(proxy))),
@@ -52,7 +56,8 @@ abstract contract NoticeSetup is Network {
             IVaultRegistry(address(factory)),
             PER_ADDRESS,
             PER_DAY,
-            LIFETIME
+            LIFETIME,
+            PER_DAY
         );
         assertEq(address(exitC), predicted, "exit address computed before deployment");
         _drainLogs();
@@ -149,6 +154,23 @@ abstract contract NoticeSetup is Network {
 
     function _rPendingCount(uint256 id_) internal view returns (uint8 n) {
         (,,,, n,) = reactive.watches(id_);
+    }
+
+    /// @notice A WatchArmed log of our exit contract as the network hands it to react(), for a test that delivers it
+    ///         itself (sys.forceDeliver) to read the exact refusal code.
+    function _watchArmedLog(uint256 id_, address vault_, uint8 mode_)
+        internal
+        view
+        returns (IReactive.LogRecord memory r)
+    {
+        r.chainId = ORIGIN_CHAIN;
+        r.contractAddress = address(exitC);
+        r.topic0 = reactive.WATCH_ARMED_TOPIC();
+        r.topic1 = id_;
+        r.topic2 = uint256(uint160(alice));
+        r.topic3 = uint256(uint160(vault_));
+        r.opCode = 4;
+        r.data = abi.encode(NoticeKinds.DEFAULT, mode_, type(uint256).max);
     }
 
     /// @notice Decodes callback request `i_` into the exit arguments.

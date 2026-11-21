@@ -57,8 +57,12 @@ contract NoticeExit is AbstractCallback, INoticeExit {
     IVaultRegistry public immutable REGISTRY;
     uint256 public immutable MAX_ARMS_PER_ADDRESS_PER_DAY;
     uint256 public immutable MAX_ARMS_PER_DAY;
-    /// @notice Seconds after arming from which anyone may end a watch with expire() (frees its place on Lasna).
+    /// @notice Seconds after arming from which anyone may end a "leave if still pending" (timer) watch with expire(),
+    ///         which frees its timer place on Lasna. A "leave now" watch has no expiry.
     uint256 public immutable LIFETIME;
+    /// @notice Most "leave if still pending" watches armed per UTC day, all addresses together (the only mode that
+    ///         costs the operator float while it waits).
+    uint256 public immutable MAX_TIMED_ARMS_PER_DAY;
 
     uint256 public nextWatchId = 1;
     mapping(uint256 watchId => Watch) public watches;
@@ -67,6 +71,7 @@ contract NoticeExit is AbstractCallback, INoticeExit {
     mapping(address owner => mapping(uint256 day => uint256)) public armsByAddressOnDay;
     mapping(uint256 day => uint256) public armsOnDay;
     uint256 private _entered;
+    mapping(uint256 day => uint256) public timedArmsOnDay;
 
     event WatchArmed(
         uint256 indexed watchId,
@@ -76,7 +81,8 @@ contract NoticeExit is AbstractCallback, INoticeExit {
         uint8 mode,
         uint256 maxShares
     );
-    /// @notice Emitted when the owner cancels a watch and when anyone expires it; the reactive contract then drops it.
+    /// @notice Emitted when the owner cancels a watch and when anyone expires a timer watch; the reactive contract
+    ///         then drops it.
     event WatchCancelled(uint256 indexed watchId, address indexed owner, address indexed vault);
     event WatchExpired(uint256 indexed watchId);
     event WatchEnded(
@@ -100,8 +106,10 @@ contract NoticeExit is AbstractCallback, INoticeExit {
     error AlreadyWatching(uint256 watchId);
     error DailyCapForAddress();
     error DailyCapReached();
+    error DailyCapForTimed();
     error NotWatchOwner();
     error WatchNotActive(uint256 watchId);
+    error NoExpiry(uint256 watchId);
     error WatchNotExpired(uint256 watchId, uint256 expiresAt);
     error WrongVault(uint256 watchId, address vault);
     error KindNotWatched(bytes4 selector);
@@ -116,20 +124,23 @@ contract NoticeExit is AbstractCallback, INoticeExit {
 
     /// @param callbackProxy_ Callback proxy of this chain (the only caller of exit).
     /// @param reactive_ Our reactive contract on Lasna (the only accepted requester).
-    /// @param registry_ The factory that lists the vaults watches may be armed on.
-    /// @param lifetime_ Seconds after arming from which anyone may expire a watch.
+    /// @param registry_ The contract that lists the vaults watches may be armed on (isVault).
+    /// @param lifetime_ Seconds after arming from which anyone may expire a "leave if still pending" watch.
+    /// @param maxTimedArmsPerDay_ Most "leave if still pending" watches armed per UTC day, all addresses together.
     constructor(
         IPayable callbackProxy_,
         address reactive_,
         IVaultRegistry registry_,
         uint256 maxArmsPerAddressPerDay_,
         uint256 maxArmsPerDay_,
-        uint256 lifetime_
+        uint256 lifetime_,
+        uint256 maxTimedArmsPerDay_
     ) payable AbstractCallback(callbackProxy_, reactive_) {
         REGISTRY = registry_;
         MAX_ARMS_PER_ADDRESS_PER_DAY = maxArmsPerAddressPerDay_;
         MAX_ARMS_PER_DAY = maxArmsPerDay_;
         LIFETIME = lifetime_;
+        MAX_TIMED_ARMS_PER_DAY = maxTimedArmsPerDay_;
     }
 
     /// @notice Settles this contract's debt to the callback proxy from its fee reserve. Open to anyone: after a top-up,
@@ -163,9 +174,11 @@ contract NoticeExit is AbstractCallback, INoticeExit {
         uint256 day = block.timestamp / 1 days;
         if (armsByAddressOnDay[msg.sender][day] >= MAX_ARMS_PER_ADDRESS_PER_DAY) revert DailyCapForAddress();
         if (armsOnDay[day] >= MAX_ARMS_PER_DAY) revert DailyCapReached();
+        if (mode_ == MODE_IF_PENDING && timedArmsOnDay[day] >= MAX_TIMED_ARMS_PER_DAY) revert DailyCapForTimed();
 
         armsByAddressOnDay[msg.sender][day] += 1;
         armsOnDay[day] += 1;
+        if (mode_ == MODE_IF_PENDING) timedArmsOnDay[day] += 1;
         watchId = nextWatchId;
         nextWatchId = watchId + 1;
         watches[watchId] = Watch({
@@ -186,10 +199,13 @@ contract NoticeExit is AbstractCallback, INoticeExit {
         emit WatchCancelled(watchId_, w.owner, w.vault);
     }
 
-    /// @notice Ends a watch armed at least LIFETIME seconds ago. Open to anyone, so a watch nobody uses cannot hold a
-    ///         place on the reactive side for ever (SPEC.md section 9). Moves nothing: the shares stay with the owner.
+    /// @notice Ends a "leave if still pending" (timer) watch armed at least LIFETIME seconds ago. Open to anyone, so a
+    ///         timer watch nobody uses cannot hold one of the few timer places on the reactive side for ever (SPEC.md
+    ///         section 9). A "leave now" watch has no expiry: only its owner ends it, with cancel(). Moves nothing:
+    ///         the shares stay with the owner.
     function expire(uint256 watchId_) external nonReentrant {
         Watch storage w = watches[watchId_];
+        if (w.mode != MODE_IF_PENDING) revert NoExpiry(watchId_);
         if (w.status != STATUS_ACTIVE) revert WatchNotActive(watchId_);
         uint256 expiresAt = armedAt[watchId_] + LIFETIME;
         if (block.timestamp < expiresAt) revert WatchNotExpired(watchId_, expiresAt);

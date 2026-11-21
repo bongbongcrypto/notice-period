@@ -82,13 +82,14 @@ virtual asset: `shares = assets * (supply + 1) / (totalAssets + 1)`.
 
 | Action | Who | Refusal (exact error), checked in this order |
 |---|---|---|
-| `arm(vault, kinds, mode, maxShares)` | any share owner, for their own shares only (the owner is always `msg.sender`) | `Reentrancy()`; `UnknownVault(vault)` if the factory did not make it; `NoKinds()`; `UnknownKinds(kinds)` for bits above 8; `BadMode(mode)` for a mode other than 0 or 1; `ZeroMaxShares()`; `NoShares()`; `NoAllowance()` if the owner has not approved this contract for any shares; `AlreadyWatching(watchId)` if the owner already has an active watch on this vault; `DailyCapForAddress()`; `DailyCapReached()` |
+| `arm(vault, kinds, mode, maxShares)` | any share owner, for their own shares only (the owner is always `msg.sender`) | `Reentrancy()`; `UnknownVault(vault)` if the factory did not make it; `NoKinds()`; `UnknownKinds(kinds)` for bits above 8; `BadMode(mode)` for a mode other than 0 or 1; `ZeroMaxShares()`; `NoShares()`; `NoAllowance()` if the owner has not approved this contract for any shares; `AlreadyWatching(watchId)` if the owner already has an active watch on this vault; `DailyCapForAddress()`; `DailyCapReached()`; `DailyCapForTimed()` for a mode-1 arm once `MAX_TIMED_ARMS_PER_DAY` mode-1 arms were made this UTC day (all addresses together) |
 | `cancel(watchId)` | the watch owner | `Reentrancy()`; `NotWatchOwner()`; `WatchNotActive(watchId)` |
-| `expire(watchId)` | anyone, once `LIFETIME` (1 day in the demo deployment) has passed since the arm | `Reentrancy()`; `WatchNotActive(watchId)`; `WatchNotExpired(watchId, expiresAt)` before `armedAt + LIFETIME`. Sets status `Expired` (4), emits `WatchExpired` and `WatchCancelled` (so Lasna drops it like a cancel). Moves no shares |
+| `expire(watchId)` | anyone, for a mode-1 watch only, once `LIFETIME` (1 day) has passed since the arm | `Reentrancy()`; `NoExpiry(watchId)` for any watch that is not mode 1 (a mode-0 "leave now" watch has no expiry; an unknown id also answers this); `WatchNotActive(watchId)`; `WatchNotExpired(watchId, expiresAt)` before `armedAt + LIFETIME`. Sets status `Expired` (4), emits `WatchExpired` and `WatchCancelled` (so Lasna drops it like a cancel). Moves no shares |
 | `exit(sender, watchId, vault, data, originTxHash, reason)` | the callback proxy only, and only when the network-injected `sender` is our reactive contract | `NotAuthorized(msg.sender, proxy)` for any other caller; `CallbackNotAuthorized(sender, reactive)` for any other reactive contract; `Reentrancy()`; `WatchNotActive(watchId)` for an unknown, cancelled, expired or finished watch (this is what stops a replay or a second exit); `WrongVault(watchId, vault)` if `vault` is not the watch's vault; `KindNotWatched(selector)` if `data` is not a kind this watch chose (empty `data` reads as selector 0); `AssetsNotReceived(expected, received)` if the owner did not receive the assets the vault reported |
 | `coverDebt()` | anyone | pays the proxy's recorded debt of this contract from its fee reserve; `InsufficientFunds(required, available)` if the reserve is short |
 
-`constructor(proxy, reactive, registry, armsPerAddressPerDay, armsPerDay, lifetime)`: all immutable. The
+`constructor(proxy, reactive, registry, armsPerAddressPerDay, armsPerDay, lifetime, timedArmsPerDay)`: all
+immutable. The
 payload carries the vault the reactive contract recorded for the watch, so a payload built for one vault can
 never end a watch on another.
 
@@ -104,6 +105,9 @@ of these outcomes in `WatchEnded`:
 
 ### NoticeReactive
 
+The constructor refuses a callback gas limit below `MIN_CALLBACK_GAS` (400,000) with
+`CallbackGasTooLow(callbackGas)`: the proxy keeps about 180,000 of the limit (section 12).
+
 Only the system contract (`0x8888…8888`) can call `react()`; anyone else gets `NotAuthorized(sender,
 system)`. `react()` never reverts on an event it does not want, because a revert is billed: it counts the
 event and returns. Anyone can send it lREACT or call `coverDebt()`. Nobody can take lREACT out.
@@ -113,7 +117,9 @@ event and returns. Anyone can send it lREACT or call `coverDebt()`. Nobody can t
 three (the topic count is the log's `opCode`); any other count is counted in `unknownEvents`.
 
 A `WatchArmed` it cannot take is refused with `WatchRefused(watchId, code)`, checked in this order: 1 bad kinds
-(none, or bits above 8), 2 bad mode, 3 too many active watches, 4 vault full (section 9). A `Submit` or
+(none, or bits above 8), 2 bad mode, 3 too many active watches, 4 vault full, 5 too many mode-1 watches
+(`MAX_TIMED`, 8, a constant; section 9). A refused watch stays `Active` on Base Sepolia until its owner cancels it
+(nothing tells Base about a refusal), so the page reads both sides. A `Submit` or
 `Revoke` whose data is not a valid ABI encoding is counted in `unknownEvents`, never decoded blindly.
 
 What travels in the exit callback: the scheduled call itself when it is at most 256 bytes; a longer one
@@ -149,8 +155,9 @@ billed one reaction; a watch is due when its earliest stored change has `executa
 (reason 2, `Deadline`) or when it has used its reaction budget (reason 7, `Budget`). Of the due watches, the
 one whose change can run first gets its exit asked for; the others wait for the next tick (one exit per
 tick, because an exit releases filters, the costly part of a reaction). `LEAD` is 120 s in the demo
-deployment: it covers `MAX_ACTIVE` (8) ticks of about 10.7 s, so even 8 watches due together are all served,
-plus the callback's trip to Base Sepolia (`test/Timing.t.sol`).
+deployment: it covers `MAX_TIMED` (8) ticks of about 10.7 s, so even 8 mode-1 watches due together are all
+served, plus the callback's trip to Base Sepolia (`test/Timing.t.sol`). Only mode-1 watches store changes, and
+at most `MAX_TIMED` of them are armed at a time, whatever `MAX_ACTIVE` is.
 
 "Still pending" is decided on Lasna only. The exit contract does not ask the vault again: an exit asked for is
 carried out. A decoy is why: a curator could store a decoy change and a real one, wait for the public
@@ -274,7 +281,9 @@ unknown topic) are counted in `unknownEvents` and ignored.
 | Arms per address per UTC day | NoticeExit | 2 | One visitor's spend |
 | Arms per UTC day, all addresses | NoticeExit | 10 | Total daily spend |
 | One active watch per owner and vault | NoticeExit | 1 | Duplicate watches |
-| Watch lifetime (`LIFETIME`) | NoticeExit | 1 day | How long an unused watch can hold a place: after it, anyone can `expire` it |
+| Watch lifetime (`LIFETIME`) | NoticeExit | 1 day | Mode 1 only: how long an unused timer watch can hold a timer place; after it, anyone can `expire` it. A mode-0 watch has no expiry (contracts after 2026-11-18; on the 11-18 pair every watch can be expired) |
+| Mode-1 arms per UTC day, all addresses (`MAX_TIMED_ARMS_PER_DAY`) | NoticeExit | none on the 11-18 pair; 4 in `scripts/deploy-system.sh` | The costly mode's daily spend |
+| Mode-1 watches at a time (`MAX_TIMED`) | NoticeReactive | 8 (a constant; shared with mode 0 on the 11-18 pair) | Work per tick and `LEAD` |
 | Active watches | NoticeReactive | 8 | Work per tick and per event |
 | Watches per vault | NoticeReactive | 3 | Work per `Submit` |
 | Stored changes per watch | NoticeReactive | 3 | Work per tick |
@@ -353,17 +362,19 @@ on Base Sepolia; balances read before and after each loop; reactive gas price 10
 - A change scheduled before the watch was armed is never seen: the watch only learns about `Submit` events
   after its filters exist. The page must show the vault's pending changes before arming.
 - Anyone can fill the daily arm caps and the active-watch cap with watches of their own (one share is
-  enough). `expire` frees a place after `LIFETIME`, so the lockout is not permanent, but many addresses can
-  still use up a day's arms. This comes with an operator-paid demo; user-paid watches are later scope.
+  enough). `expire` frees a mode-1 place after `LIFETIME`; many addresses can still use up a day's arms. On one
+  vault the first three watches take its places for good if they are mode 0 (a deposit into another's vault is
+  open), and a fourth is refused with code 4 (pinned by `test_vault_squat_is_permanent_and_visible`); the
+  cure is a fresh vault. This comes with an operator-paid demo; user-paid watches are later scope.
 - Anyone can deploy their own reactive contract and ask for callbacks to `NoticeExit`. They are refused
   (`CallbackNotAuthorized`), but the proxy may still bill the failed call to `NoticeExit`'s fee reserve
   (not yet measured). The reserve is small and refillable; `coverDebt()` settles debt, and the float watch
   must read the proxy's `debt(NoticeExit)`.
-- `expire` is open to anyone, the curator included. So a watch protects for `LIFETIME` (1 day) only: after
-  that the curator can expire it and then schedule a change, and an expiry that lands while an exit callback
-  is on its way makes that callback revert (`WatchNotActive`) and the depositor stays in. This trades
-  "set it and forget it" beyond one day for freeing places held by idle watches; the owner decides whether
-  to keep it, lengthen `LIFETIME`, or narrow who may expire.
+- `expire` is open to anyone, the curator included, but only for a mode-1 watch. A mode-1 watch protects for
+  `LIFETIME` (1 day) only: after that the curator can expire it and then schedule a change, and an expiry that
+  lands while an exit callback is on its way makes that callback revert (`WatchNotActive`) and the depositor
+  stays in. A mode-0 watch has no expiry and ends only when it fires or its owner cancels it. On the 11-18
+  deployment every watch, mode 0 included, can still be expired after one day.
 - Stray events after a silent unsubscribe are billed by the network and cannot be refused by the contract;
   they are counted (`strayEvents`) and alerted on.
 - "No server, no key that can send the funds elsewhere": the exit right exists only through the vault's own
@@ -371,7 +382,8 @@ on Base Sepolia; balances read before and after each loop; reactive gas price 10
 - If an exit callback reverts on Base Sepolia (`AssetsNotReceived`, or a failure of the callback itself), the
   reactive contract has already closed the watch, while on Base Sepolia it is still `Active`. That watch no
   longer protects anything and blocks a new arm on the same vault (`AlreadyWatching`) until the owner cancels
-  it or anyone expires it after `LIFETIME`. The page must show the Lasna status next to the Base status.
+  it (or, for a mode-1 watch, anyone expires it after `LIFETIME`). The page must show the Lasna status next to
+  the Base status.
 
 ## 12. What the Foundry simulation shows and what it cannot
 

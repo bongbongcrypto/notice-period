@@ -44,6 +44,14 @@ contract NoticeReactive is AbstractReactive {
     uint8 public constant REFUSE_BAD_MODE = 2;
     uint8 public constant REFUSE_TOO_MANY_WATCHES = 3;
     uint8 public constant REFUSE_VAULT_FULL = 4;
+    uint8 public constant REFUSE_TOO_MANY_TIMED = 5;
+
+    /// @notice "Leave if still pending" (timer) watches armed at a time. Only these cause work on a tick, and LEAD
+    ///         covers this many ticks (SPEC.md section 6).
+    uint256 public constant MAX_TIMED = 8;
+    /// @notice Lowest callback gas limit the constructor takes. The Base Sepolia proxy keeps about 180,000 of the limit
+    ///         for itself; 400,000 leaves about 220,000 for the exit (SPEC.md section 12).
+    uint64 public constant MIN_CALLBACK_GAS = 400_000;
 
     struct Watch {
         address vault;
@@ -91,6 +99,10 @@ contract NoticeReactive is AbstractReactive {
     uint256 public ticks;
     uint256 public strayEvents;
     uint256 public unknownEvents;
+    /// @notice Armed "leave if still pending" watches.
+    uint256 public timedWatches;
+
+    error CallbackGasTooLow(uint64 callbackGas);
 
     event WatchSubscribed(uint256 indexed watchId, address indexed vault, uint8 kinds, uint8 mode);
     event WatchRefused(uint256 indexed watchId, uint8 reason);
@@ -107,10 +119,11 @@ contract NoticeReactive is AbstractReactive {
     /// @param exit_ The exit (callback) contract; its address is computed before it is deployed.
     /// @param cronTopic_ CRON event used while a change is stored (Cron10 topic for the demo).
     /// @param lead_ Seconds before executableAt at which a stored change is fled. One exit is asked for per tick, so
-    ///        the deployment sets it to cover maxActive_ ticks plus the callback's trip (SPEC.md section 6).
+    ///        the deployment sets it to cover MAX_TIMED ticks plus the callback's trip (SPEC.md section 6).
     /// @param maxWait_ Longest wait, in seconds, the contract pays ticks for; a later change is fled at once.
-    /// @param callbackGas_ Gas limit of the exit callback (at least 100,000).
-    /// @param maxActive_ Most watches armed at the same time.
+    /// @param callbackGas_ Gas limit of the exit callback: at least MIN_CALLBACK_GAS (400,000), checked here. The
+    ///        network ignores a limit below 100,000, and the proxy cannot deliver below about 180,000.
+    /// @param maxActive_ Most watches armed at the same time, both modes together.
     /// @param maxReactions_ Reaction budget of one watch (events about its vault plus ticks while it stores a change).
     constructor(
         uint256 originChainId_,
@@ -122,6 +135,7 @@ contract NoticeReactive is AbstractReactive {
         uint256 maxActive_,
         uint256 maxReactions_
     ) payable {
+        if (callbackGas_ < MIN_CALLBACK_GAS) revert CallbackGasTooLow(callbackGas_);
         ORIGIN_CHAIN_ID = originChainId_;
         EXIT = exit_;
         CRON_TOPIC = cronTopic_;
@@ -185,6 +199,7 @@ contract NoticeReactive is AbstractReactive {
         else if (mode > MODE_IF_PENDING) refusal = REFUSE_BAD_MODE;
         else if (activeWatches >= MAX_ACTIVE) refusal = REFUSE_TOO_MANY_WATCHES;
         else if (_vaultWatches[vault].length >= MAX_WATCHES_PER_VAULT) refusal = REFUSE_VAULT_FULL;
+        else if (mode == MODE_IF_PENDING && timedWatches >= MAX_TIMED) refusal = REFUSE_TOO_MANY_TIMED;
         if (refusal != 0) {
             w.status = ST_REFUSED;
             emit WatchRefused(id, refusal);
@@ -195,6 +210,7 @@ contract NoticeReactive is AbstractReactive {
         w.mode = mode;
         w.status = ST_ARMED;
         activeWatches += 1;
+        if (mode == MODE_IF_PENDING) timedWatches += 1;
         _vaultWatches[vault].push(id);
         bytes4[] memory sels = NoticeKinds.selectorsOf(kinds);
         for (uint256 i = 0; i < sels.length; i++) {
@@ -484,6 +500,7 @@ contract NoticeReactive is AbstractReactive {
             break;
         }
         activeWatches -= 1;
+        if (w.mode == MODE_IF_PENDING) timedWatches -= 1;
         w.status = status_;
         emit WatchClosed(id_, status_);
     }

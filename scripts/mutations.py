@@ -16,6 +16,7 @@ HC = "src/hello/HelloCallback.sol"
 E = "NoticeExitTest"
 NR = "NoticeReactiveTest"
 NB = "NoticeReactiveBudgetTest"
+NT = "NoticeReactiveTimedTest"
 DV = "DemoVaultTest"
 EE = "EndToEndTest"
 H = "HelloTest"
@@ -62,6 +63,9 @@ add("expire-only-active", "expire only an active watch", X,
 add("expire-after-lifetime", "expire only after LIFETIME", X,
     "if (block.timestamp < expiresAt) revert WatchNotExpired(watchId_, expiresAt);", "",
     E, "test_expire_refuses_before_lifetime")
+add("expire-timed-only", "a leave-now watch has no expiry", X,
+    "        if (w.mode != MODE_IF_PENDING) revert NoExpiry(watchId_);\n", "",
+    E, "test_expire_refuses_leave_now_watch")
 add("arm-unknown-vault", "arm only on vaults of our factory", X,
     "if (!REGISTRY.isVault(vault_)) revert UnknownVault(vault_);", "",
     E, "test_arm_refuses_unknown_vault")
@@ -92,6 +96,9 @@ add("arm-daily-cap-address", "daily arm cap per address", X,
 add("arm-daily-cap", "daily arm cap overall", X,
     "if (armsOnDay[day] >= MAX_ARMS_PER_DAY) revert DailyCapReached();", "",
     E, "test_arm_refuses_over_daily_cap")
+add("arm-timed-daily-cap", "daily arm cap for timer watches", X,
+    "if (mode_ == MODE_IF_PENDING && timedArmsOnDay[day] >= MAX_TIMED_ARMS_PER_DAY) revert DailyCapForTimed();", "",
+    E, "test_arm_refuses_timed_over_daily_cap")
 add("cancel-only-owner", "only the owner cancels", X,
     "if (w.owner != msg.sender) revert NotWatchOwner();", "",
     E, "test_cancel_refuses_other_owner")
@@ -173,6 +180,16 @@ add("armed-vault-cap", "cap on watches per vault (gas per reaction)", R,
     "else if (_vaultWatches[vault].length >= MAX_WATCHES_PER_VAULT) refusal = REFUSE_VAULT_FULL;",
     "else if (false) refusal = REFUSE_VAULT_FULL;",
     NR, "test_refuses_fourth_watch_on_one_vault")
+add("armed-timed-cap", "cap on timer watches at a time (work per tick, LEAD)", R,
+    "else if (mode == MODE_IF_PENDING && timedWatches >= MAX_TIMED) refusal = REFUSE_TOO_MANY_TIMED;",
+    "else if (false) refusal = REFUSE_TOO_MANY_TIMED;",
+    NT, "test_refuses_ninth_timed_watch")
+add("armed-timed-cap-mode", "the timer cap never refuses a leave-now watch", R,
+    "mode == MODE_IF_PENDING && timedWatches >= MAX_TIMED", "timedWatches >= MAX_TIMED",
+    NT, "test_leave_now_not_counted_as_timed")
+add("ctor-callback-gas-floor", "the callback gas limit is at least MIN_CALLBACK_GAS", R,
+    "if (callbackGas_ < MIN_CALLBACK_GAS) revert CallbackGasTooLow(callbackGas_);", "",
+    NR, "test_constructor_refuses_low_callback_gas")
 add("cancelled-only-armed", "a cancel on Base closes only a watch Lasna armed (not a refused one)", R,
     "if (watches[id].status == ST_ARMED) _close(id, ST_CANCELLED);", "_close(id, ST_CANCELLED);",
     NR, "test_cancel_of_a_refused_watch_changes_nothing_on_lasna")
@@ -247,6 +264,9 @@ add("cron-off-when-idle", "no CRON subscription once nothing waits", R,
 add("close-releases-filters", "a closed watch releases its subscriptions", R,
     "            _submitFilter(vault, sels[i], false);\n", "",
     NR, "test_cancel_releases_all_filters")
+add("close-timed-count", "a closed timer watch frees its timer place", R,
+    "        if (w.mode == MODE_IF_PENDING) timedWatches -= 1;\n", "",
+    NT, "test_timed_count_released_on_exit_cancel_expire")
 
 # ---------------------------------------------------------------- demo vault (ours, test only)
 add("vault-submit-curator", "only the curator schedules", V,

@@ -12,7 +12,10 @@ contract TimingTest is NoticeSetup {
     uint256 internal constant TICK = 11; // Cron10 period measured at 10.7 s, rounded up
     uint256 internal constant HOP = 10; // seconds kept for the callback to land on Base after the request
 
+    /// @dev Room for 1,000 armed watches, as deployed: the most timer watches that can come due together is then
+    ///      MAX_TIMED, the bound LEAD is set for.
     function setUp() public {
+        cfgMaxActive = 1000;
         _deploy();
     }
 
@@ -21,7 +24,7 @@ contract TimingTest is NoticeSetup {
     }
 
     function test_all_admitted_watches_due_together_exit_in_time() public {
-        uint256 n = MAX_ACTIVE;
+        uint256 n = reactive.MAX_TIMED();
         DemoVault[] memory vs = new DemoVault[](n);
         uint256[] memory ids = new uint256[](n);
         for (uint256 i = 0; i < n; i++) {

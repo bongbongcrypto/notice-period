@@ -74,9 +74,13 @@ bash scripts/loop-hello.sh || status=1
 echo "---- relay log"
 cat "$logs/relay.log"
 kill -0 "$relay_pid" 2>/dev/null || { echo "the relay stopped early"; status=1; }
-for what in "strayEvents()(uint256)" "unknownEvents()(uint256)" "activeWatches()(uint256)" "cronFilterRefs()(uint256)"; do
+for what in "strayEvents()(uint256)" "unknownEvents()(uint256)" "activeWatches()(uint256)" "cronFilterRefs()(uint256)" \
+  "timedWatches()(uint256)"; do
   echo "NoticeReactive.$what = $(cast call --rpc-url "$LASNA_RPC" "$NP_REACTIVE" "$what")"
 done
+# Every loop watch has closed by now, so none may still hold a timer place.
+timed="$(cast call --rpc-url "$LASNA_RPC" "$NP_REACTIVE" 'timedWatches()(uint256)' | awk '{print $1}')"
+[ "$timed" = 0 ] || { echo "NoticeReactive.timedWatches is $timed after every watch closed"; status=1; }
 reverts="$(cast call --rpc-url "$LASNA_RPC" "$SYSTEM" 'reverts()(uint256)' | awk '{print $1}')"
 echo "react() reverts seen by the mock system: $reverts"
 [ "$reverts" = 0 ] || status=1
