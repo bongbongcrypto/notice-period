@@ -322,9 +322,11 @@ can cancel it on Base Sepolia and arm again later.
 
 Computed, not measured: about 0.013 lREACT per reactive transaction plus about 0.05 per arming. On the 11-18
 pair, with 80 reactions per watch, one watch costs at most about 1.5 lREACT, and the 10 arms a day at most about
-15 lREACT a day. With the values of `scripts/deploy-system.sh`, a mode-1 watch costs at most about 0.27 lREACT
-(16 reactions, then the exit the 17th asks for) and a mode-0 watch about 0.063 (one reaction), so a day with
-every cap used (4 mode-1 and 46 mode-0 arms) costs at most about 4 lREACT. Two costs are outside this bound and must be watched on the live float: stray events after a
+15 lREACT a day. With the values of `scripts/deploy-system.sh`, the same formula gives about 0.27 lREACT for a
+mode-1 watch that uses its 16 reactions (the 17th asks for the exit) and about 0.063 for a mode-0 watch, so
+about 4 lREACT for a day with every cap used (4 mode-1 and 46 mode-0 arms). These are estimates, not bounds:
+the measured mode-1 loop below cost 0.1607 lREACT, more than the formula gives for its reactions, and a large
+stored change costs more per reaction. Two costs are outside this bound and must be watched on the live float: stray events after a
 silent unsubscribe (counted in `strayEvents`, billed by the network), and callbacks that anyone can make the
 proxy bill to `NoticeExit` through their own reactive contracts (section 11).
 
