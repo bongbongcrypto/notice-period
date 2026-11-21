@@ -41,8 +41,18 @@ def load(path):
         doc = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         raise StampError(f"cannot read {path}: {e}")
+    if not isinstance(doc, dict):
+        raise StampError(f"{path}: not a JSON object")
     if doc.get("status") != "deployed":
         raise StampError(f"{path} is not a filled deployment (status {doc.get('status')!r}); nothing to stamp")
+    for side in ("origin", "reactive"):
+        chain = doc.get(side)
+        if (not isinstance(chain, dict) or not isinstance(chain.get("name"), str)
+                or not isinstance(chain.get("chainId"), int) or isinstance(chain.get("chainId"), bool)):
+            raise StampError(f"{path}: {side} needs a name and a whole-number chainId: {chain!r}")
+    for part in ("contracts", "values"):
+        if not isinstance(doc.get(part) or {}, dict):
+            raise StampError(f"{path}: {part} is not an object")
     contracts = doc.get("contracts") or {}
     for k in CONTRACT_KEYS:
         if not isinstance(contracts.get(k), str) or not ADDRESS.match(contracts[k]):

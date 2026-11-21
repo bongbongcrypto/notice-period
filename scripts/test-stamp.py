@@ -126,6 +126,20 @@ with tempfile.TemporaryDirectory() as tmp:
     expect("unknown block refused", rc, 2, out)
     expect("refusal writes nothing", int((root4 / "docs").exists()), 0)
 
+    # Malformed deployment files stop with exit 2 (not a Python traceback, exit 1) and write nothing.
+    no_origin = deployment()
+    del no_origin["origin"]
+    list_contracts = deployment()
+    list_contracts["contracts"] = []
+    malformed = [("a JSON list", "[]"), ("a JSON string", '"deployed"'), ("no origin", json.dumps(no_origin)),
+                 ("contracts as a list", json.dumps(list_contracts))]
+    for label, raw in malformed:
+        r = fresh(tmp)
+        (r / "deployments" / "current.json").write_text(raw, encoding="utf-8")
+        rc, out = stamp(r)
+        expect(f"{label} refused", rc, 2, out)
+        expect(f"{label} writes nothing", int((r / "docs").exists()), 0)
+
 if failures:
     sys.exit(f"{len(failures)} stamp check(s) failed: {failures}")
 print("stamp checks passed")
