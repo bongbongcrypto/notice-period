@@ -188,8 +188,9 @@ exec "$FUND_REAL_CAST" "$@"
             except Exception as exc:
                 FAILURES.append(f"{name}: could not restore the Sepolia anvil: {exc}")
 
-    def run(name, overrides=None, refusal=None, credit=None, credit_delay=2.0):
-        """credit: None, 'both', 'lasna' (no Base credit) or 'short' (half the Lasna credit)."""
+    def run(name, overrides=None, refusal=None, credit=None, credit_delay=2.0, after_poll_start=False):
+        """credit: None, 'both', 'lasna' (no Base credit) or 'short' (half the Lasna credit).
+        after_poll_start: credit_delay counts from the line "Waiting up to" (the first balance read), not from start."""
         case_env = dict(env, **(overrides or {}))
         summary = LOGS / f"{name}.md"
         summary.write_text("", encoding="utf-8")
@@ -204,6 +205,12 @@ exec "$FUND_REAL_CAST" "$@"
             try:
                 while process.poll() is None:
                     require(time.monotonic() < end, f"{name}: fund script hung")
+                    if after_poll_start:
+                        if "Waiting up to" in (LOGS / f"{name}.log").read_text(encoding="utf-8"):
+                            credit_at = time.monotonic() + credit_delay
+                            after_poll_start = False
+                        else:
+                            credit_at = float("inf")
                     if credit and time.monotonic() >= credit_at:
                         for tx in transactions():
                             to = tx["to"].lower()
@@ -416,10 +423,11 @@ exec "$FUND_REAL_CAST" "$@"
     check("lasna-only", lasna_only)
 
     def credit_after_first_read():
-        # The credit lands after the first read and long before the 16 s window ends: only the read at the end of
-        # the window sees it (the loop once slept 15 s and stopped at the deadline without reading again).
+        # The credit lands 3 s after the first read, inside a 10 s window: only the read at the end of the window sees
+        # it. The old loop slept min(remaining, 15) s, here the whole window, and stopped without reading again.
         reset()
-        _, report = run("credit-after-first-read", {"FUND_POLL_TIMEOUT": "16"}, credit="both", credit_delay=7)
+        _, report = run("credit-after-first-read", {"FUND_POLL_TIMEOUT": "10"}, credit="both", credit_delay=3,
+                        after_poll_start=True)
         assert_sends(2)
         require("Lasna credit observed: yes" in report and "Base Sepolia credit observed: yes" in report,
                 "a credit inside the window was missed")
