@@ -131,13 +131,17 @@ with tempfile.TemporaryDirectory() as tmp:
     del no_origin["origin"]
     list_contracts = deployment()
     list_contracts["contracts"] = []
+    false_values = deployment()
+    false_values["values"] = False
     malformed = [("a JSON list", "[]"), ("a JSON string", '"deployed"'), ("no origin", json.dumps(no_origin)),
-                 ("contracts as a list", json.dumps(list_contracts))]
+                 ("contracts as a list", json.dumps(list_contracts)), ("values as false", json.dumps(false_values))]
     for label, raw in malformed:
         r = fresh(tmp)
         (r / "deployments" / "current.json").write_text(raw, encoding="utf-8")
         rc, out = stamp(r)
         expect(f"{label} refused", rc, 2, out)
+        if label in ("contracts as a list", "values as false"):  # an empty or false part is not taken for {}
+            expect(f"{label} named as not an object", int("is not an object" in out), 1, out)
         expect(f"{label} writes nothing", int((r / "docs").exists()), 0)
 
 if failures:

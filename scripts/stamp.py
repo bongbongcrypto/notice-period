@@ -51,7 +51,7 @@ def load(path):
                 or not isinstance(chain.get("chainId"), int) or isinstance(chain.get("chainId"), bool)):
             raise StampError(f"{path}: {side} needs a name and a whole-number chainId: {chain!r}")
     for part in ("contracts", "values"):
-        if not isinstance(doc.get(part) or {}, dict):
+        if part in doc and not isinstance(doc[part], dict):
             raise StampError(f"{path}: {part} is not an object")
     contracts = doc.get("contracts") or {}
     for k in CONTRACT_KEYS:
