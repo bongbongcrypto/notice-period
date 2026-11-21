@@ -139,12 +139,21 @@
     if (shares === 0n) return false;
     return shares * (held + DEP + 1n) / (supply + shares + 1n) >= DEP;
   }
+  /* A public endpoint can answer from a block behind the one that returned a receipt. A vault made a moment ago
+     then has no code there yet and a read of it comes back empty ("0x"). Empty means "not known yet", never zero. */
+  function known(x) { return typeof x === 'string' && x.length > 2; }
+  function bigOr0(x) { return known(x) ? BigInt(x) : 0n; }
+  /* Reads again for about five seconds before giving up; null means it could not be learned. */
   async function vaultState(vault) {
-    var r = await multi('base', [
-      { to: C.token, data: enc.oneAddr('balanceOf(address)', vault) },
-      { to: vault, data: enc.noArg('totalSupply()') }
-    ]);
-    return { held: BigInt(r[0]), supply: BigInt(r[1]) };
+    for (var i = 0; i < 8; i++) {
+      var r = await multi('base', [
+        { to: C.token, data: enc.oneAddr('balanceOf(address)', vault) },
+        { to: vault, data: enc.noArg('totalSupply()') }
+      ]);
+      if (known(r[0]) && known(r[1])) return { held: BigInt(r[0]), supply: BigInt(r[1]) };
+      await rpc.sleep(700);
+    }
+    return null;
   }
 
   /* Everything the page needs to know about this address, from the chain. */
@@ -171,13 +180,14 @@
       { to: C.token, data: enc.oneAddr('balanceOf(address)', vault) },
       { to: vault, data: enc.noArg('totalSupply()') }
     ]);
-    pos.shares = BigInt(second[0]);
+    pos.shares = bigOr0(second[0]);
     pos.watchId = Number(BigInt(second[1]));
     pos.tokenAllow = BigInt(second[2]);
-    pos.exitAllow = BigInt(second[3]);
-    pos.vaultAssets = BigInt(second[4]);
-    pos.vaultSupply = BigInt(second[5]);
-    pos.tampered = !fairDeposit(pos.vaultAssets, pos.vaultSupply);
+    pos.exitAllow = bigOr0(second[3]);
+    pos.vaultAssets = bigOr0(second[4]);
+    pos.vaultSupply = bigOr0(second[5]);
+    /* judged only on a full answer; an empty one is settled by the reads right before the deposit */
+    pos.tampered = known(second[4]) && known(second[5]) && !fairDeposit(pos.vaultAssets, pos.vaultSupply);
     try {
       var from = Math.max(0, head.number - cfg.scan.baseVaultWindow + 1);
       var made = await rpc.getLogs('base', { address: C.factory, topics: [EV['VaultCreated(address,address)'], topicA(vault)] }, from, head.number);
@@ -450,7 +460,7 @@
   async function refuseTampered(my, vault) {
     var v = await vaultState(vault);
     alive(my);
-    if (fairDeposit(v.held, v.supply)) return;
+    if (!v || fairDeposit(v.held, v.supply)) return; /* not learned: go on, the worth of the shares is checked after the deposit */
     S.tampers = (S.tampers || 0) + 1;
     S.lines = null;
     throw stop('vault-tampered', { amount: units(v.held), again: S.tampers > 1 ? copy.tamperedAgain : '' });
@@ -481,15 +491,35 @@
     S.note = null;
     if (S.lines[2].status === 'todo') await sendTx(my, 2, C.token, enc.approve(vault, DEP));
     await refuseTampered(my, vault); /* again right before the deposit itself */
-    await sendTx(my, 3, vault, enc.deposit(DEP, S.me));
+    var drec = await sendTx(my, 3, vault, enc.deposit(DEP, S.me));
     S.lines = null;
     S.tampers = 0;
     var after = await readPosition();
     alive(my);
-    /* What the shares would pay out now. Lower than the deposit means the share price moved in the last moment. */
-    var worth = BigInt(await rpc.ethCall('base', after.vault, enc.oneUint('previewRedeem(uint256)', after.shares)));
-    alive(my);
-    if (worth < DEP) throw stop('deposit-short', { worth: units(worth) });
+    /* The deposit is confirmed. An endpoint that is a block behind still shows no shares: read again before judging. */
+    for (var k = 0; k < 8 && after.shares === 0n; k++) {
+      await rpc.sleep(700);
+      after = await readPosition();
+      alive(my);
+    }
+    if (after.shares === 0n) {
+      /* still not visible: take the shares from the deposit's own receipt (the vault's mint to this address) */
+      var minted = drec.logs.filter(function (l) {
+        return same(l.address, vault) && l.topics[0] === EV['Transfer(address,address,uint256)'] && same(dec.topicAddr(l.topics[1]), ZERO) &&
+          same(dec.topicAddr(l.topics[2]), S.me);
+      })[0];
+      if (minted) {
+        after.shares = dec.big(minted.data, 0);
+        S.shared.shares = units(after.shares);
+        S.shared.hasDeposit = after.shares > 0n;
+      }
+    }
+    if (after.shares > 0n) {
+      /* What the shares would pay out now. Lower than the deposit means the share price moved in the last moment. */
+      var raw = await rpc.ethCall('base', after.vault || vault, enc.oneUint('previewRedeem(uint256)', after.shares));
+      alive(my);
+      if (known(raw) && BigInt(raw) < DEP) throw stop('deposit-short', { worth: units(BigInt(raw)) });
+    }
     return showDeposited(after);
   }
 
@@ -1152,7 +1182,10 @@
       }
       if (data.next === null) data.next = Number(BigInt(await rpc.ethCall('base', C.exit, enc.noArg('nextWatchId()'))));
       alive(my);
-      if (n < 1 || n >= data.next) throw stop('run-not-yet', { id: n, max: Math.max(0, data.next - 1), hasRuns: data.next > 1 });
+      if (n < 1 || n >= data.next) {
+        throw stop('run-not-yet', { id: n, max: Math.max(0, data.next - 1), hasRuns: data.next > 1, yet: n < 1 ? '' : ' yet',
+          numbering: n < 1 ? 'Runs are numbered from 1.' : '' });
+      }
       var w = dec.watchOf(await rpc.ethCall('base', C.exit, enc.oneUint('watchOf(uint256)', n)));
       throw stop('run-too-old', { id: n, state: view.STATUS[w.status] || 'unknown', date: fmt.isoDate(NP.recorded.readAt) });
     };

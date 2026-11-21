@@ -324,7 +324,7 @@
     },
     'page-error': {
       step: null, kind: 'stop', h: 'This page hit a problem',
-      body: ['{message}', 'Nothing was sent. What is on the chain is untouched, and the page can read it again.'],
+      body: ['{message}', 'This is a fault of the page, not of the chain. What is there is untouched, and the page can read it again.'],
       actions: [{ a: 'retry', label: 'Check again', primary: true }, REPLAY_INSTEAD]
     },
     'account-changed': {
@@ -338,8 +338,8 @@
       actions: [{ a: 'open-direct', label: 'Open the page in its own tab', href: 'self', primary: true }, REPLAY]
     },
     'run-not-yet': {
-      step: null, kind: 'stop', h: 'Run #{id} does not exist yet',
-      body: ['The latest run is #{max}.'],
+      step: null, kind: 'stop', h: 'Run #{id} does not exist{yet}',
+      body: ['{numbering}', 'The latest run is #{max}.'],
       actions: [{ a: 'open-latest', label: 'Open run #{max}', primary: true, when: 'hasRuns' }, { a: 'see-runs', label: 'See recent runs', href: '#runs' }]
     },
     'run-too-old': {
