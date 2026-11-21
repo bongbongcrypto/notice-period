@@ -14,6 +14,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="app.css">
 <script defer src="guard.js"></script>
+<script defer src="data/deployment.js"></script>
 <script defer src="config.js"></script>
 <script defer src="sig.js"></script>
 <script defer src="abi.js"></script>
@@ -250,10 +251,12 @@
     <div>
       <h3>What this demo is</h3>
       <ul class="plain">
+<!-- stamp:demolimits -->
         <li>Test networks only.</li>
         <li>The vault and the dollars are ours; the vault copies the events of Morpho Vault V2.</li>
         <li>A watch lasts one day in this demo.</li>
         <li>A change with no waiting period leaves no time to exit.</li>
+<!-- /stamp:demolimits -->
       </ul>
       <p class="small">Every limit is in the <a href="https://github.com/bongbongcrypto/notice-period/blob/main/SPEC.md" rel="noopener noreferrer">rule book</a>.</p>
     </div>
@@ -274,6 +277,7 @@
 
 <footer class="foot wrap">
   <table class="addresses">
+<!-- stamp:pagecontracts -->
     <caption>Contracts of the 18 Nov 2026 testnet deployment</caption>
     <tbody>
       <tr><th scope="row">Exit contract <span class="quiet">Base Sepolia</span></th><td><a class="addr" href="https://base-sepolia.blockscout.com/address/0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8" rel="noopener noreferrer">0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8</a></td></tr>
@@ -281,6 +285,7 @@
       <tr><th scope="row">Demo vault factory <span class="quiet">Base Sepolia</span></th><td><a class="addr" href="https://base-sepolia.blockscout.com/address/0xFFc96A898AF31e2ED652A8A0C0E90584999093CD" rel="noopener noreferrer">0xFFc96A898AF31e2ED652A8A0C0E90584999093CD</a></td></tr>
       <tr><th scope="row">Demo dollar <span class="quiet">Base Sepolia</span></th><td><a class="addr" href="https://base-sepolia.blockscout.com/address/0x2690DF70a37939c582a800f32FFEE52ec40d150B" rel="noopener noreferrer">0x2690DF70a37939c582a800f32FFEE52ec40d150B</a></td></tr>
     </tbody>
+<!-- /stamp:pagecontracts -->
   </table>
   <div class="foot-text">
     <p><a href="https://github.com/bongbongcrypto/notice-period" rel="noopener noreferrer">Source on GitHub</a> <a href="https://github.com/bongbongcrypto/notice-period/blob/main/SPEC.md" rel="noopener noreferrer">Rule book</a> <a href="#check">Judge guide: check every claim in ten minutes</a></p>

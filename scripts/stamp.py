@@ -2,11 +2,23 @@
 
     python3 scripts/stamp.py [--check] [--root DIR] [DEPLOYMENT_JSON]
 
-DEPLOYMENT_JSON (default deployments/current.json) is the only hand-edited place for addresses. From it this script
-writes docs/data/deployment.js (window.NP_DEPLOYMENT) and every marked block of README.md and SPEC.md:
+Without DEPLOYMENT_JSON: the file named in docs/data/deployment.js (the one the page shows now), else
+deployments/current.json.
+
+The deployment file is the only hand-edited place for addresses. From it this script
+writes docs/data/deployment.js (window.NP_DEPLOYMENT, the part the page needs) and every marked block of README.md,
+SPEC.md and docs/index.html:
 
     <!-- stamp:contracts -->   ...generated, never edited by hand...   <!-- /stamp:contracts -->
     <!-- stamp:values -->      ...                                     <!-- /stamp:values -->
+    <!-- stamp:pagecontracts -->, <!-- stamp:demolimits -->           (docs/index.html)
+
+Two shapes of deployment file are accepted: a vault maker (contracts.maker and contracts.morphoFactory: Morpho
+Vault V2s, the redeploy) or a demo factory (contracts.factory: our own demo vault, the 18 Nov 2026 deployment).
+MAX_TIMED and TIMED_ARMS_PER_DAY exist only in the contracts of the redeploy; when absent they are stamped as none.
+The page's rules follow from the file: `rules.vaultSource` (default: maker or demo, from the contracts) and
+`rules.leaveNowExpires` (default: true when TIMED_ARMS_PER_DAY is absent, since only the redeploy refuses to expire
+a "leave now" watch).
 
 --check writes nothing and exits 1 if any of those places differs from what the deployment file gives (a hand edit
 inside a block, or a deployment file changed without a stamp). Exit 2: the deployment file is a template or malformed,
@@ -19,16 +31,19 @@ import re
 import sys
 from pathlib import Path
 
-CONTRACT_KEYS = ["exit", "reactive", "maker", "morphoFactory", "token", "callbackProxy"]
+CONTRACT_KEYS = ["exit", "reactive", "token", "callbackProxy"]
+SHAPES = {"maker": ["maker", "morphoFactory"], "demo": ["factory"]}
 VALUE_KEYS = ["VAULT_TIMELOCK", "LEAD", "MAX_WAIT", "CALLBACK_GAS", "MAX_ACTIVE", "MAX_REACTIONS", "MAX_TIMED",
               "ARMS_PER_ADDRESS_PER_DAY", "ARMS_PER_DAY", "TIMED_ARMS_PER_DAY", "LIFETIME"]
+OPTIONAL_VALUES = {"MAX_TIMED", "TIMED_ARMS_PER_DAY"}
+PAGE_KEYS = ["name", "origin", "reactive", "contracts", "operators", "values", "rules", "healthMinFloat"]
 ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 BLOCK = re.compile(r"(<!-- stamp:([a-z]+) -->\n)(.*?)(<!-- /stamp:([a-z]+) -->)", re.S)
 OPEN = re.compile(r"<!-- stamp:([a-z]+) -->")
 CLOSE = re.compile(r"<!-- /stamp:([a-z]+) -->")
 BASE_EXPLORER = "https://base-sepolia.blockscout.com/address/"
 LASNA_EXPLORER = "https://lasna.reactscan.net/address/"
-MARKDOWN_TARGETS = ["README.md", "SPEC.md"]
+MARKDOWN_TARGETS = ["README.md", "SPEC.md", "docs/index.html"]
 JS_TARGET = "docs/data/deployment.js"
 
 
@@ -44,18 +59,47 @@ def load(path):
     if doc.get("status") != "deployed":
         raise StampError(f"{path} is not a filled deployment (status {doc.get('status')!r}); nothing to stamp")
     contracts = doc.get("contracts") or {}
-    for k in CONTRACT_KEYS:
+    shape = "maker" if contracts.get("maker") else "demo"
+    for k in CONTRACT_KEYS + SHAPES[shape]:
         if not isinstance(contracts.get(k), str) or not ADDRESS.match(contracts[k]):
             raise StampError(f"{path}: contracts.{k} is not an address: {contracts.get(k)!r}")
+    if shape == "maker" and contracts.get("factory"):
+        raise StampError(f"{path}: both contracts.maker and contracts.factory; one vault source per deployment")
     values = doc.get("values") or {}
     for k in VALUE_KEYS:
-        if not isinstance(values.get(k), int) or isinstance(values.get(k), bool):
-            raise StampError(f"{path}: values.{k} is not a whole number: {values.get(k)!r}")
+        v = values.get(k)
+        if v is None and k in OPTIONAL_VALUES:
+            continue
+        if not isinstance(v, int) or isinstance(v, bool):
+            raise StampError(f"{path}: values.{k} is not a whole number: {v!r}")
+    ops = doc.get("operators") or []
+    if not ops or any(not isinstance(a, str) or not ADDRESS.match(a) for a in ops):
+        raise StampError(f"{path}: operators must list our own accounts (addresses)")
+    rules = dict(doc.get("rules") or {})
+    rules.setdefault("vaultSource", shape)
+    if rules["vaultSource"] != shape:
+        raise StampError(f"{path}: rules.vaultSource {rules['vaultSource']!r} but the contracts are of a {shape} deployment")
+    rules.setdefault("leaveNowExpires", values.get("TIMED_ARMS_PER_DAY") is None)
+    if not isinstance(rules["leaveNowExpires"], bool):
+        raise StampError(f"{path}: rules.leaveNowExpires must be true or false")
+    doc = dict(doc)
+    doc["rules"] = rules
+    doc["shape"] = shape
     return doc
 
 
 def _link(address, explorer):
     return f"[`{address}`]({explorer}{address})"
+
+
+def vault_rows(doc):
+    c = doc["contracts"]
+    if doc["shape"] == "maker":
+        return [("`MorphoVaultMaker` (ours; makes Morpho Vault V2s, the list of vaults `NoticeExit` accepts)",
+                 "Vault maker", c["maker"]),
+                ("`VaultV2Factory` (Morpho's)", "Morpho Vault V2 factory", c["morphoFactory"])]
+    return [("`DemoVaultFactory` (ours; makes the demo vaults, the list of vaults `NoticeExit` accepts)",
+             "Demo vault factory", c["factory"])]
 
 
 def render_contracts(doc):
@@ -65,9 +109,9 @@ def render_contracts(doc):
     rows = [
         ("`NoticeExit`", origin, _link(c["exit"], BASE_EXPLORER)),
         ("`NoticeReactive`", reactive, _link(c["reactive"], LASNA_EXPLORER)),
-        ("`MorphoVaultMaker` (ours; makes Morpho Vault V2s, the list of vaults `NoticeExit` accepts)", origin,
-         _link(c["maker"], BASE_EXPLORER)),
-        ("`VaultV2Factory` (Morpho's)", origin, _link(c["morphoFactory"], BASE_EXPLORER)),
+    ]
+    rows += [(md, origin, _link(addr, BASE_EXPLORER)) for md, _, addr in vault_rows(doc)]
+    rows += [
         ("`DemoToken` (demo dollar, 6 decimals, test only)", origin, _link(c["token"], BASE_EXPLORER)),
         ("Callback proxy (Reactive's)", origin, _link(c["callbackProxy"], BASE_EXPLORER)),
     ]
@@ -79,16 +123,67 @@ def render_contracts(doc):
 def render_values(doc):
     v = doc["values"]
     lines = ["| Value | Deployed |", "|---|---|"]
-    lines += [f"| `{k}` | {v[k]} |" for k in VALUE_KEYS]
+    lines += [f"| `{k}` | {'none (not in these contracts)' if v.get(k) is None else v[k]} |" for k in VALUE_KEYS]
     lines.append(f"| Health float threshold (lREACT) | {doc.get('healthMinFloat')} |")
     return "\n".join(lines) + "\n"
 
 
-RENDER = {"contracts": render_contracts, "values": render_values}
+def _html_addr(label, chain, address, explorer):
+    return (f'      <tr><th scope="row">{label} <span class="quiet">{chain}</span></th><td><a class="addr" '
+            f'href="{explorer}{address}" rel="noopener noreferrer">{address}</a></td></tr>')
+
+
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def deployed_on(doc):
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", str(doc.get("name", "")))
+    return f"{int(m.group(3))} {MONTHS[int(m.group(2)) - 1]} {m.group(1)}" if m else str(doc.get("name", ""))
+
+
+def render_pagecontracts(doc):
+    c = doc["contracts"]
+    o, r = doc["origin"]["name"], doc["reactive"]["name"]
+    rows = [_html_addr("Exit contract", o, c["exit"], BASE_EXPLORER),
+            _html_addr("Reactive contract", r, c["reactive"], LASNA_EXPLORER)]
+    rows += [_html_addr(label, o, addr, BASE_EXPLORER) for _, label, addr in vault_rows(doc)]
+    rows.append(_html_addr("Demo dollar", o, c["token"], BASE_EXPLORER))
+    return (f"    <caption>Contracts of the {deployed_on(doc)} testnet deployment</caption>\n    <tbody>\n"
+            + "\n".join(rows) + "\n    </tbody>\n")
+
+
+def lifetime_text(seconds):
+    if seconds % 86400 == 0:
+        d = seconds // 86400
+        return "one day" if d == 1 else f"{d} days"
+    if seconds % 3600 == 0:
+        return f"{seconds // 3600} hours"
+    return f"{seconds} seconds"
+
+
+def render_demolimits(doc):
+    rules, life = doc["rules"], lifetime_text(doc["values"]["LIFETIME"])
+    if rules["vaultSource"] == "maker":
+        vault = ("Each vault is a real Morpho Vault V2, made for you by our maker contract on Base Sepolia; the dollars "
+                 "are ours and have no value.")
+    else:
+        vault = "The vault and the dollars are ours; the vault copies the events of Morpho Vault V2."
+    if rules["leaveNowExpires"]:
+        lease = f"A watch lasts {life} in this demo."
+    else:
+        lease = (f"A &ldquo;leave now&rdquo; watch stays on until it exits or you turn it off; a timer watch lasts "
+                 f"{life}.")
+    items = ["Test networks only.", vault, lease, "A change with no waiting period leaves no time to exit."]
+    return "".join(f"        <li>{x}</li>\n" for x in items)
+
+
+RENDER = {"contracts": render_contracts, "values": render_values, "pagecontracts": render_pagecontracts,
+          "demolimits": render_demolimits}
 
 
 def render_js(doc, source_name):
-    body = json.dumps(doc, indent=2, sort_keys=True)
+    page = {k: doc[k] for k in PAGE_KEYS if k in doc}
+    body = json.dumps(page, indent=2, sort_keys=True)
     return (f"// Written by scripts/stamp.py from deployments/{source_name}; never edit by hand.\n"
             f"window.NP_DEPLOYMENT = {body};\n")
 
@@ -152,7 +247,12 @@ def main(argv=None):
     ap.add_argument("--root", default=str(Path(__file__).resolve().parent.parent))
     ap.add_argument("--check", action="store_true")
     a = ap.parse_args(argv)
-    deployment = a.deployment or str(Path(a.root) / "deployments" / "current.json")
+    deployment = a.deployment
+    if not deployment:
+        # The page shows the deployment named in its stamped file; without one, deployments/current.json.
+        js = Path(a.root) / JS_TARGET
+        m = re.search(r"from deployments/([0-9A-Za-z-]+\.json);", js.read_text(encoding="utf-8")) if js.exists() else None
+        deployment = str(Path(a.root) / "deployments" / (m.group(1) if m else "current.json"))
     try:
         return run(a.root, deployment, a.check)
     except StampError as e:

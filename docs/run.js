@@ -27,6 +27,12 @@
   function topicN(n) { return '0x' + abi.word(n); }
   function topicA(a) { return '0x' + abi.addrWord(a); }
   function same(a, b) { return String(a || '').toLowerCase() === String(b || '').toLowerCase(); }
+  /* When a watch frees its place without exiting, in words, from the deployment's rules (config.js). */
+  function leaseWords() {
+    var s = cfg.deployment.lifetime, d = s / 86400;
+    var life = s % 86400 === 0 ? (d === 1 ? 'one day' : d + ' days') : Math.round(s / 3600) + ' hours';
+    return cfg.deployment.leaveNowExpires ? life : 'for a timer watch, ' + life;
+  }
   function units(v) { return fmt.units(v, cfg.token.decimals, 2); }
   function ether(v, places) { return fmt.units(v, 18, places === undefined ? 4 : places); }
   function now() { return performance.now(); }
@@ -124,7 +130,7 @@
         var f = r[1];
         if (used >= cap) return { id: 'runs-used-up', ctx: Object.assign({ cap: cap }, reset) };
         if (mine >= capMine) return { id: 'address-used-up', ctx: Object.assign({ cap: capMine }, reset) };
-        if (f.active >= f.maxActive) return { id: 'slots-full', ctx: { n: f.maxActive } };
+        if (f.active >= f.maxActive) return { id: 'slots-full', ctx: { n: f.maxActive, frees: leaseWords() } };
         if (f.float < BigInt(cfg.amounts.floatMinWei) || f.reserve < BigInt(cfg.amounts.exitMinWei) || f.debtL > 0n || f.debtB > 0n) {
           return { id: 'float-empty', ctx: {} };
         }
@@ -997,8 +1003,8 @@
 
   function order(list) {
     return list.slice().sort(function (a, b) {
-      var av = a.owner && !same(a.owner, cfg.operator) ? 1 : 0;
-      var bv = b.owner && !same(b.owner, cfg.operator) ? 1 : 0;
+      var av = a.owner && !cfg.isOurs(a.owner) ? 1 : 0;
+      var bv = b.owner && !cfg.isOurs(b.owner) ? 1 : 0;
       if (av !== bv) return bv - av;
       return b.id - a.id;
     });
@@ -1019,8 +1025,8 @@
       .map(function (r) { return fmt.sec(r.r3.ts, r.r1.ts); });
     var total = data.next !== null ? data.next - 1 : withTx.length;
     var unlisted = list.filter(function (r) { return !r.r1 && r.status === 3; }).length + Math.max(0, total - list.length);
-    var ours = list.filter(function (r) { return r.owner && same(r.owner, cfg.operator); }).length;
-    var visitors = list.filter(function (r) { return r.owner && !same(r.owner, cfg.operator); }).length;
+    var ours = list.filter(function (r) { return r.owner && cfg.isOurs(r.owner); }).length;
+    var visitors = list.filter(function (r) { return r.owner && !cfg.isOurs(r.owner); }).length;
     view.proof({ runs: total, returned: returned.length, nowTimes: nowTimes, unlisted: unlisted, ours: ours, visitors: visitors });
   }
 
@@ -1094,7 +1100,7 @@
       view.runs(data.runs, 'ok');
       showHero(list, 'ok');
       showProof(list);
-      var mine = list.filter(function (r) { return r.r3 && r.r3.outcome === 0 && r.mode === 0 && same(r.owner, cfg.operator); })
+      var mine = list.filter(function (r) { return r.r3 && r.r3.outcome === 0 && r.mode === 0 && cfg.isOurs(r.owner); })
         .sort(function (a, b) { return b.r3.ts - a.r3.ts; })[0];
       view.health({ left: Math.max(0, cap - used), cap: cap, float: ether(data.float.float, 2),
         lastAge: mine ? Math.max(0, heads[0].ts - mine.r3.ts) : null, lastTs: mine ? mine.r3.ts : null,

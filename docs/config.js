@@ -1,8 +1,12 @@
-/* Notice Period page: every address, endpoint, limit and flag in one place.
-   Addresses are those of the testnet deployment of 18 Nov 2026 and change with a redeploy. */
+/* Notice Period page: every endpoint, limit and flag in one place. The addresses, our own accounts and the
+   deployment's rules come from data/deployment.js (window.NP_DEPLOYMENT), which scripts/stamp.py writes from
+   deployments/<name>.json; a redeploy changes that file only. */
 (function () {
   'use strict';
   var NP = window.NP = window.NP || {};
+  var D = window.NP_DEPLOYMENT;
+  if (!D || !D.contracts || !D.operators || !D.operators.length) throw new Error('data/deployment.js did not load');
+  var vaultSource = (D.rules && D.rules.vaultSource) || (D.contracts.maker ? 'maker' : 'demo');
 
   NP.config = {
     chains: {
@@ -39,15 +43,26 @@
     },
 
     contracts: {
-      token: '0x2690DF70a37939c582a800f32FFEE52ec40d150B',
-      factory: '0xFFc96A898AF31e2ED652A8A0C0E90584999093CD',
-      exit: '0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8',
-      callbackProxy: '0x476F44b11F5C942c58f4c8E3d0300E5710743585',
-      reactive: '0x00E4996c7255B919B619902E1Ac4b254D3c3f014',
+      token: D.contracts.token,
+      /* The vault source: our demo vault factory, or the maker of Morpho Vault V2s. Both have create(),
+         lastVaultOf(address) and VaultCreated. */
+      factory: vaultSource === 'maker' ? D.contracts.maker : D.contracts.factory,
+      exit: D.contracts.exit,
+      callbackProxy: D.contracts.callbackProxy,
+      reactive: D.contracts.reactive,
       system: '0x8888888888888888888888888888888888888888'
     },
-    /* Our own account: runs it sent are labelled "Our own test run". */
-    operator: '0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4',
+    /* Our own accounts: runs they sent are labelled "Our own test run". operator is the first (the testnet key). */
+    operators: D.operators.slice(),
+    operator: D.operators[0],
+    /* What this deployment's contracts do, for the page's words: the vault source, and whether a "leave now" watch
+       ends after LIFETIME seconds (the 18 Nov 2026 contracts) or only a timer watch does (the redeploy). */
+    deployment: {
+      name: D.name,
+      vaultSource: vaultSource,
+      lifetime: D.values.LIFETIME,
+      leaveNowExpires: D.rules ? D.rules.leaveNowExpires !== false : true
+    },
 
     token: { symbol: 'npUSD', decimals: 6 },
     amounts: {
@@ -117,5 +132,11 @@
       contracts: 'https://github.com/bongbongcrypto/notice-period/tree/main/src',
       faucets: 'https://docs.base.org/base-chain/tools/network-faucets'
     }
+  };
+
+  /* True for one of our own accounts. */
+  NP.config.isOurs = function (address) {
+    var a = String(address || '').toLowerCase();
+    return NP.config.operators.some(function (o) { return o.toLowerCase() === a; });
   };
 }());

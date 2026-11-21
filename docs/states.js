@@ -137,7 +137,7 @@
     },
     'slots-full': {
       step: null, kind: 'stop', h: 'All {n} watch slots are taken right now',
-      body: ['Other visitors have watches open. A slot frees when a watch ends, or one day after it was turned on.', STILL_IN],
+      body: ['Other visitors have watches open. A slot frees when a watch ends, or {frees} after it was turned on.', STILL_IN],
       actions: [{ a: 'retry', label: 'Check again', primary: true }, REPLAY, WITHDRAW_IF]
     },
     'float-empty': {
