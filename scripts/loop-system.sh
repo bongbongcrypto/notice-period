@@ -31,7 +31,8 @@
 #   LOOP_AMOUNT        whole demo tokens to deposit (default 100)
 #   LOOP_TIMEOUT       seconds per wait (default 300; mode 1 adds the 180 s waiting period)
 #   LOOP_IGNORE_WAIT   ignored-then-exit: seconds to watch for any reaction to the unwatched change (default 45)
-#   LOOP_REVOKE_AFTER  revoke-stays: seconds between ChangeStored and the revoke (default 30)
+#   LOOP_REVOKE_AFTER  revoke-stays: seconds between ChangeStored and the revoke (default 15; the timer asks for the
+#                      exit about 60 s after the Submit on the 18 Nov values, so the revoke must reach Lasna first)
 #   LOOP_BURST_WAIT    burst: seconds to wait after the burst (default 60)
 #   LOOP_SCAN          expire-stale: how many of the latest watch ids to look at (default 200)
 #   LOOP_RUN_JSON      where run.json is written (default $RUNNER_TEMP/run.json, or ./run.json)
@@ -256,8 +257,14 @@ summary "|---|---|---|"
 
 case "$action" in
   exit | ignored-then-exit | revoke-stays | arm-only)
-    if [ "$action" = exit ] && [ $(( $(kind_bit "$kind") & watch_kinds )) = 0 ]; then
-      die "the watch (kinds $watch_kinds) does not cover $kind: use ignored-then-exit, or LOOP_WATCH_KINDS"
+    # Checked before anything is sent, so a wrong dispatch never spends one of the day's arms.
+    case "$action" in exit | ignored-then-exit | revoke-stays)
+      if [ $(( $(kind_bit "$kind") & watch_kinds )) = 0 ]; then
+        die "the watch (kinds $watch_kinds) does not cover $kind: pick a covered kind, or LOOP_WATCH_KINDS"
+      fi ;;
+    esac
+    if [ "$action" = ignored-then-exit ] && [ $((8 & watch_kinds)) != 0 ]; then
+      die "ignored-then-exit needs a watch without the cap kind (LOOP_WATCH_KINDS without 8)"
     fi
     [ "$action" != revoke-stays ] || [ "$mode" = 1 ] || die "revoke-stays is a mode 1 run (LOOP_MODE=1)"
     vault="$(make_vault)"
@@ -310,7 +317,7 @@ case "$action" in
     hash1="$(last_submit)"
     stored="$(wait_log "$LASNA_RPC" "change stored on Lasna" "$lasna_from" "$NP_REACTIVE" \
       "ChangeStored(uint256,bytes32,uint256,uint256)" "$timeout" "$watch_topic")"
-    sleep "${LOOP_REVOKE_AFTER:-30}"
+    sleep "${LOOP_REVOKE_AFTER:-15}"
     revoke_tx="$(send_as "$CUR_KEY" "$BASE_RPC" "2. curator revokes the change (Base Sepolia)" "$vault" "revoke(bytes)" "$data")"
     revoked="$(wait_log "$LASNA_RPC" "change revoked on Lasna" "$lasna_from" "$NP_REACTIVE" \
       "ChangeRevoked(uint256,bytes32)" "$timeout" "$watch_topic")"
