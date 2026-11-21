@@ -146,7 +146,9 @@ exhaustive search.
 - Each of the three kinds a watch covers by default has one recorded exit on testnet (runs 1, 3 and 4), sent by our
   own loop workflow. The page's curator buttons for a shorter waiting period and a new allocator encode the same calls
   ([`docs/abi.js`](docs/abi.js)); they were clicked through against a simulated pair of chains
-  ([`docs/TESTING.md`](docs/TESTING.md)), and no visitor has run them on the live contracts yet.
+  ([`docs/TESTING.md`](docs/TESTING.md)), and no visitor has run them on the live contracts yet. A cap increase is
+  an opt-in kind: a watch that covers it exits in the CI dry run on two local chains, but not yet on the live
+  contracts.
 - The demo vault counts every demo dollar it holds, and demo dollars are free to mint. So someone can send demo
   dollars to a visitor's fresh vault and skew its share price. The page refuses to deposit into such a vault; the
   contract itself does not prevent it (SPEC.md section 11).
