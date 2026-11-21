@@ -306,7 +306,7 @@ import sys
 sys.path.insert(0, "scripts")
 import runs
 root, logs = sys.argv[1], sys.argv[2]
-names = [n for n in ["mode0", "mode1", "ignored", "armonly", "fire", "timelock", "allocator", "cap", "revoke", "fireheld"]
+names = [n for n in ["mode0", "mode1", "ignored", "armonly", "fire", "timelock", "allocator", "cap", "revoke", "timerheld", "fireheld"]
          if os.path.exists(f"{logs}/run-{n}.json")]
 runs.add("dry", [f"{logs}/run-{n}.json" for n in names], root=root)
 sys.exit(runs.check(["dry"], root=root))
