@@ -31,6 +31,13 @@ abstract contract NoticeSetup is Network {
     uint256 internal cfgMaxReactions = MAX_REACTIONS;
     /// @dev Cap on armed watches (both modes) used by _deploy; a test contract may raise it before calling _deploy.
     uint256 internal cfgMaxActive = MAX_ACTIVE;
+    /// @dev Longest wait the reactive contract pays ticks for, used by _deploy; a test contract may change it first.
+    uint256 internal cfgMaxWait = MAX_WAIT;
+    /// @dev NoticeExit's daily arm caps used by _deploy (per address, all addresses, timer arms); a test contract may
+    ///      change them before calling _deploy.
+    uint256 internal cfgPerAddress = PER_ADDRESS;
+    uint256 internal cfgPerDay = PER_DAY;
+    uint256 internal cfgTimedPerDay = PER_DAY;
 
     DemoToken internal token;
     DemoVaultFactory internal factory;
@@ -48,16 +55,16 @@ abstract contract NoticeSetup is Network {
         factory = new DemoVaultFactory(address(token), TIMELOCK);
         address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
         reactive = new NoticeReactive(
-            ORIGIN_CHAIN, predicted, CRON10_TOPIC, LEAD, MAX_WAIT, CB_GAS, cfgMaxActive, cfgMaxReactions
+            ORIGIN_CHAIN, predicted, CRON10_TOPIC, LEAD, cfgMaxWait, CB_GAS, cfgMaxActive, cfgMaxReactions
         );
         exitC = new NoticeExit(
             IPayable(payable(address(proxy))),
             address(reactive),
             IVaultRegistry(address(factory)),
-            PER_ADDRESS,
-            PER_DAY,
+            cfgPerAddress,
+            cfgPerDay,
             LIFETIME,
-            PER_DAY
+            cfgTimedPerDay
         );
         assertEq(address(exitC), predicted, "exit address computed before deployment");
         _drainLogs();

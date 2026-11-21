@@ -7,6 +7,7 @@ import { MockVaultV2, MockVaultV2Factory } from "./mocks/MockMorpho.sol";
 import { IMorphoVaultV2Factory, IMorphoVaultV2 } from "../src/morpho/IMorpho.sol";
 import { MorphoVaultMaker } from "../src/morpho/MorphoVaultMaker.sol";
 import { NoticeExit, IVaultRegistry } from "../src/NoticeExit.sol";
+import { NoticeReactive } from "../src/NoticeReactive.sol";
 import { NoticeKinds } from "../src/lib/NoticeKinds.sol";
 
 /// @notice MorphoVaultMaker against a stand-in of Morpho's factory and Vault V2 that keeps the real refusals
@@ -144,7 +145,9 @@ contract MorphoTest is NoticeSetup {
 
     /// @dev Bites `block.number` in the salt of _freeSalt. A stranger takes the next salt in Morpho's open factory: it
     ///      is skipped and the stranger's vault is never listed. A stranger takes the next 16 salts of this block:
-    ///      create() refuses in this block (NoFreeSalt) and succeeds in the next with a salt nobody could take ahead.
+    ///      create() refuses in this block (NoFreeSalt, the counter goes back) and succeeds in the next block, whose
+    ///      salts this stranger did not take. A stranger who also takes the next block's salts blocks that block too
+    ///      (SPEC.md section 4); this test does not show recovery from that.
     function test_create_survives_precreated_salts() public {
         uint256 t = maker.saltTries();
         bytes32 s0 = keccak256(abi.encode(alice, block.number, t));
@@ -201,6 +204,53 @@ contract MorphoTest is NoticeSetup {
         vm.expectRevert(abi.encodeWithSelector(NoticeExit.UnknownVault.selector, address(other)));
         vm.prank(alice);
         exitM.arm(address(other), NoticeKinds.DEFAULT, 0, type(uint256).max);
+    }
+
+    /// @dev The whole loop on a maker vault: a reactive and exit pair of its own with the maker as the vault list (as
+    ///      deployed), a deposit, a "leave now" watch, the curator's new adapter, and the deposit back in the
+    ///      depositor's wallet through the network's callback. Sibling: a watch on a change it does not cover stays on.
+    function test_maker_vault_full_loop_leave_now() public {
+        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
+        NoticeReactive r2 =
+            new NoticeReactive(ORIGIN_CHAIN, predicted, CRON10_TOPIC, LEAD, MAX_WAIT, CB_GAS, MAX_ACTIVE, MAX_REACTIONS);
+        NoticeExit e2 = new NoticeExit(
+            IPayable(payable(address(proxy))),
+            address(r2),
+            IVaultRegistry(address(maker)),
+            PER_ADDRESS,
+            PER_DAY,
+            LIFETIME,
+            PER_DAY
+        );
+        assertEq(address(e2), predicted, "exit address computed before deployment");
+        MockVaultV2 v = _make(alice);
+        vm.startPrank(alice);
+        token.mint(alice, 100e6);
+        token.approve(address(v), 100e6);
+        v.deposit(100e6, alice);
+        v.approve(address(e2), type(uint256).max);
+        vm.stopPrank();
+        _drainLogs(); // the maker's own submits in create() came before any watch
+        vm.prank(alice);
+        uint256 id = e2.arm(address(v), NoticeKinds.ADAPTER, 0, type(uint256).max);
+        _pump(address(r2));
+        (,,, uint8 armed,,) = r2.watches(id);
+        assertEq(armed, r2.ST_ARMED(), "Lasna armed the watch");
+        // sibling: a cap increase is not a kind this watch covers
+        vm.prank(alice);
+        v.submit(abi.encodeCall(IMorphoVaultV2.increaseAbsoluteCap, (bytes("market"), 1)));
+        _pump(address(r2));
+        assertEq(v.balanceOf(alice), 100e6, "an unwatched kind leaves the deposit in");
+        vm.prank(alice);
+        v.submit(abi.encodeCall(IMorphoVaultV2.addAdapter, (address(0xAD))));
+        _pump(address(r2));
+        (,,, uint8 rs,,) = r2.watches(id);
+        assertEq(rs, r2.ST_EXITED(), "Lasna asked for the exit");
+        (,,, uint8 s,,) = e2.watches(id);
+        assertEq(s, e2.STATUS_ENDED(), "Base ended the watch");
+        assertEq(v.balanceOf(alice), 0, "every share redeemed");
+        assertEq(token.balanceOf(alice), 100e6, "the deposit is back in the depositor's wallet");
+        assertEq(token.balanceOf(address(e2)), 0, "the exit contract holds nothing");
     }
 
     /// @dev The mock's redeem, which the dry run uses when Morpho's factory code cannot be fetched: the exit contract
