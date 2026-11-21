@@ -45,6 +45,9 @@ if [ "$publish" != yes ]; then
   say "Branches A to C (Sourcify, Blockscout) not run: publish=no."
   exit 0
 fi
+# Branches A to C reach Sourcify and Blockscout, so forge must be online here, whatever ci-setup.sh wrote to
+# GITHUB_ENV (FOUNDRY_OFFLINE=true) and whichever of that and the step's env GitHub lets win.
+export FOUNDRY_OFFLINE=false
 
 # One line per contract: key chainId address artifact constructorArgs
 mapfile -t rows < <(python3 - "$DEPLOYMENT" <<'PY'
