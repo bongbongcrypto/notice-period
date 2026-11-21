@@ -380,9 +380,10 @@ case "$action" in
     float0="$(cast balance --rpc-url "$LASNA_RPC" "$NP_REACTIVE")" || die "float unknown"
     l0="$(block_number "$LASNA_RPC")"
     calls=()
+    # Targets numbered from 1001: the vault may already hold a pending change of this run id (n 1, 2, ...).
     for n in 1 2 3; do
       submits=$((submits + 1))
-      d="$(kind_calldata adapter "$vault" "$submits")"
+      d="$(kind_calldata adapter "$vault" "$((1000 + n))")"
       calls+=("$(cast calldata 'submit(bytes)' "$d")")
       rec burstData "$d"
     done
