@@ -250,7 +250,7 @@
     var cap = $('latest-cap');
     var check = $('latest-check');
     if (run) {
-      var ours = !run.owner || run.owner.toLowerCase() === cfg.operator.toLowerCase();
+      var ours = !run.owner || cfg.isOurs(run.owner);
       var where = ours ? 'on our own demo vault' : 'by a visitor on a demo vault';
       var mode = run.mode === 1 ? '“wait for the deadline”' : '“leave now”';
       cap.textContent = (linked ? 'Run #' + run.id + ' on testnet, ' + mode + ' mode, ' + where + ', ' : 'Latest ' + mode + ' run on testnet, ' + where + ', ') +
@@ -319,7 +319,7 @@
     th.appendChild(a);
     tr.appendChild(th);
     function td(cls, label, text) { var c = el('td', cls, text); c.setAttribute('data-l', label); tr.appendChild(c); return c; }
-    var who = r.owner ? (r.owner.toLowerCase() === cfg.operator.toLowerCase() ? 'Our own test run' : 'Visitor') : '';
+    var who = r.owner ? (cfg.isOurs(r.owner) ? 'Our own test run' : 'Visitor') : '';
     if (!r.r1) {
       td('num', 'When (UTC)', r.armedAt ? fmt.date(r.armedAt) + ' ' + fmt.time(r.armedAt) : '');
       td('', 'Who', who);

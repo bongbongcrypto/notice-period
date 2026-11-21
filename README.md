@@ -43,12 +43,12 @@ increases off.
 Reactive's own contracts used here: the callback proxy on Base Sepolia `0x476F44b11F5C942c58f4c8E3d0300E5710743585`
 and the system contract on Lasna `0x8888888888888888888888888888888888888888`.
 
-## Four full loops on chain
+## Five full loops on chain
 
-All four were sent by our own test account (`0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4`), each on a demo vault of
-its own: runs 1 and 2 on 18 Nov 2026, runs 3 and 4 on 21 Nov 2026. Seconds are differences of block times. Each run
-is a file in [`records/`](records/), and `python scripts/runs.py --check 2026-11-18` re-reads all four from the
-chains' receipts.
+All five were sent by our own test accounts (`0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4`, and for run 5 the second
+key derived from it, `0x616FF5998E3e6AF794881Adf6Fe6cac62Cc29b19`), each on a demo vault of its own: runs 1 and 2 on
+18 Nov 2026, runs 3 to 5 on 21 Nov 2026. Seconds are differences of block times. Each run is a file in
+[`records/`](records/), and `python scripts/runs.py --check 2026-11-18` re-reads all five from the chains' receipts.
 
 | | Run 1, "leave now" | Run 2, "wait for the deadline" |
 |---|---|---|
@@ -68,6 +68,17 @@ Runs 3 and 4 used "leave now" on the two other kinds a watch covers by default, 
 | Reactive transaction (Lasna) | [`0xd6781732…d950`](https://lasna.reactscan.net/tx/0xd6781732b0ebc3605e4935bbdfff19f099e7734363ee6cc825f32a1469fbd950) +0 s | [`0x394f2e9b…8aeb`](https://lasna.reactscan.net/tx/0x394f2e9b74612cead05c02972f57f16e3e07d9d88ce6962b36556b7f81f68aeb) +0 s (Lasna's block time is 1 s earlier) |
 | Deposit back in the depositor's wallet (Base Sepolia) | [`0xd4e01422…eed2`](https://base-sepolia.blockscout.com/tx/0xd4e0142294a334290c093c6e55ad4ae121dd3419cc47c5c2f4d05420481aeed2) +2 s | [`0xfeefba14…15b1`](https://base-sepolia.blockscout.com/tx/0xfeefba149291d58e5bcb775d74f11e2bb589806288d0511da2c78f75b5fb15b1) +1 s |
 | Notice left when the deposit was back | 178 s of 180 | 179 s of 180 |
+
+Run 5 first checked that a change the watch does not cover moves nothing. The curator scheduled a cap increase
+([`0x44f92103…ae52`](https://base-sepolia.blockscout.com/tx/0x44f92103c64c3dc4b8d2f715c1d96083c024a8ad24335f6f5cfffa957910ae52));
+in the next 44 Lasna blocks (8922053 to 8922096) our reactive contract logged nothing for the watch, its stray and unknown counters
+stayed at 0, and the watch stayed on. Then the curator scheduled a new adapter
+([`0xcac46e4f…b252`](https://base-sepolia.blockscout.com/tx/0xcac46e4f8088ebdbb5ba4bd46ec49f79dd1a7bbeec10c5d03844edfd6c8bb252)),
+Reactive answered
+([`0x9100fdc7…f308`](https://lasna.reactscan.net/tx/0x9100fdc75b0896b2edfdea8f89aa019d74d4f1666d8bd1aa6b015158730df308)),
+and the deposit was back 1 s later
+([`0x7d7be1a6…7932`](https://base-sepolia.blockscout.com/tx/0x7d7be1a69c3518a25c63c14ac517eeb350fbbb891c552a911222e9a68ab87932)),
+179 s before the change could run.
 
 ## Check every claim in ten minutes
 

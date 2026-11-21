@@ -46,7 +46,9 @@
       reactive: '0x00E4996c7255B919B619902E1Ac4b254D3c3f014',
       system: '0x8888888888888888888888888888888888888888'
     },
-    /* Our own account: runs it sent are labelled "Our own test run". */
+    /* Our own accounts: runs they sent are labelled "Our own test run". operator is the first (the testnet key);
+       the second is the key derived from it for runs that need a second depositor (scripts/loop-system.sh). */
+    operators: ['0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4', '0x616FF5998E3e6AF794881Adf6Fe6cac62Cc29b19'],
     operator: '0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4',
 
     token: { symbol: 'npUSD', decimals: 6 },
@@ -117,5 +119,11 @@
       contracts: 'https://github.com/bongbongcrypto/notice-period/tree/main/src',
       faucets: 'https://docs.base.org/base-chain/tools/network-faucets'
     }
+  };
+
+  /* True for one of our own accounts. */
+  NP.config.isOurs = function (address) {
+    var a = String(address || '').toLowerCase();
+    return NP.config.operators.some(function (o) { return o.toLowerCase() === a; });
   };
 }());
