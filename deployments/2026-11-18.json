@@ -1,0 +1,121 @@
+{
+  "name": "2026-11-18",
+  "status": "deployed",
+  "note": "The first testnet deployment, made by the deploy-system workflow run below from sourceCommit. Constructor arguments and creation transactions were re-read from the public RPC endpoints on 2026-11-22 (each creation input ends with exactly these arguments).",
+  "sourceCommit": "0d4c179252591b6b893b582711145d5b3b003c18",
+  "commit": "0d4c179252591b6b893b582711145d5b3b003c18",
+  "deployRun": 44212739930,
+  "registryKind": "demo",
+  "origin": {
+    "name": "Base Sepolia",
+    "chainId": 84532
+  },
+  "reactive": {
+    "name": "Reactive Lasna",
+    "chainId": 5318007
+  },
+  "contracts": {
+    "token": "0x2690DF70a37939c582a800f32FFEE52ec40d150B",
+    "factory": "0xFFc96A898AF31e2ED652A8A0C0E90584999093CD",
+    "exit": "0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8",
+    "reactive": "0x00E4996c7255B919B619902E1Ac4b254D3c3f014",
+    "callbackProxy": "0x476F44b11F5C942c58f4c8E3d0300E5710743585"
+  },
+  "deployTxs": {
+    "token": "0x1c7a65cf6929572e21628ab332c907954457000553ad703d3fcd8266f1075886",
+    "factory": "0x7a19971dbd11dc24fd816ea45350f090c24871747f225ac46d6e28a7bc1d6f13",
+    "reactive": "0xb0238939dd1accc645bd09c7ecc7224463d5f9d2e61512b6574525e2ee9413a5",
+    "exit": "0x35e7fd09a86d8217da19b1316c5afd7a002c8fb08d2faca63b6dd4402a972b57"
+  },
+  "build": [
+    {
+      "key": "token",
+      "chainId": 84532,
+      "address": "0x2690DF70a37939c582a800f32FFEE52ec40d150B",
+      "artifact": "src/demo/DemoToken.sol:DemoToken",
+      "constructorArgs": "0x",
+      "creationTx": "0x1c7a65cf6929572e21628ab332c907954457000553ad703d3fcd8266f1075886",
+      "creationBlock": 60209638
+    },
+    {
+      "key": "factory",
+      "chainId": 84532,
+      "address": "0xFFc96A898AF31e2ED652A8A0C0E90584999093CD",
+      "artifact": "src/demo/DemoVaultFactory.sol:DemoVaultFactory",
+      "constructorArgs": "0x0000000000000000000000002690df70a37939c582a800f32ffee52ec40d150b00000000000000000000000000000000000000000000000000000000000000b4",
+      "creationTx": "0x7a19971dbd11dc24fd816ea45350f090c24871747f225ac46d6e28a7bc1d6f13",
+      "creationBlock": 60209643
+    },
+    {
+      "key": "reactive",
+      "chainId": 5318007,
+      "address": "0x00E4996c7255B919B619902E1Ac4b254D3c3f014",
+      "artifact": "src/NoticeReactive.sol:NoticeReactive",
+      "constructorArgs": "0x0000000000000000000000000000000000000000000000000000000000014a34000000000000000000000000ef1bcfea1218c606c2aede19d1d25bc141be84b804463f7c1651e6b9774d7f85c85bb94654e3c46ca79b0c16fb16d4183307b6870000000000000000000000000000000000000000000000000000000000000078000000000000000000000000000000000000000000000000000000000000038400000000000000000000000000000000000000000000000000000000000927c000000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000050",
+      "creationTx": "0xb0238939dd1accc645bd09c7ecc7224463d5f9d2e61512b6574525e2ee9413a5",
+      "creationBlock": 8613045
+    },
+    {
+      "key": "exit",
+      "chainId": 84532,
+      "address": "0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8",
+      "artifact": "src/NoticeExit.sol:NoticeExit",
+      "constructorArgs": "0x000000000000000000000000476f44b11f5c942c58f4c8e3d0300e571074358500000000000000000000000000e4996c7255b919b619902e1ac4b254d3c3f014000000000000000000000000ffc96a898af31e2ed652a8a0c0e90584999093cd0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000015180",
+      "creationTx": "0x35e7fd09a86d8217da19b1316c5afd7a002c8fb08d2faca63b6dd4402a972b57",
+      "creationBlock": 60209665
+    },
+    {
+      "key": "runVault1",
+      "chainId": 84532,
+      "address": "0xfD29CE7D91EAA398021b811F3bd55525f6b88c72",
+      "artifact": "src/demo/DemoVault.sol:DemoVault",
+      "madeBy": "factory",
+      "constructorArgs": "0x0000000000000000000000002690df70a37939c582a800f32ffee52ec40d150b00000000000000000000000046b6d1a62caf1172d41502e39c78fb8d1a55fba400000000000000000000000000000000000000000000000000000000000000b4"
+    },
+    {
+      "key": "runVault2",
+      "chainId": 84532,
+      "address": "0xe14bB093328435562c98f81915e9BD5e6947A207",
+      "artifact": "src/demo/DemoVault.sol:DemoVault",
+      "madeBy": "factory",
+      "constructorArgs": "0x0000000000000000000000002690df70a37939c582a800f32ffee52ec40d150b00000000000000000000000046b6d1a62caf1172d41502e39c78fb8d1a55fba400000000000000000000000000000000000000000000000000000000000000b4"
+    }
+  ],
+  "operators": [
+    "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4"
+  ],
+  "values": {
+    "VAULT_TIMELOCK": 180,
+    "LEAD": 120,
+    "MAX_WAIT": 900,
+    "CALLBACK_GAS": 600000,
+    "MAX_ACTIVE": 8,
+    "MAX_REACTIONS": 80,
+    "ARMS_PER_ADDRESS_PER_DAY": 2,
+    "ARMS_PER_DAY": 10,
+    "LIFETIME": 86400
+  },
+  "rules": {
+    "leaveNowExpires": true,
+    "timedCap": null,
+    "timedArmsPerDay": null,
+    "vaultSource": "demo"
+  },
+  "runs": [
+    {
+      "n": 1,
+      "loopRun": 44212898042,
+      "vault": "0xfD29CE7D91EAA398021b811F3bd55525f6b88c72",
+      "watch": 1,
+      "mode": 0
+    },
+    {
+      "n": 2,
+      "loopRun": 44213152528,
+      "vault": "0xe14bB093328435562c98f81915e9BD5e6947A207",
+      "watch": 2,
+      "mode": 1
+    }
+  ],
+  "healthMinFloat": "2"
+}
