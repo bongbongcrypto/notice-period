@@ -1,4 +1,5 @@
-/* Browser wallet access, hand-written: EIP-6963 discovery with window.ethereum as the fallback, EIP-1193 requests.
+/* Browser wallet access written for this page, no library: EIP-6963 discovery with window.ethereum as the fallback,
+   EIP-1193 requests.
    Nothing is requested on load except a silent eth_accounts. No message signing, no typed data. */
 (function () {
   'use strict';

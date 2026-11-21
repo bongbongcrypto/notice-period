@@ -40,7 +40,8 @@
       if (seconds < 90) return Math.max(1, Math.round(seconds)) + ' s';
       if (seconds < 5400) return Math.round(seconds / 60) + ' min';
       if (seconds < 129600) return Math.round(seconds / 3600) + ' h';
-      return Math.round(seconds / 86400) + ' days';
+      var days = Math.floor(seconds / 86400);
+      return days + (days === 1 ? ' day' : ' days');
     },
     plural: function (n, one, many) { return n === 1 ? one : many; }
   };
@@ -89,10 +90,7 @@
     root.appendChild(full);
     var zoom = el('div', 'zoom');
     zoom.setAttribute('aria-hidden', 'true');
-    var cap = el('p', 'zoom-cap', 'The first ');
-    cap.appendChild(el('span', 'num z-span'));
-    cap.appendChild(document.createTextNode(' seconds, magnified'));
-    zoom.appendChild(cap);
+    zoom.appendChild(el('p', 'zoom-cap'));
     var za = el('div', 'axis axis-zoom');
     ['ax', 'tick t-sched', 'tick t-react', 'tick t-back', 'scale s0 num', 'scale s1 num'].forEach(function (c) { za.appendChild(el('span', c)); });
     zoom.appendChild(za);
@@ -103,7 +101,9 @@
     return root;
   }
 
-  /* model: { t1, t2, t3, execAt, stage (0 to 3 records shown), elapsed (seconds since record 1, while waiting) } */
+  /* model: { t1, t2, t3, execAt, stage (0 to 3 records shown), elapsed (seconds since record 1, while waiting) }
+     The second row magnifies the seconds around the exit: from 0 in a "leave now" run, from just before Reactive's
+     transaction in a "wait for the deadline" run, where the exit comes about a minute in. */
   function drawStrip(root, m) {
     var period = Math.max(1, (m.execAt || 0) - (m.t1 || 0)) || 180;
     var back = m.t3 ? fmt.sec(m.t3, m.t1) : null;
@@ -116,8 +116,8 @@
     var waiting = stage >= 1 && stage < 3 && typeof m.elapsed === 'number';
     q('.axis-full .t-now').hidden = !waiting;
     if (waiting) q('.axis-full .t-now').style.setProperty('--pos', pct(Math.min(m.elapsed, period), period));
-    if (m.t1) q('.l-sched b').textContent = fmt.time(m.t1);
-    if (m.execAt) q('.l-end b').textContent = fmt.time(m.execAt);
+    if (m.t1) q('.l-sched b').textContent = fmt.time(m.t1) + ' UTC';
+    if (m.execAt) q('.l-end b').textContent = fmt.time(m.execAt) + ' UTC';
     if (back !== null) {
       q('.axis-full .t-back').style.setProperty('--pos', pct(back, period));
       full.style.setProperty('--pos', pct(back, period));
@@ -127,12 +127,14 @@
       full.classList.toggle('mid', back / period > 0.25);
     }
     var known = back !== null ? back : (waiting ? m.elapsed : 2);
-    var span = Math.max(5, Math.ceil(known * 1.5));
-    q('.z-span').textContent = String(span);
-    q('.axis-zoom .s0').textContent = '0 s';
-    q('.axis-zoom .s1').textContent = span + ' s';
-    if (react !== null) q('.axis-zoom .t-react').style.setProperty('--pos', pct(react, span));
-    if (back !== null) q('.axis-zoom .t-back').style.setProperty('--pos', pct(back, span));
+    var z0 = react !== null && react > 5 ? react - 2 : 0;
+    var span = Math.max(5, Math.ceil((known - z0) * 1.5));
+    q('.zoom-cap').textContent = z0 ? 'Seconds ' + z0 + ' to ' + (z0 + span) + ' after the change, magnified' : 'The first ' + span + ' seconds, magnified';
+    q('.axis-zoom .s0').textContent = z0 + ' s';
+    q('.axis-zoom .s1').textContent = (z0 + span) + ' s';
+    q('.axis-zoom').classList.toggle('from-later', z0 > 0);
+    if (react !== null) q('.axis-zoom .t-react').style.setProperty('--pos', pct(react - z0, span));
+    if (back !== null) q('.axis-zoom .t-back').style.setProperty('--pos', pct(back - z0, span));
   }
 
   function ledgerRow(cls, what) {
@@ -169,14 +171,15 @@
     return t;
   }
 
-  /* model: { t1, t2, t3, h1, h2, h3, stage, own (the visitor's own run: wording changes) } */
+  /* model: { t1, t2, t3, h1, h2, h3, stage, own (the visitor's own run: wording changes), wait2 and wait3 (waiting
+     texts of a "wait for the deadline" replay), r2Missing (the exit landed while Reactive Lasna could not be read) } */
   function drawLedger(tbody, m) {
     var rows = tbody.querySelectorAll('tr');
     var stage = m.stage === undefined ? 3 : m.stage;
     var recs = [
       { chain: 'base', ts: m.t1, hash: m.h1, wait: 'waiting' },
-      { chain: 'lasna', ts: m.t2, hash: m.h2, wait: NP.copy.rec2Wait },
-      { chain: 'base', ts: m.t3, hash: m.h3, wait: NP.copy.rec3Wait }
+      { chain: 'lasna', ts: m.t2, hash: m.h2, wait: m.r2Missing ? NP.copy.rec2Missing : (m.wait2 || NP.copy.rec2Wait) },
+      { chain: 'base', ts: m.t3, hash: m.h3, wait: m.wait3 || NP.copy.rec3Wait }
     ];
     recs.forEach(function (r, i) {
       var tr = rows[i];
@@ -221,16 +224,16 @@
     if (d.n === 0) {
       p.textContent = 'No rule change is waiting in any listed Morpho vault right now.';
     } else {
-      var watched = d.k === 0 ? 'None of them is a kind this tool exits on by default.'
-        : d.k + fmt.plural(d.k, ' of them is', ' of them are') + ' a kind this tool exits on by default.';
+      var watched = d.k === 0 ? 'None of them is a kind this tool would exit on by default.'
+        : d.k + fmt.plural(d.k, ' of them is', ' of them are') + ' a kind this tool would exit on by default.';
       p.textContent = d.n + fmt.plural(d.n, ' rule change is', ' rule changes are') + ' waiting in ' + d.v +
         fmt.plural(d.v, ' Morpho vault', ' Morpho vaults') + ' holding ' + fmt.usd(d.usd) + ' right now. ' + watched;
     }
     var parts = Object.keys(d.byKind).filter(function (k) { return d.byKind[k] > 0; }).map(function (k) {
       return d.byKind[k] + ' ' + (kindWord[k] || [k, k])[d.byKind[k] === 1 ? 0 : 1];
     });
-    src.textContent = 'Read from Morpho’s public API ' + fmt.date(d.at) + ', ' + fmt.time(d.at).slice(0, 5) + ' UTC' +
-      (parts.length ? ': ' + parts.join(', ') : '') + '. Notice Period is not affiliated with Morpho.';
+    src.textContent = 'Morpho’s public API, ' + fmt.date(d.at) + ', ' + fmt.time(d.at).slice(0, 5) + ' UTC' +
+      (parts.length ? ': ' + parts.join(', ') : '') + '. ' + NP.copy.notMorpho;
   }
   function problemFailed(retry) {
     var s = cfg.morpho.snapshot;
@@ -238,16 +241,20 @@
     setBusy(src, false);
     $('problem').textContent = 'On ' + s.date + ': ' + s.changes + ' changes waiting in ' + s.vaults + ' vaults holding ' + fmt.usd(s.usd) +
       '; ' + s.capIncreases + ' cap increases, ' + s.shorter + ' shorter waiting periods. The live count is unavailable right now.';
-    src.textContent = 'Morpho’s public API did not answer. Notice Period is not affiliated with Morpho. ';
+    src.textContent = 'Morpho’s public API did not answer. ' + NP.copy.notMorpho + ' ';
     src.appendChild(retryButton('problem-retry', 'Try again', retry));
   }
 
-  function latest(run, state, retry) {
+  /* The run on the first screen: the latest "leave now" run, or the run a #run=N address names (linked). */
+  function latest(run, state, retry, linked) {
     var cap = $('latest-cap');
     var check = $('latest-check');
     if (run) {
-      cap.textContent = 'Latest real run on testnet in “leave now” mode, ' + fmt.date(run.r1.ts) + ': deposit back ' +
-        fmt.sec(run.r3.ts, run.r1.ts) + ' s after the change was scheduled.';
+      var ours = !run.owner || run.owner.toLowerCase() === cfg.operator.toLowerCase();
+      var where = ours ? 'on our own demo vault' : 'by a visitor on a demo vault';
+      var mode = run.mode === 1 ? '“wait for the deadline”' : '“leave now”';
+      cap.textContent = (linked ? 'Run #' + run.id + ' on testnet, ' + mode + ' mode, ' + where + ', ' : 'Latest ' + mode + ' run on testnet, ' + where + ', ') +
+        fmt.date(run.r1.ts) + ': deposit back ' + fmt.sec(run.r3.ts, run.r1.ts) + ' s after the change was scheduled.';
       drawStrip($('strip-first'), { t1: run.r1.ts, t2: run.r2.ts, t3: run.r3.ts, execAt: run.execAt, stage: 3 });
       drawLedger($('ledger-first'), { t1: run.r1.ts, t2: run.r2.ts, t3: run.r3.ts, h1: run.r1.hash, h2: run.r2.hash, h3: run.r3.hash, stage: 3 });
       $('strip-alt').textContent = 'Run #' + run.id + '. Change scheduled at ' + fmt.time(run.r1.ts) + ' UTC. Deposit back ' +
@@ -257,7 +264,7 @@
     setBusy(check, state === 'loading');
     clear(check);
     if (state === 'loading') check.textContent = 'Recorded copy. ' + NP.copy.checking;
-    else if (state === 'ok') check.textContent = 'Checked against both chains just now: three receipts and their block times, read ' + fmt.time(Date.now() / 1000) + ' UTC.';
+    else if (state === 'ok') check.textContent = 'Re-read from both chains at ' + fmt.time(Date.now() / 1000) + ' UTC: three receipts and their block times.';
     else {
       check.textContent = fillText(NP.copy.checkFail, { date: fmt.isoDate(NP.recorded.readAt) }) + ' ';
       if (retry) check.appendChild(retryButton('latest-retry', 'Try again', retry));
@@ -265,7 +272,12 @@
   }
 
   function proof(d) {
-    var txt = d.runs + fmt.plural(d.runs, ' run so far. ', ' runs so far. ') + d.returned +
+    /* Test traffic is called test traffic, on the same line as the count. */
+    var who = '';
+    if (d.runs > 0 && d.ours === d.runs) who = d.runs === 1 ? ', our own test' : (d.runs === 2 ? ', both our own tests' : ', all our own tests');
+    else if (d.runs > 0 && d.ours + d.visitors === d.runs) who = ': ' + d.visitors + ' by ' + fmt.plural(d.visitors, 'a visitor', 'visitors') + ', ' + d.ours + ' our own ' + fmt.plural(d.ours, 'test', 'tests');
+    else if (d.ours > 0) who = ', ' + d.ours + ' of them our own ' + fmt.plural(d.ours, 'test', 'tests');
+    var txt = d.runs + fmt.plural(d.runs, ' run so far', ' runs so far') + who + '. ' + d.returned +
       fmt.plural(d.returned, ' deposit returned.', ' deposits returned.');
     if (d.nowTimes.length >= cfg.timing.medianFromRuns) {
       var s = d.nowTimes.slice().sort(function (a, b) { return a - b; });
@@ -278,6 +290,7 @@
     $('proof').textContent = txt;
   }
 
+  function healthLoading() { setBusy($('health'), true); }
   function health(d, retry) {
     var h = $('health');
     setBusy(h, false);
@@ -289,8 +302,8 @@
     }
     var txt = 'Live now: ' + d.left + ' of ' + d.cap + ' runs left today. Float ' + d.float + ' lREACT. ';
     if (d.lastAge !== null && d.lastAge <= 26 * 3600) txt += 'Our last \u201cleave now\u201d test run was ' + fmt.age(d.lastAge) + ' ago, deposit back in ' + d.lastSec + ' s.';
-    else if (d.lastAge !== null) txt += 'No test run of ours in the last day. The latest \u201cleave now\u201d one was ' + fmt.age(d.lastAge) + ' ago, deposit back in ' + d.lastSec + ' s.';
-    else txt += 'No test run of ours in the last day.';
+    else if (d.lastAge !== null) txt += 'Our latest \u201cleave now\u201d test run was ' + fmt.age(d.lastAge) + ' ago (' + fmt.date(d.lastTs) + '), deposit back in ' + d.lastSec + ' s.';
+    else txt += 'No \u201cleave now\u201d test run of ours is on record yet.';
     h.textContent = txt;
   }
 
@@ -319,7 +332,8 @@
     var kind = cfg.kinds.filter(function (k) { return (k.selectors || []).indexOf(r.selector) >= 0; })[0];
     var ch = td('', 'Change', (kind ? kind.short : r.selector) + ' ');
     ch.appendChild(el('span', 'quiet', r.mode === 1 ? '(wait for the deadline)' : '(leave now)'));
-    td('num', 'Seen by Reactive', r.r2 ? '+' + fmt.sec(r.r2.ts, r.r1.ts) + ' s' : 'not seen');
+    var seen = td('num', 'Reactive transaction', r.r2 ? '+' + fmt.sec(r.r2.ts, r.r1.ts) + ' s' : 'not seen');
+    if (r.r2 && r.mode === 1) { seen.appendChild(document.createTextNode(' ')); seen.appendChild(el('span', 'quiet', '(timer)')); }
     var ok = r.r3 && r.r3.outcome === 0;
     td('num back', 'Deposit back', ok ? '+' + fmt.sec(r.r3.ts, r.r1.ts) + ' s' : (r.r3 ? OUTCOME[r.r3.outcome] || 'Not returned' : 'Not delivered'));
     td('num', 'Notice left', ok ? Math.max(0, r.execAt - r.r3.ts) + ' s' : '');
@@ -462,6 +476,7 @@
       box.appendChild(head);
     }
     def.body.forEach(function (line) {
+      if (typeof line === 'object') { if (!ctx[line.when]) return; line = line.t; }
       var txt = fillText(line, ctx);
       if (!txt.trim()) return;
       var p = el('p');
@@ -517,13 +532,13 @@
       if (ctx.tx) nt.appendChild(txLink('base', ctx.tx, 'View transaction'));
       box.appendChild(nt);
     }
-    var acts = def.actions.filter(function (s) { return !s.when || ctx[s.when]; });
+    var acts = (typeof def.actions === 'function' ? def.actions(ctx) : def.actions).filter(function (s) { return !s.when || ctx[s.when]; });
     if (acts.length) {
       var row = el('div', 'actions');
       acts.forEach(function (s) { row.appendChild(actionNode(s, ctx)); });
       box.appendChild(row);
     }
-    if (def.curator) box.appendChild(el('p', 'small', (ctx.kinds & 8) ? NP.copy.capCovered : NP.copy.capIgnored));
+    if (def.curator) NP.curatorHints(ctx).forEach(function (line) { box.appendChild(el('p', 'small hint', line)); });
     if (def.kind === 'wait' && !def.strip) box.appendChild(el('p', 'small waiting', ctx.waitText || 'Waiting. No button to press right now.'));
 
     announce(head ? head.textContent : 'Run it yourself');
@@ -574,7 +589,7 @@
     $: $, el: el, fmt: fmt, fill: fill, fillText: fillText, txLink: txLink,
     makeStrip: makeStrip, drawStrip: drawStrip, makeLedger: makeLedger, drawLedger: drawLedger,
     problemLoading: problemLoading, problem: problem, problemFailed: problemFailed,
-    latest: latest, proof: proof, health: health, runs: runs,
+    latest: latest, proof: proof, health: health, healthLoading: healthLoading, runs: runs,
     state: state, tickStrip: tickStrip, setHeadline: setHeadline, setPendingLine: setPendingLine, setKindsWarn: setKindsWarn,
     enableActions: enableActions, announce: announce, ctaOrder: ctaOrder,
     onAction: function (f) { handler = f; },

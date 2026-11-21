@@ -1,5 +1,5 @@
-/* Recorded runs: real transactions read from the public RPC endpoints of Base Sepolia and Reactive Lasna.
-   Generated from that read. The page re-reads every receipt before it calls a run checked. */
+/* Recorded runs: real transactions read from the public RPC endpoints of Base Sepolia and Reactive Lasna
+   at the time in readAt. The page re-reads every receipt before it calls a run checked. */
 (function () {
   'use strict';
   var NP = window.NP = window.NP || {};

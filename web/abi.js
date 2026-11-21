@@ -1,4 +1,4 @@
-/* Hand-written ABI encoding and decoding for the few calls and events this page uses.
+/* ABI encoding and decoding written for this page, no library: the few calls and events it uses.
    Selectors and topics come from sig.js. Everything is hex strings and BigInt. */
 (function () {
   'use strict';
@@ -36,6 +36,13 @@
     submit: function (inner) { return fn('submit(bytes)') + word(32) + bytesTail(inner); },
     executableAt: function (inner) { return fn('executableAt(bytes)') + word(32) + bytesTail(inner); },
     addAdapter: function (account) { return fn('addAdapter(address)') + addrWord(account); },
+    /* decreaseTimelock(bytes4 selector, uint256 newDuration): a bytes4 sits left-aligned in its word */
+    decreaseTimelock: function (selector, duration) {
+      var s = strip(selector).toLowerCase();
+      if (!/^[0-9a-f]{8}$/.test(s)) throw new Error('bad selector');
+      return fn('decreaseTimelock(bytes4,uint256)') + s.padEnd(64, '0') + word(duration);
+    },
+    setIsAllocator: function (account, on) { return fn('setIsAllocator(address,bool)') + addrWord(account) + word(on ? 1 : 0); },
     /* increaseAbsoluteCap(bytes idData, uint256 cap): offset 0x40, cap, then the bytes */
     increaseAbsoluteCap: function (idData, cap) {
       return fn('increaseAbsoluteCap(bytes,uint256)') + word(64) + word(cap) + bytesTail(idData);

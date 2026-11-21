@@ -24,7 +24,7 @@
     return e;
   }
 
-  /* One HTTP POST. Replaced by the test harness; nothing else in the page touches the network for chain data. */
+  /* One HTTP POST. Nothing else in the page touches the network for chain data, so a test can swap this one function. */
   function post(url, body) {
     var ctl = new AbortController();
     var timer = setTimeout(function () { ctl.abort(); }, 12000);
@@ -120,31 +120,42 @@
 
   function hex(n) { return '0x' + BigInt(n).toString(16); }
 
-  /* eth_getLogs over [from, to], split into the windows the endpoint accepts. Newest window first is not needed:
-     ranges here are small or exactly one window. A range that would need more than 12 windows on an endpoint
-     is not sent to that endpoint. */
+  /* eth_getLogs over [from, to]. Each endpoint is asked in the windows it accepts: the first one whole if it can,
+     the next one only when the first does not answer. An endpoint that would need more than 12 windows for the
+     range is not asked at all. */
   function getLogs(chain, filter, from, to) {
     from = Math.max(0, from);
     var span = to - from + 1;
-    var pick = function (ep) { return Math.ceil(span / ep.maxRange) <= 12; };
-    var eps = cfg.chains[chain].endpoints.filter(pick);
+    var eps = cfg.chains[chain].endpoints.filter(function (ep) { return Math.ceil(span / ep.maxRange) <= 12; });
     if (!eps.length) return Promise.reject(RpcDown(chain, 0));
-    var size = Math.min.apply(null, eps.map(function (e) { return e.maxRange; }));
-    var out = [];
-    var start = from;
-    function step() {
-      if (start > to) return Promise.resolve(out);
-      var end = Math.min(to, start + size - 1);
-      var f = { address: filter.address, topics: filter.topics, fromBlock: hex(start), toBlock: hex(end) };
-      var body = { jsonrpc: '2.0', id: nextId++, method: 'eth_getLogs', params: [f] };
-      return attempt(chain, body, pick).then(function (r) {
-        if (r.json && r.json.error) throw RpcError(r.json.error);
-        out = out.concat(r.json.result || []);
-        start = end + 1;
-        return step();
+    var k = 0;
+    function windows(ep) {
+      var out = [];
+      var start = from;
+      var only = function (e) { return e === ep; };
+      function step() {
+        if (start > to) return Promise.resolve(out);
+        var end = Math.min(to, start + ep.maxRange - 1);
+        var f = { address: filter.address, topics: filter.topics, fromBlock: hex(start), toBlock: hex(end) };
+        var body = { jsonrpc: '2.0', id: nextId++, method: 'eth_getLogs', params: [f] };
+        return attempt(chain, body, only).then(function (r) {
+          if (r.json && r.json.error) throw RpcError(r.json.error);
+          out = out.concat(r.json.result || []);
+          start = end + 1;
+          return step();
+        });
+      }
+      return step();
+    }
+    function next() {
+      if (k >= eps.length) return Promise.reject(RpcDown(chain, eps.length));
+      var ep = eps[k++];
+      return windows(ep).catch(function (err) {
+        if (err && err.rpcDown) return next();
+        throw err;
       });
     }
-    return step();
+    return next();
   }
 
   function head(chain) {

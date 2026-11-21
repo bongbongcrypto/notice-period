@@ -1,5 +1,6 @@
-/* Generated from the Solidity signatures with a Keccak-256 that is checked against known values
-   (transfer(address,uint256) = 0xa9059cbb). Do not edit by hand. */
+/* Selectors, event topics and error selectors: Keccak-256 of the Solidity signatures in src/.
+   To check one: cast sig 'create()' gives 0xefc81a8c, cast keccak 'Submit(bytes4,bytes,uint256)' gives the
+   Submit topic below, and transfer(address,uint256) is the well-known 0xa9059cbb. */
 (function () {
   'use strict';
   var NP = window.NP = window.NP || {};
@@ -41,6 +42,7 @@
       'setIsAllocator(address,bool)': '0xb192a84a',
       'strayEvents()': '0x4e967b61',
       'submit(bytes)': '0xef7fa71b',
+      'totalSupply()': '0x18160ddd',
       'unknownEvents()': '0x60a97cbf',
       'vaultCount()': '0xa7c6a100',
       'watchOf(uint256)': '0x21926338',

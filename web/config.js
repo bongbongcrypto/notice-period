@@ -12,7 +12,8 @@
         hex: '0x14a34',
         name: 'Base Sepolia',
         currency: 'ETH',
-        /* maxRange: the widest eth_getLogs block range each public endpoint accepted when measured */
+        /* maxRange: the eth_getLogs block range this page asks of each public endpoint. Measured limits: 50,000 on
+           the first, 200 on the second (100 keeps a margin). */
         endpoints: [
           { url: 'https://base-sepolia-rpc.publicnode.com', maxRange: 50000 },
           { url: 'https://sepolia.base.org', maxRange: 100 }
@@ -59,10 +60,10 @@
 
     /* Kinds a watch can cover (bit mask, SPEC section 3). DEFAULT = 7. */
     kinds: [
-      { bit: 1, on: true, label: 'A new adapter (where the vault may send funds)', short: 'New adapter' },
-      { bit: 2, on: true, label: 'A shorter waiting period', short: 'Shorter waiting period' },
-      { bit: 4, on: true, label: 'A new allocator (who may move funds)', short: 'New allocator' },
-      { bit: 8, on: false, label: 'A cap increase (routine, by far the most common)', short: 'Cap increase' }
+      { bit: 1, on: true, label: 'A new adapter (where the vault may send funds)', short: 'New adapter', a: 'a new adapter' },
+      { bit: 2, on: true, label: 'A shorter waiting period', short: 'Shorter waiting period', a: 'a shorter waiting period' },
+      { bit: 4, on: true, label: 'A new allocator (who may move funds)', short: 'New allocator', a: 'a new allocator' },
+      { bit: 8, on: false, label: 'A cap increase (routine, by far the most common)', short: 'Cap increase', a: 'a cap increase' }
     ],
 
     /* Seconds. All measured on the recorded runs; see the rule book, section 12. */
@@ -77,10 +78,14 @@
       callbackSlow: 90,
       receiptSlow: 30,
       pollMs: 1000,
-      medianFromRuns: 5
+      medianFromRuns: 5,
+      /* A replay whose wait is longer than replayLong seconds is played back in replayPlay seconds, and says so. */
+      replayLong: 12,
+      replayPlay: 8
     },
 
-    /* How far back the browser can search for runs: three windows of the Lasna log limit (about 27 hours). */
+    /* How far back the browser can search for runs: three windows of the Lasna log limit (about 27 hours).
+       baseVaultWindow: 50,000 Base Sepolia blocks, about 2 h 47 min at 5 blocks a second. An older vault is not reused. */
     scan: { lasnaWindows: 3, baseVaultWindow: 50000, maxRunsListed: 20 },
 
     flags: {
