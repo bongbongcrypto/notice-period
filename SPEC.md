@@ -337,6 +337,14 @@ on Base Sepolia; balances read before and after each loop; reactive gas price 10
   recorded, the assets stay in the vault. Morpho's own `VaultV2Factory` is deployed on Base Sepolia, so a
   real Vault V2 can replace it later; `NoticeExit` and `NoticeReactive` only rely on the event shapes and
   ERC-4626 `redeem` (the deploy and loop scripts also read `executableAt(bytes)`).
+- The demo vault counts every demo dollar it holds as its assets (`totalAssets` is its token balance, with one
+  virtual share), and `DemoToken.mint` is open to anyone. So a third party can send demo dollars to a vault
+  before its first deposit and skew the share price: with 50 sent first, a deposit of 100 mints 1 share that
+  redeems for 75; with 100 or more sent first, the deposit reverts with `ZeroShares`. The address of the next
+  vault can be computed in advance (plain `CREATE` from the factory). This is the demo vault's weakness, not the
+  exit contract's: `NoticeExit` redeems whatever the shares are worth, to the owner. The page refuses to deposit
+  into a vault that already holds demo dollars and makes a new one; the contracts as deployed do not prevent it.
+  A fix (assets tracked in storage, or a vault address salted with the creator) needs a new deployment.
 - The demo pays for watches from an operator float; user-paid watches are later scope.
 - One origin chain (Base Sepolia) in this version.
 - The exit runs in seconds, not in the same block. A change with no timelock cannot be fled.
