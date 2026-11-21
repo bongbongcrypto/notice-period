@@ -123,7 +123,7 @@ jobs:
       - name: Log wait against a stub RPC (403 default agent, 413 wide ranges, failed chunk, lagging node)
         run: python3 scripts/test-wait-log.py
 
-      - name: Dry run on local chains (deploy-hello, deploy-system, loop hello, every loop action and kind, health)
+      - name: Dry run on local chains (deploy-hello, deploy-system, loop hello, every kind, every loop action but burst and a stand-alone cancel, health)
         run: bash scripts/dry-run.sh
 
       - name: Funding dry run (three local chains, transaction and refusal checks)
