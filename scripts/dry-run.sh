@@ -132,6 +132,24 @@ python3 scripts/relay-anvil.py --base "$BASE_RPC" --lasna "$LASNA_RPC" --proxy "
   --reactive "$HELLO_REACTIVE" --reactive "$NP_REACTIVE" --cron 5 --duration 3000 > "$logs/relay.log" 2>&1 &
 relay_pid="$!"
 
+# Anvil gives each block at least one second more than the last, so a chain that mines several blocks a second (Lasna,
+# under the relay) runs ahead of the other. NoticeReactive compares Base's executableAt with Lasna's clock, so a drift
+# of LEAD - 60 s (60 s on the 18 Nov values) turns "store and wait" into "too soon". Every 3 s the chain behind is set
+# to the time of the chain ahead, and Base gets a block (so waits on Base block time end on an idle chain too).
+sync_clocks() {
+  local tb tl
+  tb="$(cast block --rpc-url "$BASE_RPC" latest --field timestamp)" || return 0
+  tl="$(cast block --rpc-url "$LASNA_RPC" latest --field timestamp)" || return 0
+  if [ "$tl" -gt "$tb" ]; then
+    cast rpc --rpc-url "$BASE_RPC" evm_setNextBlockTimestamp "$tl" >/dev/null 2>&1 || true
+  elif [ "$tb" -gt "$tl" ]; then
+    cast rpc --rpc-url "$LASNA_RPC" evm_setNextBlockTimestamp "$tb" >/dev/null 2>&1 || true
+    cast rpc --rpc-url "$LASNA_RPC" evm_mine >/dev/null 2>&1 || true
+  fi
+}
+(while :; do sync_clocks; cast rpc --rpc-url "$BASE_RPC" evm_mine >/dev/null 2>&1 || true; sleep 3; done) &
+pids="$pids $!"
+
 status=0
 bash scripts/loop-hello.sh || status=1
 [ "$status" = 0 ] && { LOOP_MODE=0 LOOP_RUN_JSON="$logs/run-mode0.json" bash scripts/loop-system.sh || status=1; }
@@ -141,10 +159,6 @@ bash scripts/loop-hello.sh || status=1
 # deploy-system.sh allows four arms per address and four timer arms per UTC day; the runs are still spread over key A
 # and key B and over several days so they fit two arms per address per day (the 11-18 pair's cap) as well:
 # both chains move forward by the same time between groups. Key B needs gas once (key A sends it; anvil keys are rich).
-# A miner keeps Base blocks coming, so waits on Base block time (revoke-stays) end on an idle chain too.
-(while :; do cast rpc --rpc-url "$BASE_RPC" evm_mine >/dev/null 2>&1 || true; sleep 3; done) &
-miner_pid="$!"
-pids="$pids $miner_pid"
 warp() { # seconds: the same jump on both chains
   for rpc in "$BASE_RPC" "$LASNA_RPC"; do
     cast rpc --rpc-url "$rpc" evm_increaseTime "$1" >/dev/null
@@ -164,6 +178,11 @@ field() { # name key -> value from run-<name>.json
     "$logs/run-$1.json" "$2"
 }
 B=(LOOP_DEPOSITOR=b LOOP_FUND_B=1 LOOP_B_GAS=1)
+# The mode 1 run must have waited: stored, then asked on the timer near the deadline (reason 2), not fled as too soon.
+if [ "$status" = 0 ] && [ "$(field mode1 reason)" != 2 ]; then
+  echo "the mode 1 run ended with reason $(field mode1 reason), not 2 (deadline): it did not take the waiting path"
+  status=1
+fi
 
 # Day 0 (key A made two arms above): key B.
 twin ignored LOOP_ACTION=ignored-then-exit "${B[@]}"
