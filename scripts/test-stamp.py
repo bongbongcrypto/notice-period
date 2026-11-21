@@ -126,6 +126,22 @@ with tempfile.TemporaryDirectory() as tmp:
     expect("unknown block refused", rc, 2, out)
     expect("refusal writes nothing", int((root4 / "docs").exists()), 0)
 
+    # Malformed deployment files stop with exit 2 (not a Python traceback, exit 1) and write nothing.
+    no_origin = deployment()
+    del no_origin["origin"]
+    list_contracts = deployment()
+    list_contracts["contracts"] = []
+    list_rules = deployment()
+    list_rules["rules"] = ["maker"]
+    malformed = [("a JSON list", "[]"), ("a JSON string", '"deployed"'), ("no origin", json.dumps(no_origin)),
+                 ("contracts as a list", json.dumps(list_contracts)), ("rules as a list", json.dumps(list_rules))]
+    for label, raw in malformed:
+        r = fresh(tmp)
+        (r / "deployments" / "current.json").write_text(raw, encoding="utf-8")
+        rc, out = stamp(r)
+        expect(f"{label} refused", rc, 2, out)
+        expect(f"{label} writes nothing", int((r / "docs").exists()), 0)
+
     # The demo-factory shape (the 18 Nov 2026 deployment): no maker, no timer values, leave-now watches expire.
     page = ("<footer>\n  <table>\n<!-- stamp:pagecontracts -->\nold\n<!-- /stamp:pagecontracts -->\n  </table>\n"
             "<ul>\n<!-- stamp:demolimits -->\n<!-- /stamp:demolimits -->\n</ul>\n</footer>\n")
