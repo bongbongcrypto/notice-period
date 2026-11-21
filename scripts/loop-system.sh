@@ -256,6 +256,20 @@ lasna_pending() { # watch id -> changes NoticeReactive holds for it (stored, wai
   [[ "$n" =~ ^[0-9]+$ ]] || die "pending changes of watch $1 on Lasna unknown ('$n')"
   echo "$n"
 }
+lasna_earliest() { # watch id, count -> the earliest executableAt among its stored changes
+  local j raw hex at best=""
+  for ((j = 0; j < $2; j++)); do
+    # pendingOf returns (bytes32 dataHash, uint64 executableAt, uint256 originTxHash, bytes data): after the offset
+    # word, executableAt is the second head word.
+    raw="$(cast call --rpc-url "$LASNA_RPC" "$NP_REACTIVE" 'pendingOf(uint256,uint256)' "$1" "$j")" ||
+      die "stored change $j of watch $1 on Lasna unknown"
+    hex="${raw#0x}"
+    [ "${#hex}" -ge 256 ] || die "stored change $j of watch $1 on Lasna unreadable"
+    at="$(cast to-dec "0x${hex:128:64}")" || die "stored change $j of watch $1: executableAt unreadable"
+    if [ -z "$best" ] || [ "$at" -lt "$best" ]; then best="$at"; fi
+  done
+  echo "$best"
+}
 
 summary "### Notice Period loop: $action, kind $kind, mode $mode, depositor key $depositor, curator key $curator ($factory_kind vaults)"
 summary ""
@@ -447,7 +461,7 @@ case "$action" in
     next_id="$(uint_of "$BASE_RPC" "$NP_EXIT" 'nextWatchId()(uint256)')"
     now="$(block_time "$BASE_RPC")"
     first=$(( next_id > ${LOOP_SCAN:-200} ? next_id - ${LOOP_SCAN:-200} : 1 ))
-    expired=0; looked=0; held=0
+    expired=0; looked=0; held=0; overdue=""
     for ((id = first; id < next_id; id++)); do
       mapfile -t w < <(cast call --rpc-url "$BASE_RPC" "$NP_EXIT" 'watches(uint256)(address,uint8,uint8,uint8,address,uint256)' "$id" | awk '{print $1}')
       [ "${#w[@]}" = 6 ] || die "watch $id unknown"
@@ -459,8 +473,12 @@ case "$action" in
       # no exit. The timer asks for its exit before the change can run, and the watch ends then.
       pending="$(lasna_pending "$id")"
       if [ "$pending" != 0 ]; then
-        summary "| Timer watch $id is past its lease but holds $pending stored change(s) on Lasna: left on | | |"
+        earliest="$(lasna_earliest "$id" "$pending")"
+        summary "| Timer watch $id is past its lease but holds $pending stored change(s) on Lasna, the first runnable at $earliest: left on | | |"
         held=$((held + 1))
+        # The timer asks for the exit LEAD seconds before a stored change can run. One whose time has come while the
+        # watch is still on means the exit did not happen: the run fails, after the other watches were looked at.
+        if [ "$earliest" -le "$now" ]; then overdue="$overdue $id"; fi
         continue
       fi
       tx="$(send_as "$DEP_KEY" "$BASE_RPC" "expire timer watch $id (armed $at, lease $lifetime s)" "$NP_EXIT" "expire(uint256)" "$id")"
@@ -471,6 +489,7 @@ case "$action" in
     rec looked "$looked"; rec expired "$expired"; rec heldPending "$held"
     summary ""
     summary "Looked at watches $first to $((next_id - 1)): $expired timer watches past their lease expired, $held left on because a change is stored for them. Leave-now watches are never expired."
+    [ -z "$overdue" ] || die "timer watch(es)$overdue still hold a stored change whose time has come (Base time $now): the exit did not happen"
     ;;
 
   topup)
