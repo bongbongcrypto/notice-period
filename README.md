@@ -45,10 +45,11 @@ and the system contract on Lasna `0x8888888888888888888888888888888888888888`.
 
 ## Five full loops on chain
 
-All five were sent by our own test accounts (`0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4`, and for run 5 the second
-key derived from it, `0x616FF5998E3e6AF794881Adf6Fe6cac62Cc29b19`), each on a demo vault of its own: runs 1 and 2 on
-18 Nov 2026, runs 3 to 5 on 21 Nov 2026. Seconds are differences of block times. Each run is a file in
-[`records/`](records/), and `python scripts/runs.py --check 2026-11-18` re-reads all five from the chains' receipts.
+All runs were sent by our own test accounts (`0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4`, and for runs 5 and 6 the
+second key derived from it, `0x616FF5998E3e6AF794881Adf6Fe6cac62Cc29b19`), each on a demo vault of its own: runs 1 and 2
+on 18 Nov 2026, runs 3 to 6 on 21 Nov 2026. Run 6 is the one where the deposit must stay. Seconds are differences of
+block times. Each run is a file in [`records/`](records/), and `python scripts/runs.py --check 2026-11-18` re-reads all
+six from the chains' receipts.
 
 | | Run 1, "leave now" | Run 2, "wait for the deadline" |
 |---|---|---|
@@ -58,7 +59,7 @@ key derived from it, `0x616FF5998E3e6AF794881Adf6Fe6cac62Cc29b19`), each on a de
 | Notice left when the deposit was back | 178 s of 180 | 118 s of 180 |
 
 In run 2 the reactive contract stored the change and asked for the exit on the first timer tick with 120 s or
-less left (`LEAD` in this deployment). That is what the mode is for: the deposit stays if the curator cancels first.
+less left (`LEAD` in this deployment). That is what the mode is for: the deposit stays if the curator cancels first (run 6 below).
 
 Runs 3 and 4 used "leave now" on the two other kinds a watch covers by default, on the same contracts:
 
@@ -79,6 +80,17 @@ Reactive answered
 and the deposit was back 1 s later
 ([`0x7d7be1a6…7932`](https://base-sepolia.blockscout.com/tx/0x7d7be1a69c3518a25c63c14ac517eeb350fbbb891c552a911222e9a68ab87932)),
 179 s before the change could run.
+
+Run 6, also from the second key, checked the other half of "wait for the deadline": a change the curator takes back
+moves nothing. The curator scheduled a new adapter at 21:15:37 UTC
+([`0xb92cb49f…d9da`](https://base-sepolia.blockscout.com/tx/0xb92cb49fe52c9d5cccb28f2ddedb5c5c871a09890eb06a1a71d00e6bd3c9d9da))
+and revoked it 18 s later
+([`0x60744f1b…9a58`](https://base-sepolia.blockscout.com/tx/0x60744f1b9efb8141a85b951d9b43665fce26ebab71e301fe3f8545f6053c9a58));
+our reactive contract dropped the stored change in the same second
+([`0xf4c8652a…7524`](https://lasna.reactscan.net/tx/0xf4c8652a3ae410bbf960d02621142ba3821cf11e060da7ef476ece8292787524)).
+Until 30 s past the time the change could have run (21:18:37 UTC), Lasna blocks 8922434 to 8922657 hold no exit
+request for the watch, and all 100000000 shares stayed in the vault. The depositor then turned the watch off
+([`0x997f06eb…f4c8`](https://base-sepolia.blockscout.com/tx/0x997f06eb550e05cfaf42ad8d8aad48b9591369be827dbfba2aea646efe29f4c8)).
 
 ## Check every claim in ten minutes
 
