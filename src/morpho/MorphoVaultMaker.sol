@@ -13,7 +13,10 @@ import { IMorphoVaultV2Factory, IMorphoVaultV2 } from "./IMorpho.sol";
 /// @dev Never holds tokens or shares. It owns a vault only inside the call that made it, and only acts on the vault it
 ///      made in that call. Morpho's factory is open to anyone, so a vault for (this maker, ASSET, salt) can be made
 ///      by someone else first; such a salt is skipped and that vault is never touched. The salt depends on the caller,
-///      the block and a counter that moves on every try, so no salt can be taken in advance for a later block.
+///      the block number and a public try counter. Block numbers are predictable, so a stranger can still take the 16
+///      salts of a coming block for one caller ahead of time (about 16 vault creations, paid by the stranger, for each
+///      block): create() then refuses with NoFreeSalt in that block. That blocks a vault, it moves no funds, and the
+///      stranger's vaults are never listed (isVault).
 contract MorphoVaultMaker {
     /// @notice Salts tried per call before giving up.
     uint256 public constant MAX_SALT_TRIES = 16;
@@ -76,7 +79,8 @@ contract MorphoVaultMaker {
     }
 
     /// @dev The first salt keccak256(caller, block number, n), n the global try counter, for which Morpho's factory
-    ///      holds no vault of (this maker, ASSET, salt). The counter moves on every try, taken or not.
+    ///      holds no vault of (this maker, ASSET, salt). Within a call the counter moves on every try, taken or not;
+    ///      when the call reverts (NoFreeSalt), the counter goes back with it.
     function _freeSalt() internal returns (bytes32 salt) {
         for (uint256 i = 0; i < MAX_SALT_TRIES; i++) {
             uint256 n = saltTries;
