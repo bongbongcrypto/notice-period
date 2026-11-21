@@ -24,7 +24,7 @@ export BASE_RPC=http://127.0.0.1:8545
 export LASNA_RPC=http://127.0.0.1:8546
 export CALLBACK_PROXY="${CALLBACK_PROXY:-0x476F44b11F5C942c58f4c8E3d0300E5710743585}"
 export MORPHO_FACTORY="${MORPHO_FACTORY:-0xE3a2CEbca662d99D0F279aF13a6bb8c9825D2ea0}"
-FACTORY_CODE_SHA256=TO-PIN
+FACTORY_CODE_SHA256=cf0f79d0fb41a563e915b81cefb581f74acb46336cee022c1991671d9e575d8e # read 2026-11-22, three endpoints agree
 SYSTEM=0x8888888888888888888888888888888888888888
 CRON=0x0000000000000000000000000000000000fffFfF
 logs="${RUNNER_TEMP:-/tmp}/dry-run"
@@ -138,7 +138,8 @@ bash scripts/loop-hello.sh || status=1
 [ "$status" = 0 ] && { LOOP_MODE=1 LOOP_RUN_JSON="$logs/run-mode1.json" bash scripts/loop-system.sh || status=1; }
 
 # ---------------------------------------------------------------- every other action and kind of loop-system.sh
-# NoticeExit allows two arms per address per day, so the runs are spread over key A and key B and over several days:
+# deploy-system.sh allows four arms per address and four timer arms per UTC day; the runs are still spread over key A
+# and key B and over several days so they fit two arms per address per day (the 11-18 pair's cap) as well:
 # both chains move forward by the same time between groups. Key B needs gas once (key A sends it; anvil keys are rich).
 # A miner keeps Base blocks coming, so waits on Base block time (revoke-stays) end on an idle chain too.
 (while :; do cast rpc --rpc-url "$BASE_RPC" evm_mine >/dev/null 2>&1 || true; sleep 3; done) &
@@ -164,7 +165,7 @@ field() { # name key -> value from run-<name>.json
 }
 B=(LOOP_DEPOSITOR=b LOOP_FUND_B=1 LOOP_B_GAS=1)
 
-# Day 0 (key A has used its two arms above): key B.
+# Day 0 (key A made two arms above): key B.
 twin ignored LOOP_ACTION=ignored-then-exit "${B[@]}"
 twin armonly LOOP_ACTION=arm-only "${B[@]}"
 [ "$status" = 0 ] && twin fire LOOP_ACTION=fire LOOP_VAULT="$(field armonly vault)" LOOP_WATCH="$(field armonly watchId)"

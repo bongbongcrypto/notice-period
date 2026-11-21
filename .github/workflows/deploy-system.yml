@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       reactive_fund:
-        description: "lREACT sent to NoticeReactive (in coins, decimals allowed), the operator float"
+        description: "lREACT sent to NoticeReactive (in coins, decimals allowed), the operator float; health asks for 4, so top up after the first run"
         default: "1"
         required: true
       exit_fund:
