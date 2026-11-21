@@ -258,8 +258,9 @@
       drawStrip($('strip-first'), { t1: run.r1.ts, t2: run.r2.ts, t3: run.r3.ts, execAt: run.execAt, stage: 3 });
       drawLedger($('ledger-first'), { t1: run.r1.ts, t2: run.r2.ts, t3: run.r3.ts, h1: run.r1.hash, h2: run.r2.hash, h3: run.r3.hash, stage: 3 });
       $('strip-alt').textContent = 'Run #' + run.id + '. Change scheduled at ' + fmt.time(run.r1.ts) + ' UTC. Deposit back ' +
-        fmt.sec(run.r3.ts, run.r1.ts) + ' seconds later. The change could take effect at ' + fmt.time(run.execAt) + ' UTC, ' +
-        Math.max(0, run.execAt - run.r3.ts) + ' seconds after the deposit was back.';
+        fmt.sec(run.r3.ts, run.r1.ts) + fmt.plural(fmt.sec(run.r3.ts, run.r1.ts), ' second', ' seconds') + ' later. The change could take effect at ' +
+        fmt.time(run.execAt) + ' UTC, ' + Math.max(0, run.execAt - run.r3.ts) + fmt.plural(Math.max(0, run.execAt - run.r3.ts), ' second', ' seconds') +
+        ' after the deposit was back.';
     }
     setBusy(check, state === 'loading');
     clear(check);

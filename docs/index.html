@@ -54,14 +54,14 @@
 
   <figure class="latest" aria-labelledby="latest-cap">
     <!-- recorded:latest -->
-    <figcaption id="latest-cap">Latest “leave now” run on testnet, on our own demo vault, 18 Nov 2026: deposit back 2 s after the change was scheduled.</figcaption>
+    <figcaption id="latest-cap">Latest “leave now” run on testnet, on our own demo vault, 21 Nov 2026: deposit back 1 s after the change was scheduled.</figcaption>
     <div class="strip" id="strip-first" data-stage="3">
       <div class="axis axis-full" aria-hidden="true">
         <span class="ax"></span><span class="tick t-sched"></span><span class="tick t-back"></span><span class="tick t-end"></span><span class="tick t-now" hidden></span>
-        <span class="lab l-sched">Change scheduled <b class="num">01:04:46 UTC</b></span>
-        <span class="lab l-back">Deposit back <b class="num">+2 s</b></span>
-        <span class="lab l-left"><b class="num">178 s</b> of notice left</span>
-        <span class="lab l-end">Change can take effect <b class="num">01:07:46 UTC</b></span>
+        <span class="lab l-sched">Change scheduled <b class="num">19:36:24 UTC</b></span>
+        <span class="lab l-back">Deposit back <b class="num">+1 s</b></span>
+        <span class="lab l-left"><b class="num">179 s</b> of notice left</span>
+        <span class="lab l-end">Change can take effect <b class="num">19:39:24 UTC</b></span>
       </div>
       <div class="zoom" aria-hidden="true">
         <p class="zoom-cap">The first 5 seconds, magnified</p>
@@ -71,20 +71,20 @@
         </div>
       </div>
       <div class="records">
-        <p class="vh" id="strip-alt">Run #1. Change scheduled at 01:04:46 UTC. Deposit back 2 seconds later. The change could take effect at 01:07:46 UTC, 178 seconds after the deposit was back.</p>
+        <p class="vh" id="strip-alt">Run #4. Change scheduled at 19:36:24 UTC. Deposit back 1 second later. The change could take effect at 19:39:24 UTC, 179 seconds after the deposit was back.</p>
         <table class="ledger">
           <caption class="vh">The three records of this run</caption>
           <thead class="vh"><tr><th scope="col">Record</th><th scope="col">Chain</th><th scope="col">UTC time</th><th scope="col">After the change</th><th scope="col">Transaction</th></tr></thead>
           <tbody id="ledger-first">
-            <tr class="rec rec-sched"><th scope="row"><span class="mark" aria-hidden="true"></span>Change scheduled</th><td class="chain">Base Sepolia</td><td class="num time">01:04:46</td><td class="num sec">+0&nbsp;s</td><td class="tx"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0xdd4ce73f5073de51dc3ec51c0e75fc50f01b5753c74f16ca374eb255b3544891" rel="noopener noreferrer" target="_blank" title="Change scheduled, transaction on Base Sepolia">0xdd4c…4891</a></td></tr>
-            <tr class="rec rec-react"><th scope="row"><span class="mark" aria-hidden="true"></span>Reactive transaction</th><td class="chain">Reactive Lasna</td><td class="num time">01:04:46</td><td class="num sec">+0&nbsp;s</td><td class="tx"><a class="hash" href="https://lasna.reactscan.net/tx/0x1a6b032aa7afc9f89e25fdef852bebbffad4ee1b750ba4fd4cc5bb6a5f84aa3e" rel="noopener noreferrer" target="_blank" title="Reactive transaction on Reactive Lasna">0x1a6b…aa3e</a></td></tr>
-            <tr class="rec rec-back"><th scope="row"><span class="mark" aria-hidden="true"></span>Deposit back in the depositor&#x27;s wallet</th><td class="chain">Base Sepolia</td><td class="num time">01:04:48</td><td class="num sec">+2&nbsp;s</td><td class="tx"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0x7f6456d9b7938e6a205c87a86d0e95ae5e347ec160a39c1e7a7251caebc67b04" rel="noopener noreferrer" target="_blank" title="Withdrawal, transaction on Base Sepolia">0x7f64…7b04</a></td></tr>
+            <tr class="rec rec-sched"><th scope="row"><span class="mark" aria-hidden="true"></span>Change scheduled</th><td class="chain">Base Sepolia</td><td class="num time">19:36:24</td><td class="num sec">+0&nbsp;s</td><td class="tx"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0xcb46ba5b790545fe26a4102d709c24cc2f393ec393565910ce7370176dfc0656" rel="noopener noreferrer" target="_blank" title="Change scheduled, transaction on Base Sepolia">0xcb46…0656</a></td></tr>
+            <tr class="rec rec-react"><th scope="row"><span class="mark" aria-hidden="true"></span>Reactive transaction</th><td class="chain">Reactive Lasna</td><td class="num time">19:36:23</td><td class="num sec">+0&nbsp;s</td><td class="tx"><a class="hash" href="https://lasna.reactscan.net/tx/0x394f2e9b74612cead05c02972f57f16e3e07d9d88ce6962b36556b7f81f68aeb" rel="noopener noreferrer" target="_blank" title="Reactive transaction on Reactive Lasna">0x394f…8aeb</a></td></tr>
+            <tr class="rec rec-back"><th scope="row"><span class="mark" aria-hidden="true"></span>Deposit back in the depositor&#x27;s wallet</th><td class="chain">Base Sepolia</td><td class="num time">19:36:25</td><td class="num sec">+1&nbsp;s</td><td class="tx"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0xfeefba149291d58e5bcb775d74f11e2bb589806288d0511da2c78f75b5fb15b1" rel="noopener noreferrer" target="_blank" title="Withdrawal, transaction on Base Sepolia">0xfeef…15b1</a></td></tr>
           </tbody>
         </table>
       </div>
     </div>
     <p class="small" id="latest-check">Recorded copy read 21 Nov 2026.</p>
-    <p class="proof" id="proof">2 runs so far, both our own tests. 2 deposits returned.</p>
+    <p class="proof" id="proof">4 runs so far, all our own tests. 4 deposits returned.</p>
     <!-- /recorded:latest -->
   </figure>
 </section>
@@ -131,6 +131,8 @@
     </thead>
     <tbody id="runs-body">
             <!-- recorded:runs -->
+            <tr><th scope="row" class="num"><a href="#run=4">#4</a></th><td class="num" data-l="When (UTC)">21 Nov 2026 19:36:24</td><td data-l="Who">Our own test run</td><td data-l="Change">New allocator <span class="quiet">(leave now)</span></td><td class="num" data-l="Reactive transaction">+0&nbsp;s</td><td class="num back" data-l="Deposit back">+1&nbsp;s</td><td class="num" data-l="Notice left">179&nbsp;s</td><td class="tx" data-l="Transactions"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0xcb46ba5b790545fe26a4102d709c24cc2f393ec393565910ce7370176dfc0656" rel="noopener noreferrer" target="_blank" title="Run 4, change scheduled, Base Sepolia">0xcb46…0656</a> <a class="hash" href="https://lasna.reactscan.net/tx/0x394f2e9b74612cead05c02972f57f16e3e07d9d88ce6962b36556b7f81f68aeb" rel="noopener noreferrer" target="_blank" title="Run 4, reactive transaction, Reactive Lasna">0x394f…8aeb</a> <a class="hash" href="https://base-sepolia.blockscout.com/tx/0xfeefba149291d58e5bcb775d74f11e2bb589806288d0511da2c78f75b5fb15b1" rel="noopener noreferrer" target="_blank" title="Run 4, withdrawal, Base Sepolia">0xfeef…15b1</a></td></tr>
+            <tr><th scope="row" class="num"><a href="#run=3">#3</a></th><td class="num" data-l="When (UTC)">21 Nov 2026 19:31:53</td><td data-l="Who">Our own test run</td><td data-l="Change">Shorter waiting period <span class="quiet">(leave now)</span></td><td class="num" data-l="Reactive transaction">+0&nbsp;s</td><td class="num back" data-l="Deposit back">+2&nbsp;s</td><td class="num" data-l="Notice left">178&nbsp;s</td><td class="tx" data-l="Transactions"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0xb0934f38424d40a15e29813221e2ff5fcaa1d7890270091b79852b7afe4718d9" rel="noopener noreferrer" target="_blank" title="Run 3, change scheduled, Base Sepolia">0xb093…18d9</a> <a class="hash" href="https://lasna.reactscan.net/tx/0xd6781732b0ebc3605e4935bbdfff19f099e7734363ee6cc825f32a1469fbd950" rel="noopener noreferrer" target="_blank" title="Run 3, reactive transaction, Reactive Lasna">0xd678…d950</a> <a class="hash" href="https://base-sepolia.blockscout.com/tx/0xd4e0142294a334290c093c6e55ad4ae121dd3419cc47c5c2f4d05420481aeed2" rel="noopener noreferrer" target="_blank" title="Run 3, withdrawal, Base Sepolia">0xd4e0…eed2</a></td></tr>
             <tr><th scope="row" class="num"><a href="#run=2">#2</a></th><td class="num" data-l="When (UTC)">18 Nov 2026 01:06:48</td><td data-l="Who">Our own test run</td><td data-l="Change">New adapter <span class="quiet">(wait for the deadline)</span></td><td class="num" data-l="Reactive transaction">+61&nbsp;s <span class="quiet">(timer)</span></td><td class="num back" data-l="Deposit back">+62&nbsp;s</td><td class="num" data-l="Notice left">118&nbsp;s</td><td class="tx" data-l="Transactions"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0x19353d516295390f7ff762d3e3bdfce296fadf95b9d9dffffa435977a6b5a378" rel="noopener noreferrer" target="_blank" title="Run 2, change scheduled, Base Sepolia">0x1935…a378</a> <a class="hash" href="https://lasna.reactscan.net/tx/0x98b822a593a99bf8ab4d085d94f7d77a0986830755a3f15223e3c47023efc530" rel="noopener noreferrer" target="_blank" title="Run 2, reactive transaction, Reactive Lasna">0x98b8…c530</a> <a class="hash" href="https://base-sepolia.blockscout.com/tx/0x681bd1f976e0b708c29ffe7639d9a987701bf2f8fc89480ae97e8ace77470b47" rel="noopener noreferrer" target="_blank" title="Run 2, withdrawal, Base Sepolia">0x681b…0b47</a></td></tr>
             <tr><th scope="row" class="num"><a href="#run=1">#1</a></th><td class="num" data-l="When (UTC)">18 Nov 2026 01:04:46</td><td data-l="Who">Our own test run</td><td data-l="Change">New adapter <span class="quiet">(leave now)</span></td><td class="num" data-l="Reactive transaction">+0&nbsp;s</td><td class="num back" data-l="Deposit back">+2&nbsp;s</td><td class="num" data-l="Notice left">178&nbsp;s</td><td class="tx" data-l="Transactions"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0xdd4ce73f5073de51dc3ec51c0e75fc50f01b5753c74f16ca374eb255b3544891" rel="noopener noreferrer" target="_blank" title="Run 1, change scheduled, Base Sepolia">0xdd4c…4891</a> <a class="hash" href="https://lasna.reactscan.net/tx/0x1a6b032aa7afc9f89e25fdef852bebbffad4ee1b750ba4fd4cc5bb6a5f84aa3e" rel="noopener noreferrer" target="_blank" title="Run 1, reactive transaction, Reactive Lasna">0x1a6b…aa3e</a> <a class="hash" href="https://base-sepolia.blockscout.com/tx/0x7f6456d9b7938e6a205c87a86d0e95ae5e347ec160a39c1e7a7251caebc67b04" rel="noopener noreferrer" target="_blank" title="Run 1, withdrawal, Base Sepolia">0x7f64…7b04</a></td></tr>
     <!-- /recorded:runs -->

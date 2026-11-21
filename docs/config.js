@@ -91,10 +91,10 @@
     flags: {
       /* "Leave only if it is still scheduled near the end" is built in the contracts and switched off on this page. */
       mode1: false,
-      /* As the curator, this page schedules a new adapter (the change of both recorded runs) and, while the watch does
-         not cover it, a cap increase (nothing should move). Scheduling a shorter waiting period or a new allocator is
-         written but has not been run against the live contracts, so it stays off until a real run has shown each. */
-      unprovenKinds: false
+      /* As the curator, this page schedules every kind the watch can cover. A new adapter, a shorter waiting period and
+         a new allocator have each returned a deposit on the live contracts (recorded runs 1, 3 and 4). Off, the page
+         offers only a new adapter and, while the watch does not cover it, a cap increase (nothing should move). */
+      unprovenKinds: true
     },
 
     morpho: {

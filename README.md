@@ -43,10 +43,12 @@ increases off.
 Reactive's own contracts used here: the callback proxy on Base Sepolia `0x476F44b11F5C942c58f4c8E3d0300E5710743585`
 and the system contract on Lasna `0x8888888888888888888888888888888888888888`.
 
-## Two full loops on chain
+## Four full loops on chain
 
-Both were sent by our own test account (`0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4`) on 18 Nov 2026, each on a
-demo vault of its own. Seconds are differences of block times.
+All four were sent by our own test account (`0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4`), each on a demo vault of
+its own: runs 1 and 2 on 18 Nov 2026, runs 3 and 4 on 21 Nov 2026. Seconds are differences of block times. Each run
+is a file in [`records/`](records/), and `python scripts/runs.py --check 2026-11-18` re-reads all four from the
+chains' receipts.
 
 | | Run 1, "leave now" | Run 2, "wait for the deadline" |
 |---|---|---|
@@ -57,6 +59,15 @@ demo vault of its own. Seconds are differences of block times.
 
 In run 2 the reactive contract stored the change and asked for the exit on the first timer tick with 120 s or
 less left (`LEAD` in this deployment). That is what the mode is for: the deposit stays if the curator cancels first.
+
+Runs 3 and 4 used "leave now" on the two other kinds a watch covers by default, on the same contracts:
+
+| | Run 3, a shorter waiting period | Run 4, a new allocator |
+|---|---|---|
+| Change scheduled (Base Sepolia) | [`0xb0934f38…18d9`](https://base-sepolia.blockscout.com/tx/0xb0934f38424d40a15e29813221e2ff5fcaa1d7890270091b79852b7afe4718d9) 19:31:53 UTC | [`0xcb46ba5b…0656`](https://base-sepolia.blockscout.com/tx/0xcb46ba5b790545fe26a4102d709c24cc2f393ec393565910ce7370176dfc0656) 19:36:24 UTC |
+| Reactive transaction (Lasna) | [`0xd6781732…d950`](https://lasna.reactscan.net/tx/0xd6781732b0ebc3605e4935bbdfff19f099e7734363ee6cc825f32a1469fbd950) +0 s | [`0x394f2e9b…8aeb`](https://lasna.reactscan.net/tx/0x394f2e9b74612cead05c02972f57f16e3e07d9d88ce6962b36556b7f81f68aeb) +0 s (Lasna's block time is 1 s earlier) |
+| Deposit back in the depositor's wallet (Base Sepolia) | [`0xd4e01422…eed2`](https://base-sepolia.blockscout.com/tx/0xd4e0142294a334290c093c6e55ad4ae121dd3419cc47c5c2f4d05420481aeed2) +2 s | [`0xfeefba14…15b1`](https://base-sepolia.blockscout.com/tx/0xfeefba149291d58e5bcb775d74f11e2bb589806288d0511da2c78f75b5fb15b1) +1 s |
+| Notice left when the deposit was back | 178 s of 180 | 179 s of 180 |
 
 ## Check every claim in ten minutes
 
@@ -132,9 +143,10 @@ exhaustive search.
   8 at a time, because Reactive fees are paid from our float. A "wait for the deadline" watch stops protecting
   when its day ends, even from a change it has already seen (SPEC.md section 11).
 - A change with no waiting period leaves no time to exit.
-- Both recorded runs exited on a new adapter. A shorter waiting period and a new allocator are kinds the contracts
-  cover (SPEC.md section 3), but no testnet run has shown an exit on them yet, so the page's curator step schedules
-  only a new adapter (the deposit leaves) and a cap increase (it stays).
+- Each of the three kinds a watch covers by default has one recorded exit on testnet (runs 1, 3 and 4), sent by our
+  own loop workflow. The page's curator buttons for a shorter waiting period and a new allocator encode the same calls
+  ([`docs/abi.js`](docs/abi.js)); they were clicked through against a simulated pair of chains
+  ([`docs/TESTING.md`](docs/TESTING.md)), and no visitor has run them on the live contracts yet.
 - The demo vault counts every demo dollar it holds, and demo dollars are free to mint. So someone can send demo
   dollars to a visitor's fresh vault and skew its share price. The page refuses to deposit into such a vault; the
   contract itself does not prevent it (SPEC.md section 11).

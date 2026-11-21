@@ -434,10 +434,10 @@ def emit(run_json, deployment, run_id):
 
 def fetch(run_id, repo, root=ROOT):
     jobs = json.loads(subprocess.run(["gh", "api", f"repos/{repo}/actions/runs/{run_id}/jobs"],
-                                     capture_output=True, text=True, check=True).stdout)
+                                     capture_output=True, text=True, encoding="utf-8", errors="replace", check=True).stdout)
     for job in jobs.get("jobs", []):
         log = subprocess.run(["gh", "api", f"repos/{repo}/actions/jobs/{job['id']}/logs"],
-                             capture_output=True, text=True, check=True).stdout
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", check=True).stdout
         lines = [re.sub(r"^\S+Z ", "", line) for line in log.splitlines()]
         if MARK_BEGIN in lines and MARK_END in lines:
             body = "\n".join(lines[lines.index(MARK_BEGIN) + 1:lines.index(MARK_END)])

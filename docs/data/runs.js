@@ -5,7 +5,7 @@
   'use strict';
   var NP = window.NP = window.NP || {};
   NP.recorded = {
-    "readAt": "2026-11-21T17:51:10Z",
+    "readAt": "2026-11-21T19:37:42Z",
     "runs": [
       {
         "id": 1,
@@ -75,6 +75,80 @@
           "ts": 1794964070,
           "outcome": 0,
           "reason": 2,
+          "shares": "100000000",
+          "assets": "100000000"
+        },
+        "exit": "0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8",
+        "reactive": "0x00E4996c7255B919B619902E1Ac4b254D3c3f014"
+      },
+      {
+        "id": 3,
+        "mode": 0,
+        "kinds": 7,
+        "owner": "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4",
+        "vault": "0x5d65405a9106053EC5e9d24F97c5016E28f97D0a",
+        "selector": "0x5c1a1a4f",
+        "execAt": 1795289693,
+        "armTx": "0x75aab56702aa2838f8b72843a954062df4c0b44e4837dc917891b9fe72d0fd50",
+        "armTs": 1795289494,
+        "subTx": "0xd174390058e4f7ff33cc6406d24a02eb8c55f3fe017dc9bc4dc8e049775253d8",
+        "subTs": 1795289493,
+        "r1": {
+          "hash": "0xb0934f38424d40a15e29813221e2ff5fcaa1d7890270091b79852b7afe4718d9",
+          "block": 61838223,
+          "ts": 1795289513
+        },
+        "r2": {
+          "hash": "0xd6781732b0ebc3605e4935bbdfff19f099e7734363ee6cc825f32a1469fbd950",
+          "block": 8916579,
+          "ts": 1795289513,
+          "refTx": "0xb0934f38424d40a15e29813221e2ff5fcaa1d7890270091b79852b7afe4718d9",
+          "refChainId": "0x14a34",
+          "reason": 1
+        },
+        "r3": {
+          "hash": "0xd4e0142294a334290c093c6e55ad4ae121dd3419cc47c5c2f4d05420481aeed2",
+          "block": 61838233,
+          "ts": 1795289515,
+          "outcome": 0,
+          "reason": 1,
+          "shares": "100000000",
+          "assets": "100000000"
+        },
+        "exit": "0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8",
+        "reactive": "0x00E4996c7255B919B619902E1Ac4b254D3c3f014"
+      },
+      {
+        "id": 4,
+        "mode": 0,
+        "kinds": 7,
+        "owner": "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4",
+        "vault": "0x94798b1E041C61ebDFC2924Dab252ce912942A54",
+        "selector": "0xb192a84a",
+        "execAt": 1795289964,
+        "armTx": "0x87cc23e490b83103cfd50032e7c43cd77c92096ae4870429951b1428a0ef603d",
+        "armTs": 1795289766,
+        "subTx": "0xfb018c06a44cdf6dff3c6d562e59f2bc3b43d2b1087c41bfccbc951117087332",
+        "subTs": 1795289765,
+        "r1": {
+          "hash": "0xcb46ba5b790545fe26a4102d709c24cc2f393ec393565910ce7370176dfc0656",
+          "block": 61839579,
+          "ts": 1795289784
+        },
+        "r2": {
+          "hash": "0x394f2e9b74612cead05c02972f57f16e3e07d9d88ce6962b36556b7f81f68aeb",
+          "block": 8916835,
+          "ts": 1795289783,
+          "refTx": "0xcb46ba5b790545fe26a4102d709c24cc2f393ec393565910ce7370176dfc0656",
+          "refChainId": "0x14a34",
+          "reason": 1
+        },
+        "r3": {
+          "hash": "0xfeefba149291d58e5bcb775d74f11e2bb589806288d0511da2c78f75b5fb15b1",
+          "block": 61839585,
+          "ts": 1795289785,
+          "outcome": 0,
+          "reason": 1,
           "shares": "100000000",
           "assets": "100000000"
         },
