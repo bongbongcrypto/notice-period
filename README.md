@@ -129,7 +129,8 @@ exhaustive search.
 - The demo vault and the demo dollar are ours and have no value. The vault copies the timelock and the events of
   Morpho Vault V2; it is not Morpho's vault, and this project is not affiliated with Morpho.
 - A watch lasts one day in this deployment, and the demo allows 10 watches a day for everyone, 2 per address and
-  8 at a time, because Reactive fees are paid from our float.
+  8 at a time, because Reactive fees are paid from our float. A "wait for the deadline" watch stops protecting
+  when its day ends, even from a change it has already seen (SPEC.md section 11).
 - A change with no waiting period leaves no time to exit.
 - Both recorded runs exited on a new adapter. A shorter waiting period and a new allocator are kinds the contracts
   cover (SPEC.md section 3), but no testnet run has shown an exit on them yet, so the page's curator step schedules
@@ -162,7 +163,7 @@ Choices worth knowing:
 | `src/hello/` | The smallest full loop: an event on Base Sepolia, a reactive transaction on Lasna, a callback on Base Sepolia |
 | `test/` | Unit, attack, fuzz, invariant and real-log fixture tests, with a mock system contract and callback proxy |
 | `scripts/` | CI toolchain setup, the mutation check, deploy and loop scripts, the local dry run, run records and their checker, bytecode match, the mainnet replay |
-| `deployments/`, `records/`, `status/` | Addresses of each deployment, one file per recorded run, results of the replay and of the bytecode match |
+| `deployments/`, `records/`, `status/` | Addresses of each deployment, one file per recorded run, result of the mainnet replay (the bytecode match writes here once `verify.yml` has run) |
 | `docs/` | The page: a guided run with a browser wallet, a replay of the recorded runs, live reads from both chains. Testing notes in `docs/TESTING.md` |
 
 ## Checks
