@@ -80,7 +80,7 @@ jobs:
     # contracts at the real addresses and a relay that plays the network. Nothing is sent from the runner; the one
     # network read is Morpho's factory code from Base Sepolia (scripts/dry-run.sh header).
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     outputs:
       # real | unpinned | mock: whether Morpho's factory code in the dry run was checked against the pinned sha256.
       factory_bytecode: ${{ steps.dryrun.outputs.factory_bytecode }}
@@ -110,15 +110,28 @@ jobs:
         run: |
           for f in scripts/*.sh; do bash -n "$f"; done
           python3 -m py_compile scripts/mutate.py scripts/mutations.py scripts/relay-anvil.py scripts/dry-run-fund.py \
-            scripts/wait-log.py scripts/test-wait-log.py scripts/stamp.py scripts/test-stamp.py
+            scripts/wait-log.py scripts/test-wait-log.py scripts/stamp.py scripts/test-stamp.py scripts/keccak.py \
+            scripts/rpclib.py scripts/logs.py scripts/deployment.py scripts/bytecode_match.py \
+            scripts/test-bytecode-match.py scripts/sourcify.py scripts/runs.py scripts/test-runs.py \
+            scripts/replay_mainnet.py scripts/check-workflows.py
 
       - name: Stamp check on a scratch copy (a hand edit inside a stamped block must fail)
         run: python3 scripts/test-stamp.py
 
+      - name: Workflow checks (inputs mapped, timeouts, environments, no outside actions)
+        run: python3 scripts/check-workflows.py
+
+      - name: Offline self-tests (Keccak, bytecode match, run records, deployment file)
+        run: |
+          python3 -c 'import sys; sys.path.insert(0, "scripts"); import keccak; keccak.self_test(); print("keccak self-test passed")'
+          python3 scripts/test-bytecode-match.py
+          python3 scripts/test-runs.py
+          for f in deployments/2*.json; do n="$(basename "$f" .json)"; python3 scripts/deployment.py "$n"; done
+
       - name: Log wait against a stub RPC (403 default agent, 413 wide ranges, failed chunk, lagging node)
         run: python3 scripts/test-wait-log.py
 
-      - name: Dry run on local chains (deploy-hello, deploy-system, loop hello, loop system mode 0 and 1)
+      - name: Dry run on local chains (deploy-hello, deploy-system, loop hello, every loop action and kind, health)
         id: dryrun
         run: bash scripts/dry-run.sh
 

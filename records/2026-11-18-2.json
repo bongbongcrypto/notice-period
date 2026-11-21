@@ -1,0 +1,59 @@
+{
+  "deployment": "2026-11-18",
+  "n": 2,
+  "loopRun": 44213152528,
+  "exit": "0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8",
+  "reactive": "0x00E4996c7255B919B619902E1Ac4b254D3c3f014",
+  "token": "0x2690DF70a37939c582a800f32FFEE52ec40d150B",
+  "kind": "adapter",
+  "mode": 1,
+  "action": "exit",
+  "depositorKey": "a",
+  "curatorKey": "a",
+  "vault": "0xe14bB093328435562c98f81915e9BD5e6947A207",
+  "watchId": 2,
+  "armTx": "0x098d29c8c9bd8f6afe390ecf150a638a8bfbb5e69224b5d086e7a76f179955c3",
+  "subTx": "0xfc9cbe8e9c4acd00e683b65243d96f8ae81a3da1d98d3acb8fcee774e14903d6",
+  "hash1": "0x19353d516295390f7ff762d3e3bdfce296fadf95b9d9dffffa435977a6b5a378",
+  "hash2": "0x98b822a593a99bf8ab4d085d94f7d77a0986830755a3f15223e3c47023efc530",
+  "hash3": "0x681bd1f976e0b708c29ffe7639d9a987701bf2f8fc89480ae97e8ace77470b47",
+  "derived": {
+    "page": {
+      "id": 2,
+      "mode": 1,
+      "kinds": 7,
+      "owner": "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4",
+      "vault": "0xe14bB093328435562c98f81915e9BD5e6947A207",
+      "selector": "0x60d54d41",
+      "execAt": 1794964188,
+      "armTx": "0x098d29c8c9bd8f6afe390ecf150a638a8bfbb5e69224b5d086e7a76f179955c3",
+      "armTs": 1794963985,
+      "subTx": "0xfc9cbe8e9c4acd00e683b65243d96f8ae81a3da1d98d3acb8fcee774e14903d6",
+      "subTs": 1794963985,
+      "r1": {
+        "hash": "0x19353d516295390f7ff762d3e3bdfce296fadf95b9d9dffffa435977a6b5a378",
+        "block": 60210698,
+        "ts": 1794964008
+      },
+      "r2": {
+        "hash": "0x98b822a593a99bf8ab4d085d94f7d77a0986830755a3f15223e3c47023efc530",
+        "block": 8613301,
+        "ts": 1794964069,
+        "refTx": "0x5f49a9babda8cfce6119f96035bae04716de5aa400a749fad14dfabde578106a",
+        "refChainId": "0x512577",
+        "reason": 2
+      },
+      "r3": {
+        "hash": "0x681bd1f976e0b708c29ffe7639d9a987701bf2f8fc89480ae97e8ace77470b47",
+        "block": 60211010,
+        "ts": 1794964070,
+        "outcome": 0,
+        "reason": 2,
+        "shares": "100000000",
+        "assets": "100000000"
+      },
+      "exit": "0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8",
+      "reactive": "0x00E4996c7255B919B619902E1Ac4b254D3c3f014"
+    }
+  }
+}

@@ -3,7 +3,8 @@
 #
 # Inputs (environment):
 #   BASE_RPC, LASNA_RPC   JSON-RPC endpoints of Base Sepolia and Reactive Lasna
-#   DEPLOY_KEY            the testnet key (GitHub secret TESTNET_KEY); never printed, never written to a file
+#   DEPLOY_KEY            the testnet key (GitHub secret TESTNET_KEY), "key A"; never printed, never written to a file.
+#                         Key B is derived from it (derive_key_b below), masked, and never printed either.
 #   CALLBACK_PROXY        callback proxy on Base Sepolia
 # Every failed or empty read is "unknown" and stops the script: nothing is sent on a guess.
 set -euo pipefail
@@ -39,10 +40,13 @@ check_chain() { # rpc expected_id label
 
 # Stops when the balance is zero, unknown, or below the amount this run needs.
 check_balance() { # rpc label need_wei
+  check_balance_of "$1" "$2" "$DEPLOYER" "$3"
+}
+check_balance_of() { # rpc label address need_wei
   local bal
-  bal="$(cast balance --rpc-url "$1" "$DEPLOYER" 2>/dev/null)" || die "$2: balance unknown (RPC error)"
+  bal="$(cast balance --rpc-url "$1" "$3" 2>/dev/null)" || die "$2: balance unknown (RPC error)"
   [ -n "$bal" ] || die "$2: balance unknown (empty answer)"
-  python3 - "$bal" "$3" "$2" <<'PY' || exit 1
+  python3 - "$bal" "$4" "$2" <<'PY' || exit 1
 import sys
 bal, need, label = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
 print(f"{label}: balance {bal} wei ({bal / 1e18:.6f}), this run needs at least {need} wei ({need / 1e18:.6f})")
@@ -181,6 +185,86 @@ for log in rec.get("logs", []):
 sys.exit(4)
 ' "$r" "$3" "$4" "$(cast keccak 'WatchEnded(uint256,uint256,uint8,uint8,uint256,uint256)')" \
     || die "no well-formed WatchEnded for watch $4 in $2"
+}
+
+# Key B: a second test key derived from the testnet key, so a run can have a depositor that is not the curator
+# without a second secret. sha256(key A as lowercase hex without 0x || KEY_B_LABEL), computed in Python from the
+# environment (the key never appears on a command line or in output). Sets KEY_B and ADDR_B; in Actions the key is
+# masked before any use. Call it directly, never inside $(...), or the mask line is swallowed.
+KEY_B_LABEL="|notice-period test key b|v1"
+derive_key_b() {
+  [ -n "${DEPLOY_KEY:-}" ] || die "no key A to derive key B from"
+  KEY_B="$(KEY_B_LABEL="$KEY_B_LABEL" python3 - <<'PY'
+import hashlib, os, sys
+a = os.environ["DEPLOY_KEY"].strip().lower()
+a = a[2:] if a.startswith("0x") else a
+d = hashlib.sha256((a + os.environ["KEY_B_LABEL"]).encode()).hexdigest()
+n = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+if not 0 < int(d, 16) < n:
+    sys.exit("STOP: derived key B is out of range")
+print("0x" + d)
+PY
+)" || die "could not derive key B"
+  if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::add-mask::${KEY_B}"; fi
+  ADDR_B="$(masked_address "$KEY_B")" || die "could not derive key B's address"
+  echo "key B (derived): $ADDR_B"
+}
+
+# Address of a key that is already masked (key A is a secret, key B is masked by derive_key_b before this is called).
+# Only the address is printed.
+masked_address() { # key
+  cast wallet address --private-key "$1"
+}
+
+# Target address of the n-th scheduled change of a run on a vault: the last 20 bytes of
+# keccak256(abi.encode(run_id, vault, n)). Distinct per Submit, so a second Submit on one vault never repeats the same
+# bytes (DataAlreadyPending).
+keccak_target() { # run_id vault n
+  local h
+  h="$(cast keccak "$(cast abi-encode 'f(uint256,address,uint256)' "$1" "$2" "$3")")" || die "cannot derive a target"
+  cast to-check-sum-address "0x${h: -40}"
+}
+
+# cast send with an explicit key (A or B). Prints the transaction hash; stops unless the receipt says success.
+# With LOOP_NO_KEY_A=1 (health job) it refuses to send with key A.
+send_as() { # key rpc label to [sig args... | --value x]
+  local key="$1" rpc="$2" label="$3" out status tx
+  shift 3
+  if [ "${LOOP_NO_KEY_A:-0}" = 1 ] && [ "$key" = "${DEPLOY_KEY:-}" ]; then
+    die "$label: this job may not send from key A"
+  fi
+  out="$(cast send --json --rpc-url "$rpc" --private-key "$key" "$@")" || die "$label: transaction failed"
+  status="$(json_field "$out" status)"
+  tx="$(json_field "$out" transactionHash)"
+  case "$status" in 1 | 0x1 | true | True) ;; *) die "$label: transaction $tx did not succeed (status $status)" ;; esac
+  echo "$label: tx $tx" >&2
+  echo "$tx"
+}
+
+# Debt of a payer contract (NoticeExit, NoticeReactive) to its own service provider (callback proxy or system
+# contract), read from the contract's _SERVICE_PROVIDER. Any debt stops every delivery to that contract.
+debt_of() { # rpc contract -> wei
+  local sp d
+  sp="$(cast call --rpc-url "$1" "$2" '_SERVICE_PROVIDER()(address)' 2>/dev/null)" || die "service provider of $2 unknown"
+  d="$(cast call --rpc-url "$1" "$sp" 'debt(address)(uint256)' "$2" 2>/dev/null | awk '{print $1}')" || die "debt of $2 unknown"
+  [ -n "$d" ] || die "debt of $2 unknown (empty answer)"
+  echo "$d"
+}
+
+block_time() { # rpc -> unix seconds of the latest block
+  local b ts
+  b="$(cast block --json --rpc-url "$1" latest 2>/dev/null)" || die "latest block unknown"
+  ts="$(json_field "$b" timestamp)"
+  [ -n "$ts" ] || die "latest block has no timestamp"
+  python3 -c 'import sys; print(int(sys.argv[1], 0))' "$ts"
+}
+
+tx_block() { # rpc txhash -> block number
+  local r bn
+  r="$(cast receipt --json --rpc-url "$1" "$2" 2>/dev/null)" || die "receipt of $2 unknown"
+  bn="$(json_field "$r" blockNumber)"
+  [ -n "$bn" ] || die "receipt of $2 has no block number"
+  python3 -c 'import sys; print(int(sys.argv[1], 0))' "$bn"
 }
 
 output() { # NAME value: appended to $DEPLOY_OUT when set (addresses only, for the next script)

@@ -1,0 +1,79 @@
+{
+  "label": "replay of our deployed exit code on a real vault; Reactive not in it",
+  "readAt": "2026-11-21T17:57:39Z",
+  "method": "eth_simulateV1 on Ethereum mainnet state at the block below, with state overrides; nothing sent",
+  "block": 26406895,
+  "exitCode": {
+    "chain": "Base Sepolia (84532)",
+    "address": "0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8",
+    "bytes": 7209,
+    "registryOverridden": "0xffc96a898af31e2ed652a8a0c0e90584999093cd",
+    "callbackProxyOverridden": "0x476f44b11f5c942c58f4c8e3d0300e5710743585",
+    "callbackSender": "0x00e4996c7255b919b619902e1ac4b254d3c3f014"
+  },
+  "vault": {
+    "address": "0x9a1D6bd5b8642C41F25e0958129B85f8E1176F3e",
+    "name": "Gauntlet USDC Frontier",
+    "asset": "0xA0b86991c6218b36c1D19D4a2e9Eb0cE3606eB48"
+  },
+  "holder": {
+    "address": "0xa69abE7a806a1b75E148b1d7977B87CC3e0fEE94",
+    "shares": "5600300690764644266595",
+    "previewRedeem": "5954048037"
+  },
+  "change": {
+    "submitTx": "0x335fe3887288e04ddf6daf958b0634cd211dddd5f8bd260aaafd62ee694a2441",
+    "logIndex": 259,
+    "block": 26406895,
+    "payload": "0x5c1a1a4fb192a84a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "executableAt": 1794842387
+  },
+  "gasFormula": "forwarded = (limit - 23340) * 63 / 64 - 150000 (Base Sepolia proxy, SPEC.md section 12)",
+  "results": [
+    {
+      "callbackGasLimit": 600000,
+      "gasForwardedToExit": 417649,
+      "exitCallSucceeded": false,
+      "gasUsedByTheCall": 420278,
+      "exitRevertData": "0x",
+      "outOfGas": true,
+      "watchId": 1,
+      "watchEnded": null,
+      "redeemReverted": false,
+      "holderUsdcBefore": "3125973334",
+      "holderUsdcAfter": "3125973334",
+      "holderUsdcDelta": "0",
+      "usdcTransferredToHolderInExit": "0",
+      "holderSharesAfter": "5600300690764644266595",
+      "simulatedBlock": 26406896
+    },
+    {
+      "callbackGasLimit": 1000000,
+      "gasForwardedToExit": 811399,
+      "exitCallSucceeded": true,
+      "gasUsedByTheCall": 447467,
+      "exitRevertData": null,
+      "outOfGas": false,
+      "watchId": 1,
+      "watchEnded": {
+        "outcome": 0,
+        "reason": 1,
+        "shares": "5600300690764644266595",
+        "assets": "5954048177",
+        "originTxHash": "0x335fe3887288e04ddf6daf958b0634cd211dddd5f8bd260aaafd62ee694a2441"
+      },
+      "redeemReverted": false,
+      "holderUsdcBefore": "3125973334",
+      "holderUsdcAfter": "9080021511",
+      "holderUsdcDelta": "5954048177",
+      "usdcTransferredToHolderInExit": "5954048177",
+      "holderSharesAfter": "0",
+      "simulatedBlock": 26406896
+    }
+  ],
+  "asserts": {
+    "redeemedAt1000000AndDeltaEqualsAssets": true,
+    "notRedeemedAt600000": true
+  },
+  "failures": []
+}

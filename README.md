@@ -73,8 +73,31 @@ less left (`LEAD` in this deployment). That is what the mode is for: the deposit
    and only when the network says our reactive contract requested it (`onlyServiceProvider` and
    `onlyCallbackSender`, from Reactive's `AbstractCallback`).
 5. **The contracts refuse what the rule book says.** See "Checks" below.
+6. **Re-derive it yourself.** With Python 3 and nothing else installed:
+   - `python scripts/runs.py --check` reads every receipt of the recorded runs ([`records/`](records)) from public
+     endpoints and stops unless the three hashes carry the same origin, the exit landed before the change could
+     run, and the tokens went from the vault to the watch owner in the amount `WatchEnded` reports;
+   - `python scripts/replay_mainnet.py` repeats the replay below.
 
 Not checkable on an explorer yet: the four contracts are not source-verified there. The source is this repository.
+`scripts/bytecode_match.py` (run by the manual `verify` workflow) compares the code on chain with the build of the
+deployment's source commit.
+
+## Real vault replay
+
+Label: replay of our deployed exit code on a real vault; Reactive not in it.
+
+On Ethereum mainnet state at block 26,406,895, `eth_simulateV1` put the runtime code of our Base Sepolia
+`NoticeExit` at its own address, armed a watch for a real holder of Gauntlet USDC Frontier (a Morpho Vault V2), and
+delivered the real 13 Nov 2026 `Submit` (a shorter waiting period, log 259 of
+[`0x335fe388…2441`](https://etherscan.io/tx/0x335fe3887288e04ddf6daf958b0634cd211dddd5f8bd260aaafd62ee694a2441))
+as the callback proxy would. Nothing was sent; the result is in
+[`status/replay-mainnet.json`](status/replay-mainnet.json):
+
+- with the gas a 1,000,000 callback limit forwards, the holder's 5,600.30 shares were redeemed and 5,954.048177 USDC
+  arrived in the holder's wallet, the amount `WatchEnded` reports;
+- with the gas a 600,000 limit forwards (the limit of the 18 Nov deployment), the call ran out of gas and nothing
+  moved. On this vault the exit needs a larger callback limit than the demo deployment uses.
 
 ## What each Reactive feature does here
 
@@ -138,7 +161,8 @@ Choices worth knowing:
 | `src/demo/` | Our own demo token and ERC-4626 demo vault with a Morpho Vault V2 style timelock (`Submit`, `Revoke`, `Accept`). Test only, not Morpho's vault |
 | `src/hello/` | The smallest full loop: an event on Base Sepolia, a reactive transaction on Lasna, a callback on Base Sepolia |
 | `test/` | Unit, attack, fuzz, invariant and real-log fixture tests, with a mock system contract and callback proxy |
-| `scripts/` | CI toolchain setup, the mutation check, deploy and loop scripts, the local dry run |
+| `scripts/` | CI toolchain setup, the mutation check, deploy and loop scripts, the local dry run, run records and their checker, bytecode match, the mainnet replay |
+| `deployments/`, `records/`, `status/` | Addresses of each deployment, one file per recorded run, results of the replay and of the bytecode match |
 | `docs/` | The page: a guided run with a browser wallet, a replay of the recorded runs, live reads from both chains. Testing notes in `docs/TESTING.md` |
 
 ## Checks
@@ -162,6 +186,10 @@ Toolchain: Foundry v1.9.0 and solc 0.8.30, both checked against sha256 digests; 
 with the key in that environment's `TESTNET_KEY` secret. Each stops before sending anything when a balance is
 zero, unknown or too small, and prints addresses and transaction hashes. `loop` fires the origin event and waits
 for the reactive transaction and the callback, then prints the three hashes and the seconds between them.
+Its other actions (a change the watch ignores, a revoked change, a watch held and fired later, cancel, expiry,
+top-up) and `health` (a second key derived from the testnet key; reads the float and debts, runs one loop) take
+their addresses from `deployments/<name>.json`. `verify` needs no key: it builds the deployment's source commit and
+compares the bytecode.
 
 ## Licence
 

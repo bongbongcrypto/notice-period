@@ -1,10 +1,11 @@
 /* Recorded runs: real transactions read from the public RPC endpoints of Base Sepolia and Reactive Lasna
-   at the time in readAt. The page re-reads every receipt before it calls a run checked. */
+   at the time in readAt. The page re-reads every receipt before it calls a run checked.
+   Written by scripts/runs.py --write from records/; never edit by hand. */
 (function () {
   'use strict';
   var NP = window.NP = window.NP || {};
   NP.recorded = {
-    "readAt": "2026-11-21T10:45:29Z",
+    "readAt": "2026-11-21T17:51:10Z",
     "runs": [
       {
         "id": 1,
@@ -39,7 +40,9 @@
           "reason": 1,
           "shares": "100000000",
           "assets": "100000000"
-        }
+        },
+        "exit": "0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8",
+        "reactive": "0x00E4996c7255B919B619902E1Ac4b254D3c3f014"
       },
       {
         "id": 2,
@@ -74,7 +77,9 @@
           "reason": 2,
           "shares": "100000000",
           "assets": "100000000"
-        }
+        },
+        "exit": "0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8",
+        "reactive": "0x00E4996c7255B919B619902E1Ac4b254D3c3f014"
       }
     ]
   };

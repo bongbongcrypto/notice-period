@@ -1,0 +1,87 @@
+name: verify
+
+# Checks that the contracts of one deployment are the build of its source commit (scripts/verify.sh).
+# Manual only. No environment, no secret, no transaction: branch D reads public RPC endpoints only.
+# Sourcify and Blockscout (branches A to C) run only with publish = yes, which sends our sources to those sites.
+on:
+  workflow_dispatch:
+    inputs:
+      deployment:
+        description: "name of deployments/<name>.json"
+        default: "2026-11-18"
+      publish:
+        description: "also register the sources on Sourcify and Blockscout (owner's yes (Q1) required)"
+        type: choice
+        options: ["no", "yes"]
+        default: "no"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out this commit (plain git, no third-party action)
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          git init -q .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          echo "::add-mask::${auth}"
+          git -c http.extraheader="AUTHORIZATION: basic ${auth}" fetch -q --depth 1 origin "${GITHUB_SHA}"
+          git checkout -q FETCH_HEAD
+          git log -1 --format='%H %s'
+
+      - name: Read the deployment file
+        id: dep
+        env:
+          DEPLOYMENT: ${{ inputs.deployment }}
+        run: python3 scripts/deployment.py "$DEPLOYMENT" --github-output
+
+      - name: Check out the deployment's source commit into build/ (plain git)
+        env:
+          TOKEN: ${{ github.token }}
+          SOURCE_COMMIT: ${{ steps.dep.outputs.source_commit }}
+        run: |
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "sourceCommit must be a full commit hash"; exit 1; }
+          git init -q build
+          git -C build remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          echo "::add-mask::${auth}"
+          git -C build -c http.extraheader="AUTHORIZATION: basic ${auth}" fetch -q --depth 1 origin "$SOURCE_COMMIT"
+          git -C build checkout -q FETCH_HEAD
+          [ "$(git -C build rev-parse HEAD)" = "$SOURCE_COMMIT" ] || { echo "checked out the wrong commit"; exit 1; }
+          git -C build log -1 --format='%H %s'
+
+      - name: Install that commit's pinned Foundry, solc and libraries (its own scripts/ci-setup.sh)
+        run: GITHUB_WORKSPACE="$PWD/build" bash build/scripts/ci-setup.sh
+
+      - name: Build that commit (default profile, as deploy-system built it)
+        working-directory: build
+        run: |
+          unset FOUNDRY_PROFILE
+          forge build --sizes
+
+      - name: Verify (branch D always; A to C only with publish = yes)
+        env:
+          DEPLOYMENT: ${{ inputs.deployment }}
+          BUILD_DIR: build
+          PUBLISH: ${{ inputs.publish }}
+          FOUNDRY_OFFLINE: ${{ inputs.publish == 'yes' && 'false' || 'true' }}
+        run: bash scripts/verify.sh
+
+      - name: Bytecode match result (status file, to commit with the evidence)
+        if: always()
+        env:
+          DEPLOYMENT: ${{ inputs.deployment }}
+        run: |
+          f="status/bytecode-${DEPLOYMENT}.json"
+          if [ -f "$f" ]; then
+            echo "NP-STATUS-JSON-BEGIN $f"
+            cat "$f"
+            echo "NP-STATUS-JSON-END"
+            { echo ""; echo "\`$f\`:"; echo '```json'; cat "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
