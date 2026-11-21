@@ -84,7 +84,7 @@ Not checkable on an explorer yet: the four contracts are not source-verified the
 | Subscribe and unsubscribe at runtime | One subscription per watch, added when it is turned on and removed when it ends | One hard-coded vault, and fees for watches nobody holds | `NoticeReactive._filter` (reference-counted) |
 | A timer that runs only while a change is waiting | The second mode: store the change, ask for the exit `LEAD` seconds before it can run, stay if the curator revokes | Only "leave now". Left on all the time, the timer would spend the float while idle | `NoticeReactive._cronFilter`, `_onTick` |
 | Callback through the callback proxy | The redeem on the vault's chain | Nothing moves the deposit. With a weaker check anyone could force an exit; the funds would still go only to their owner | `NoticeReactive._fire`, `NoticeExit.exit` |
-| Blocks about one second apart | Seconds, where a keeper would take minutes, between the vault's event and the exit request | The exit would still beat a waiting period of days. It counts when the notice is short, as in the 3-minute demo | the run table above |
+| Blocks about one second apart | In run 1 Reactive's transaction carries the same second as the vault's event, and the deposit was back 2 s later | The exit would still beat a waiting period of days. It counts when the notice is short, as in the 3-minute demo | the run table above |
 
 ## Prior art, and why an exit
 
