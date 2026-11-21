@@ -8,6 +8,9 @@
   5. the amount sent differs from WatchEnded.assets: fails
   6. the stored copy of a derived field was edited: fails
   7. an "ignored" record with a log for the watch in its Lasna range: fails; without one: passes
+  8. a revoke-stays record: passes; with an ExitRequested in its range, or closed with a status other than 3: fails
+  9. an arm-only record passes, one naming another watch fails; --add links a fire run to its arm-only record and
+     refuses a fire run without one
 """
 
 import contextlib
@@ -153,6 +156,59 @@ with tempfile.TemporaryDirectory() as d:
     check("7a a log for the watch after an unwatched change fails", code == 1 and "unwatched change" in out)
     code, out = run_check(root, factory(*world(), lasna_logs=[]))
     check("7b no log for the watch passes", code == 0 and "absence conditions hold" in out)
+
+    # 8. revoke-stays: ChangeRevoked, no ExitRequested in the range, WatchClosed with status 3
+    REV, CLOSED = h(0x77), h(0x78)
+
+    def revoke_world(closed_status=3):
+        base, lasna, times = world()
+        lasna = dict(lasna)
+        lasna[REV] = (7, [log(REACTIVE, [runs.T["revoked"], t(1), h(0x66)])])
+        lasna[CLOSED] = (8, [log(REACTIVE, [runs.T["closed"], t(1)], "0x" + format(closed_status, "064x"))])
+        return base, lasna, times
+
+    revoked = {"deployment": "t", "n": 1, "exit": EXIT, "reactive": REACTIVE, "token": TOKEN, "watchId": 1,
+               "action": "revoke-stays", "hash1": H1, "revokeTx": h(0x76), "changeRevokedTx": REV,
+               "watchClosedTx": CLOSED, "lasnaFrom": 100, "lasnaTo": 120, "armTx": ARM, "subTx": SUB}
+    put(revoked)
+    code, out = run_check(root, factory(*revoke_world(), lasna_logs=[]))
+    check("8a a revoked change with no exit asked passes", code == 0 and "absence conditions hold" in out)
+    asked = [{"address": REACTIVE, "blockNumber": hex(115), "transactionHash": h(0x79),
+              "topics": [runs.T["requested"], t(1), H1], "data": "0x"}]
+    code, out = run_check(root, factory(*revoke_world(), lasna_logs=asked))
+    check("8b an ExitRequested after the revoke fails", code == 1 and "after the revoke" in out)
+    code, out = run_check(root, factory(*revoke_world(closed_status=2), lasna_logs=[]))
+    check("8c a watch closed as exited, not cancelled, fails", code == 1 and "cancelled (3)" in out)
+
+    # 9. arm-only record, and a fire run linked to it by add()
+    armonly = {"deployment": "t", "n": 1, "exit": EXIT, "reactive": REACTIVE, "token": TOKEN, "watchId": 1,
+               "action": "arm-only", "armTx": ARM, "subTx": SUB}
+    put(armonly)
+    code, out = run_check(root, factory(*world()))
+    check("9a an arm-only record whose watch was armed and subscribed passes", code == 0 and "armed and subscribed" in out)
+    wrong = dict(armonly, watchId=2)
+    put(wrong)
+    code, out = run_check(root, factory(*world()))
+    check("9b an arm-only record naming another watch fails", code == 1)
+    put(armonly)
+    fire_run = root / "fire.json"
+    fire_run.write_text(json.dumps({"result": "ok", "action": "fire", "exit": EXIT, "watchId": 1, "vault": VAULT,
+                                    "hash1": H1, "hash2": H2, "hash3": H3}))
+    with contextlib.redirect_stdout(io.StringIO()):
+        runs.add("t", [str(fire_run)], root=root)
+    fired = json.loads((root / "records" / "t-2.json").read_text())
+    check("9c add() takes the fire run's arm and subscription from the arm-only record",
+          fired["armTx"] == ARM and fired["subTx"] == SUB and fired["armRecord"] == 1)
+    code, out = run_check(root, factory(*world()))
+    check("9d the fire record then checks out from receipts", code == 0 and "2 of 2 records check out" in out)
+    (root / "records" / "t-2.json").unlink()
+    (root / "records" / "t-1.json").unlink()
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            runs.add("t", [str(fire_run)], root=root)
+        check("9e a fire run without its arm-only record is refused", False)
+    except runs.CheckError:
+        check("9e a fire run without its arm-only record is refused", True)
 
 if failures:
     print(f"{len(failures)} failed")
