@@ -48,7 +48,7 @@ code { font-family: var(--mono); font-size: 0.9em; color: var(--navy); }
 [hidden] { display: none !important; }
 
 .wrap { max-width: 75rem; margin: 0 auto; padding: 0 var(--s3); }
-.small { font-size: var(--f13); line-height: 1.45; color: var(--muted); max-width: 36rem; }
+.small { font-size: var(--f13); line-height: 1.45; color: var(--muted); max-width: 31rem; }
 .quiet { color: var(--muted); font-weight: 400; }
 .num, .hash, .addr { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .hash, .addr { font-size: var(--f13); white-space: nowrap; }
@@ -95,8 +95,8 @@ code { font-family: var(--mono); font-size: 0.9em; color: var(--navy); }
 .problem-line { font-size: var(--f20); line-height: 1.4; color: var(--navy); min-height: 7rem; margin-bottom: var(--s1); }
 #problem-src { min-height: 3.6rem; margin: 0; }
 .latest { grid-column: 1 / -1; margin: 0; padding: 1.5rem; background: var(--card); border: 1px solid var(--hair); border-radius: 8px; }
-.latest figcaption { font-weight: 600; color: var(--navy); min-height: 1.5rem; max-width: 60rem; }
-#latest-check { min-height: 2.4rem; margin: var(--s2) 0 var(--s1); }
+.latest figcaption { font-weight: 600; color: var(--navy); min-height: 3rem; max-width: 40rem; }
+#latest-check { min-height: 2.75rem; margin: var(--s2) 0 var(--s1); }
 .proof { margin: 0; color: var(--navy); font-weight: 600; min-height: 1.5rem; max-width: 46rem; }
 
 /* ---------- the time strip: the vault's waiting period drawn to scale ---------- */
@@ -199,7 +199,7 @@ code { font-family: var(--mono); font-size: 0.9em; color: var(--navy); }
 .runs .back { font-weight: 600; color: var(--sea-text); }
 .runs .tx a { margin-right: 0.75rem; }
 .runs .tx { white-space: nowrap; }
-#runs-cap { min-height: 1.2rem; }
+#runs-cap { min-height: 1.5rem; }
 #runs .runs { margin-bottom: var(--s2); }
 .features tbody th { width: 24%; font-weight: 600; color: var(--navy); }
 .features td { width: 38%; }
@@ -247,7 +247,6 @@ code { font-family: var(--mono); font-size: 0.9em; color: var(--navy); }
   .try, .how, .two, .foot { grid-template-columns: minmax(0, 1fr); }
   .runs .tx { white-space: normal; }
   .fig-wide { max-width: 45rem; }
-  .panel { min-height: 0; }
 }
 
 /* ---------- phone: one column, the axis runs top to bottom ---------- */
