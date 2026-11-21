@@ -41,6 +41,7 @@ h1 { font-size: var(--f44); line-height: 1.08; letter-spacing: -0.02em; }
 h2 { font-size: var(--f28); line-height: 1.15; letter-spacing: -0.02em; margin-bottom: var(--s2); }
 h3 { font-size: var(--f20); line-height: 1.25; letter-spacing: -0.01em; margin: var(--s3) 0 var(--s2); }
 p { margin: 0 0 var(--s2); text-wrap: pretty; }
+li, td { text-wrap: pretty; }
 a { color: var(--navy); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.18em; }
 a:hover { text-decoration-thickness: 2px; }
 code { font-family: var(--mono); font-size: 1em; color: var(--navy); }
@@ -203,6 +204,7 @@ code { font-family: var(--mono); font-size: 1em; color: var(--navy); }
 .runs .back { font-weight: 600; color: var(--sea-text); }
 .runs .tx a { margin-right: 0.75rem; }
 .runs .tx { white-space: nowrap; }
+.runs td[data-l="Change"] .quiet { display: block; white-space: nowrap; }
 #runs-cap { min-height: 1.5rem; }
 #runs .runs { margin-bottom: var(--s2); }
 .features tbody th { width: 24%; font-weight: 600; color: var(--navy); text-wrap: balance; }
@@ -269,7 +271,7 @@ code { font-family: var(--mono); font-size: 1em; color: var(--navy); }
   .first { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; padding-top: var(--s2); }
   .lede { gap: 1.5rem; }
   .cta { grid-template-columns: minmax(0, 1fr); max-width: none; }
-  .btn { white-space: normal; }
+  .btn { white-space: normal; text-wrap: balance; }
   .problem-line { font-size: var(--f16); min-height: 6rem; }
   #problem-src { min-height: 4.8rem; }
   .latest { padding: var(--s2); }
