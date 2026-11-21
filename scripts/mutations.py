@@ -68,6 +68,12 @@ add("expire-after-lifetime", "expire only after LIFETIME", X,
 add("expire-timed-only", "a leave-now watch has no expiry", X,
     "        if (w.mode != MODE_IF_PENDING) revert NoExpiry(watchId_);\n", "",
     E, "test_expire_refuses_leave_now_watch")
+add("expire-noexpiry-first", "expire answers NoExpiry before the status check (unknown and ended leave-now ids)", X,
+    "        if (w.mode != MODE_IF_PENDING) revert NoExpiry(watchId_);\n"
+    "        if (w.status != STATUS_ACTIVE) revert WatchNotActive(watchId_);\n",
+    "        if (w.status != STATUS_ACTIVE) revert WatchNotActive(watchId_);\n"
+    "        if (w.mode != MODE_IF_PENDING) revert NoExpiry(watchId_);\n",
+    E, "test_expire_answers_no_expiry_before_status")
 add("arm-unknown-vault", "arm only on vaults of our factory", X,
     "if (!REGISTRY.isVault(vault_)) revert UnknownVault(vault_);", "",
     E, "test_arm_refuses_unknown_vault")
@@ -100,6 +106,9 @@ add("arm-daily-cap", "daily arm cap overall", X,
     E, "test_arm_refuses_over_daily_cap")
 add("arm-timed-daily-cap", "daily arm cap for timer watches", X,
     "if (mode_ == MODE_IF_PENDING && timedArmsOnDay[day] >= MAX_TIMED_ARMS_PER_DAY) revert DailyCapForTimed();", "",
+    E, "test_arm_refuses_timed_over_daily_cap")
+add("arm-timed-count", "a timer arm is counted against the day's timer cap", X,
+    "        if (mode_ == MODE_IF_PENDING) timedArmsOnDay[day] += 1;\n", "",
     E, "test_arm_refuses_timed_over_daily_cap")
 add("cancel-only-owner", "only the owner cancels", X,
     "if (w.owner != msg.sender) revert NotWatchOwner();", "",
@@ -189,6 +198,9 @@ add("armed-timed-cap", "cap on timer watches at a time (work per tick, LEAD)", R
 add("armed-timed-cap-mode", "the timer cap never refuses a leave-now watch", R,
     "mode == MODE_IF_PENDING && timedWatches >= MAX_TIMED", "timedWatches >= MAX_TIMED",
     NT, "test_leave_now_not_counted_as_timed")
+add("armed-timed-count", "an accepted timer watch takes a timer place", R,
+    "        if (mode == MODE_IF_PENDING) timedWatches += 1;\n", "",
+    NT, "test_refuses_ninth_timed_watch")
 add("ctor-callback-gas-floor", "the callback gas limit is at least MIN_CALLBACK_GAS", R,
     "if (callbackGas_ < MIN_CALLBACK_GAS) revert CallbackGasTooLow(callbackGas_);", "",
     NR, "test_constructor_refuses_low_callback_gas")
@@ -435,7 +447,7 @@ add("maker-skip-timelock", "create sets the waiting period on the four watched k
 add("maker-skip-abdicate", "create abdicates the gate and fee setters", MM,
     "        v_.abdicate(selector_);\n", "",
     MT, "test_create_abdicates_gates_and_fees")
-add("maker-salt-no-block", "the salt depends on the block, so it cannot be taken ahead", MM,
+add("maker-salt-no-block", "the salt depends on the block (16 salts taken in one block do not block the next)", MM,
     "keccak256(abi.encode(msg.sender, block.number, n))",
     "keccak256(abi.encode(msg.sender, n))",
     MT, "test_create_survives_precreated_salts")

@@ -671,6 +671,56 @@ contract NoticeExitTest is NoticeSetup {
         assertEq(_status(idTimed), exitC.STATUS_EXPIRED(), "sibling: the timer watch expires");
     }
 
+    /// @dev Bites the order of the first two checks in expire() (SPEC.md section 4: `NoExpiry` answers any watch that
+    ///      is not mode 1, an unknown id included): an unknown id, a cancelled and an ended "leave now" watch all
+    ///      answer NoExpiry, not WatchNotActive. Sibling: a cancelled timer watch answers WatchNotActive.
+    function test_expire_answers_no_expiry_before_status() public {
+        vm.warp(block.timestamp + LIFETIME);
+        vm.expectRevert(abi.encodeWithSelector(NoticeExit.NoExpiry.selector, 999));
+        exitC.expire(999);
+        uint256 cancelled = _armAlice(0);
+        vm.prank(alice);
+        exitC.cancel(cancelled);
+        uint256 ended = _armAlice(0);
+        _deliver(ended, _adapterCall(address(0xA1)));
+        assertEq(_status(ended), exitC.STATUS_ENDED());
+        vm.warp(block.timestamp + LIFETIME);
+        vm.expectRevert(abi.encodeWithSelector(NoticeExit.NoExpiry.selector, cancelled));
+        exitC.expire(cancelled);
+        vm.expectRevert(abi.encodeWithSelector(NoticeExit.NoExpiry.selector, ended));
+        exitC.expire(ended);
+        DemoVault vb = _vaultWithDeposit(bob, 10e6);
+        _approveExit(bob, vb, type(uint256).max);
+        vm.prank(bob);
+        uint256 timed = exitC.arm(address(vb), NoticeKinds.DEFAULT, 1, type(uint256).max);
+        vm.prank(bob);
+        exitC.cancel(timed);
+        vm.warp(block.timestamp + LIFETIME);
+        vm.expectRevert(abi.encodeWithSelector(NoticeExit.WatchNotActive.selector, timed));
+        exitC.expire(timed);
+    }
+
+    /// @dev A stated limit (SPEC.md section 11): a timer watch protects until its lease ends, even from a change it
+    ///      already stores. The curator schedules a change 30 s before the lease ends and expires the watch when it
+    ///      ends: Lasna closes the watch and forgets the change without asking for an exit, and the deposit stays in.
+    function test_expiry_at_lease_end_drops_a_stored_change() public {
+        uint256 id = _arm(alice, vault, NoticeKinds.DEFAULT, 1, type(uint256).max);
+        assertEq(_rStatus(id), reactive.ST_ARMED());
+        vm.warp(exitC.armedAt(id) + LIFETIME - 30);
+        uint256 callbacks = sys.callbackCount();
+        _submit(alice, vault, _adapterCall(address(0xA1)));
+        assertEq(_rPendingCount(id), 1, "the change is stored, due 180 s later");
+        vm.warp(block.timestamp + 30);
+        vm.prank(alice); // alice is also the curator of her vault
+        exitC.expire(id);
+        _pump(address(reactive));
+        assertEq(_status(id), exitC.STATUS_EXPIRED());
+        assertEq(_rStatus(id), reactive.ST_CANCELLED(), "Lasna closed the watch");
+        assertEq(_rPendingCount(id), 0, "and forgot the stored change");
+        assertEq(sys.callbackCount(), callbacks, "no exit was asked for");
+        assertEq(vault.balanceOf(alice), DEPOSIT, "the deposit stays in");
+    }
+
     /// @dev Three strangers deposit dust into alice's vault and arm "leave now" watches first, so the reactive
     ///      contract refuses alice's own watch with code 4 (vault full). The refusal is visible on both sides (Base:
     ///      still active, Lasna: refused), and nobody can expire the three dust watches. An accepted limit
