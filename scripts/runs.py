@@ -319,6 +319,13 @@ def render_runs_js(page_runs, read_at):
             + body.replace("\n", "\n  ") + ";\n}());\n")
 
 
+def page_deployment(root=ROOT):
+    """The deployment the page shows: named in docs/data/deployment.js (scripts/stamp.py), else 2026-11-18."""
+    js = Path(root) / "docs" / "data" / "deployment.js"
+    m = re.search(r"from deployments/([0-9A-Za-z-]+)\.json;", js.read_text(encoding="utf-8")) if js.exists() else None
+    return m.group(1) if m else "2026-11-18"
+
+
 def write(page, root=ROOT, chain_factory=chains):
     page_runs = []
     for p in record_paths(root):
@@ -453,7 +460,7 @@ def main(argv=None):
     ap.add_argument("--add", nargs="+", metavar=("NAME", "RUN_JSON"))
     ap.add_argument("--import-recorded")
     ap.add_argument("--write", action="store_true")
-    ap.add_argument("--page", default="2026-11-18")
+    ap.add_argument("--page", default=None, help="deployment whose runs the page lists (default: the one named in docs/data/deployment.js, else 2026-11-18)")
     ap.add_argument("--check", nargs="*")
     ap.add_argument("--hold", nargs=2, metavar=("NAME", "WATCH"))
     ap.add_argument("--from-block", type=int)
@@ -471,7 +478,7 @@ def main(argv=None):
             import_recorded(a.import_recorded)
             return 0
         if a.write:
-            write(a.page)
+            write(a.page or page_deployment())
             return 0
         if a.check is not None:
             return check(a.check)
