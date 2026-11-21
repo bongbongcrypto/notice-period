@@ -8,9 +8,9 @@ side) and Reactive Lasna (the reactive contract). No server, no key that can sen
 happens only because the vault emitted its own `Submit` event, the network delivered the callback, and the redeem
 pays the depositor and nobody else.
 
-The rule book is [SPEC.md](SPEC.md). The page is in [`web/`](web): plain HTML, CSS and JavaScript, no build step and
-no third-party script. Open `web/index.html`, or serve the folder (`python -m http.server 8000 --bind 127.0.0.1`
-inside `web/`).
+The rule book is [SPEC.md](SPEC.md). The page is in [`docs/`](docs): plain HTML, CSS and JavaScript, no build step and
+no third-party script. Open `docs/index.html`, or serve the folder (`python -m http.server 8000 --bind 127.0.0.1`
+inside `docs/`).
 
 ## Who it is for
 
@@ -108,6 +108,9 @@ exhaustive search.
 - A watch lasts one day in this deployment, and the demo allows 10 watches a day for everyone, 2 per address and
   8 at a time, because Reactive fees are paid from our float.
 - A change with no waiting period leaves no time to exit.
+- Both recorded runs exited on a new adapter. A shorter waiting period and a new allocator are kinds the contracts
+  cover (SPEC.md section 3), but no testnet run has shown an exit on them yet, so the page's curator step schedules
+  only a new adapter (the deposit leaves) and a cap increase (it stays).
 - The demo vault counts every demo dollar it holds, and demo dollars are free to mint. So someone can send demo
   dollars to a visitor's fresh vault and skew its share price. The page refuses to deposit into such a vault; the
   contract itself does not prevent it (SPEC.md section 11).
@@ -136,7 +139,7 @@ Choices worth knowing:
 | `src/hello/` | The smallest full loop: an event on Base Sepolia, a reactive transaction on Lasna, a callback on Base Sepolia |
 | `test/` | Unit, attack, fuzz, invariant and real-log fixture tests, with a mock system contract and callback proxy |
 | `scripts/` | CI toolchain setup, the mutation check, deploy and loop scripts, the local dry run |
-| `web/` | The page: a guided run with a browser wallet, a replay of the recorded runs, live reads from both chains. Testing notes in `web/TESTING.md` |
+| `docs/` | The page: a guided run with a browser wallet, a replay of the recorded runs, live reads from both chains. Testing notes in `docs/TESTING.md` |
 
 ## Checks
 
