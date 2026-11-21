@@ -80,7 +80,7 @@ for url in endpoints:
     for attempt in range(3):
         try:
             req = urllib.request.Request(url, data=body, headers={
-                "Content-Type": "application/json", "User-Agent": "notice-period-dry-run/1"})
+                "Content-Type": "application/json", "User-Agent": "rpc-client"})
             with urllib.request.urlopen(req, timeout=20) as r:
                 code = json.load(r).get("result")
             if isinstance(code, str) and code.startswith("0x") and len(code) > 2 and len(code) % 2 == 0:
