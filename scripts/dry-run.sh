@@ -1,16 +1,30 @@
 #!/usr/bin/env bash
-# CI dry run of the deploy and loop scripts against two local anvil chains (never a public network).
+# CI dry run of the deploy and loop scripts against two local anvil chains (nothing is ever sent to a public network).
 #   port 8545: chain 84532 (plays Base Sepolia), the mock callback proxy at the real proxy address;
 #   port 8546: chain 5318007 (plays Lasna), the mock system contract at 0x8888...8888, the CRON source at 0x...fffFfF;
 #   scripts/relay-anvil.py plays the network between them.
 # Runs the same deploy-hello.sh, deploy-system.sh, loop-hello.sh and loop-system.sh the testnet workflows run.
 # DEPLOY_KEY and RELAY_KEY must be public anvil development keys (set in ci.yml).
+#
+# Morpho's VaultV2Factory: its runtime code is read from Base Sepolia (eth_getCode on three public endpoints, with
+# retries; the only network read of this script, nothing is sent) and set at its real address on port 8545, so the
+# maker and the loops run against Morpho's real bytecode. Its sha256 must equal FACTORY_CODE_SHA256 below; a different
+# code stops the run. While the value is still TO-PIN, or when no endpoint answers (then the test stand-in
+# MockVaultV2Factory is used), the run prints REAL FACTORY BYTECODE NOT CHECKED and reports it as the step output
+# factory_bytecode (real | unpinned | mock), which the deploy checklist reads.
+#
+# To pin: read the code from two endpoints yourself and compare, e.g.
+#   cast code --rpc-url https://sepolia.base.org 0xE3a2CEbca662d99D0F279aF13a6bb8c9825D2ea0 \
+#     | python3 -c "import sys, hashlib; print(hashlib.sha256(bytes.fromhex(sys.stdin.read().strip()[2:])).hexdigest())"
+# and put the 64 hex characters in FACTORY_CODE_SHA256.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 export BASE_RPC=http://127.0.0.1:8545
 export LASNA_RPC=http://127.0.0.1:8546
 export CALLBACK_PROXY="${CALLBACK_PROXY:-0x476F44b11F5C942c58f4c8E3d0300E5710743585}"
+export MORPHO_FACTORY="${MORPHO_FACTORY:-0xE3a2CEbca662d99D0F279aF13a6bb8c9825D2ea0}"
+FACTORY_CODE_SHA256=TO-PIN
 SYSTEM=0x8888888888888888888888888888888888888888
 CRON=0x0000000000000000000000000000000000fffFfF
 logs="${RUNNER_TEMP:-/tmp}/dry-run"
@@ -54,6 +68,56 @@ cast rpc --rpc-url "$BASE_RPC" anvil_setCode "$CALLBACK_PROXY" \
   "$(forge inspect test/mocks/MockCallbackProxy.sol:MockCallbackProxy deployedBytecode)" >/dev/null
 echo "mock network contracts in place"
 
+# Morpho's factory code at its real address (see the header).
+factory_hex="$logs/morpho-factory.hex"
+factory_state=""
+if python3 - "$MORPHO_FACTORY" "$factory_hex" <<'PY'
+import json, sys, time, urllib.request
+addr, out = sys.argv[1], sys.argv[2]
+endpoints = ["https://sepolia.base.org", "https://base-sepolia-rpc.publicnode.com", "https://base-sepolia.drpc.org"]
+body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_getCode", "params": [addr, "latest"]}).encode()
+for url in endpoints:
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(url, data=body, headers={
+                "Content-Type": "application/json", "User-Agent": "notice-period-dry-run/1"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                code = json.load(r).get("result")
+            if isinstance(code, str) and code.startswith("0x") and len(code) > 2 and len(code) % 2 == 0:
+                bytes.fromhex(code[2:])
+                open(out, "w").write(code)
+                print(f"Morpho factory code read from {url}: {len(code) // 2 - 1} bytes")
+                sys.exit(0)
+            print(f"{url}: no code in the answer (unknown, not empty)")
+        except Exception as e:  # an error is "unknown": try again, then the next endpoint
+            print(f"{url}: attempt {attempt + 1} failed: {type(e).__name__}")
+        time.sleep(2 * (attempt + 1))
+sys.exit(3)
+PY
+then
+  cast rpc --rpc-url "$BASE_RPC" anvil_setCode "$MORPHO_FACTORY" "$(cat "$factory_hex")" >/dev/null
+  got_sha="$(cast code --rpc-url "$BASE_RPC" "$MORPHO_FACTORY" \
+    | python3 -c 'import sys, hashlib; print(hashlib.sha256(bytes.fromhex(sys.stdin.read().strip()[2:])).hexdigest())')"
+  echo "Morpho factory code sha256 (as set on the local chain): $got_sha"
+  if [ "$FACTORY_CODE_SHA256" = TO-PIN ]; then
+    factory_state=unpinned
+    echo "REAL FACTORY BYTECODE NOT CHECKED: no pinned sha256 yet (FACTORY_CODE_SHA256 is TO-PIN); the fetched code runs"
+  elif [ "$got_sha" = "$FACTORY_CODE_SHA256" ]; then
+    factory_state=real
+    echo "Morpho factory code matches the pinned sha256"
+  else
+    echo "STOP: Morpho factory code sha256 $got_sha is not the pinned $FACTORY_CODE_SHA256"
+    exit 1
+  fi
+else
+  factory_state=mock
+  cast rpc --rpc-url "$BASE_RPC" anvil_setCode "$MORPHO_FACTORY" \
+    "$(forge inspect test/mocks/MockMorpho.sol:MockVaultV2Factory deployedBytecode)" >/dev/null
+  echo "REAL FACTORY BYTECODE NOT CHECKED: no endpoint answered; the test stand-in MockVaultV2Factory runs instead"
+fi
+if [ -n "${GITHUB_OUTPUT:-}" ]; then echo "factory_bytecode=$factory_state" >> "$GITHUB_OUTPUT"; fi
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then echo "Morpho factory bytecode in the dry run: $factory_state" >> "$GITHUB_STEP_SUMMARY"; fi
+
 export DEPLOY_OUT="$logs/deployed.env"
 : > "$DEPLOY_OUT"
 REACTIVE_FUND=1 CALLBACK_FUND=0.002 bash scripts/deploy-hello.sh
@@ -83,6 +147,7 @@ timed="$(cast call --rpc-url "$LASNA_RPC" "$NP_REACTIVE" 'timedWatches()(uint256
 [ "$timed" = 0 ] || { echo "NoticeReactive.timedWatches is $timed after every watch closed"; status=1; }
 reverts="$(cast call --rpc-url "$LASNA_RPC" "$SYSTEM" 'reverts()(uint256)' | awk '{print $1}')"
 echo "react() reverts seen by the mock system: $reverts"
+echo "Morpho factory bytecode in this run: $factory_state"
 [ "$reverts" = 0 ] || status=1
 over="$(cast call --rpc-url "$LASNA_RPC" "$SYSTEM" 'overGasLimit()(uint256)' | awk '{print $1}')"
 maxgas="$(cast call --rpc-url "$LASNA_RPC" "$SYSTEM" 'maxReactGas()(uint256)' | awk '{print $1}')"

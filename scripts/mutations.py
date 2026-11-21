@@ -12,6 +12,7 @@ F = "src/demo/DemoVaultFactory.sol"
 T = "src/demo/DemoToken.sol"
 HR = "src/hello/HelloReactive.sol"
 HC = "src/hello/HelloCallback.sol"
+MM = "src/morpho/MorphoVaultMaker.sol"
 
 E = "NoticeExitTest"
 NR = "NoticeReactiveTest"
@@ -20,6 +21,7 @@ NT = "NoticeReactiveTimedTest"
 DV = "DemoVaultTest"
 EE = "EndToEndTest"
 H = "HelloTest"
+MT = "MorphoTest"
 
 MUTATIONS = []
 
@@ -411,3 +413,33 @@ add("hello-pong-only-our-reactive", "hello pong() only on request of our reactiv
     "        onlyServiceProvider\n        onlyCallbackSender(reactive_)",
     "        onlyServiceProvider",
     H, "test_pong_refuses_other_reactive")
+
+# ---------------------------------------------------------------- Morpho vault maker (registry on the origin chain)
+add("maker-registry-factory-only", "isVault: only vaults this maker made", MM,
+    "return made[vault_] && FACTORY.isVaultV2(vault_);",
+    "return FACTORY.isVaultV2(vault_);",
+    MT, "test_isVault_false_for_factory_vault_not_made_here")
+add("maker-registry-made-only", "isVault: only vaults Morpho's factory lists", MM,
+    "return made[vault_] && FACTORY.isVaultV2(vault_);",
+    "return made[vault_];",
+    MT, "test_isVault_false_when_factory_says_no")
+add("maker-keep-owner", "create hands the owner role to the caller", MM,
+    "        v.setOwner(msg.sender);\n", "",
+    MT, "test_create_hands_over_owner_and_curator")
+add("maker-keep-curator", "create hands the curator role to the caller", MM,
+    "        v.setCurator(msg.sender);\n", "",
+    MT, "test_create_hands_over_owner_and_curator")
+add("maker-skip-timelock", "create sets the waiting period on the four watched kinds", MM,
+    "        v_.increaseTimelock(selector_, TIMELOCK);\n", "",
+    MT, "test_create_sets_four_timelocks")
+add("maker-skip-abdicate", "create abdicates the gate and fee setters", MM,
+    "        v_.abdicate(selector_);\n", "",
+    MT, "test_create_abdicates_gates_and_fees")
+add("maker-salt-no-block", "the salt depends on the block, so it cannot be taken ahead", MM,
+    "keccak256(abi.encode(msg.sender, block.number, n))",
+    "keccak256(abi.encode(msg.sender, n))",
+    MT, "test_create_survives_precreated_salts")
+add("maker-salt-skip-taken", "a salt already used in Morpho's factory is skipped", MM,
+    "if (FACTORY.vaultV2(address(this), ASSET, salt) == address(0)) return salt;",
+    "return salt;",
+    MT, "test_create_survives_precreated_salts")

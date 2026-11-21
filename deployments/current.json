@@ -1,0 +1,46 @@
+{
+  "name": "current",
+  "status": "template",
+  "commit": null,
+  "origin": {
+    "name": "Base Sepolia",
+    "chainId": 84532
+  },
+  "reactive": {
+    "name": "Reactive Lasna",
+    "chainId": 5318007
+  },
+  "contracts": {
+    "token": null,
+    "maker": null,
+    "morphoFactory": "0xE3a2CEbca662d99D0F279aF13a6bb8c9825D2ea0",
+    "reactive": null,
+    "exit": null,
+    "callbackProxy": "0x476F44b11F5C942c58f4c8E3d0300E5710743585"
+  },
+  "deployTxs": {
+    "token": null,
+    "maker": null,
+    "reactive": null,
+    "exit": null
+  },
+  "smokeVault": {
+    "address": null,
+    "tx": null
+  },
+  "operators": [],
+  "values": {
+    "VAULT_TIMELOCK": 180,
+    "LEAD": 120,
+    "MAX_WAIT": 200,
+    "CALLBACK_GAS": 600000,
+    "MAX_ACTIVE": 1000,
+    "MAX_REACTIONS": 16,
+    "MAX_TIMED": 8,
+    "ARMS_PER_ADDRESS_PER_DAY": 4,
+    "ARMS_PER_DAY": 50,
+    "TIMED_ARMS_PER_DAY": 4,
+    "LIFETIME": 86400
+  },
+  "healthMinFloat": "4"
+}

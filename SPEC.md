@@ -11,6 +11,7 @@ events of Morpho Vault V2 and are not Morpho's vault.
 | `DemoToken` | Base Sepolia (84532) | Test token, 6 decimals, free `mint` of up to 1,000 tokens per call |
 | `DemoVaultFactory` | Base Sepolia | Creates one `DemoVault` per call; the caller is that vault's curator. Keeps the list of vaults it made (`isVault`) |
 | `DemoVault` | Base Sepolia | ERC-4626 vault with a timelock on curator actions. `Submit`, `Revoke` and `Accept` events have the exact shape of Morpho Vault V2 |
+| `MorphoVaultMaker` | Base Sepolia | Ours (contracts after 2026-11-18). One call makes a real Morpho Vault V2 of the demo dollar through Morpho's own `VaultV2Factory` and hands it to the caller as curator and owner. Keeps the list of vaults `NoticeExit` accepts (`isVault`) |
 | `NoticeExit` | Base Sepolia | The callback contract. Keeps the watches, holds share allowances, redeems shares to their owner |
 | `NoticeReactive` | Reactive Lasna (5318007) | The reactive contract. Subscribes to the vaults that are watched and asks for the exit |
 | `HelloOrigin`, `HelloReactive`, `HelloCallback` | Base Sepolia, Lasna, Base Sepolia | The smallest full loop: an event, a reactive transaction, a callback that records it |
@@ -63,6 +64,20 @@ owner actions that take effect at once and emit no `Submit`, so no watch can fle
 it makes that starting timelock (180 s in the demo deployment); `create()` is open to anyone and makes the
 caller the curator of a new vault.
 
+`MorphoVaultMaker` (ours; the vaults it makes are Morpho's code): `constructor(factory, asset, timelock)`, all
+immutable, no refusal (the deploy script checks the factory before and the vault shape after). `create()` is open
+to anyone and, in one transaction: picks the first salt `keccak256(caller, block number, n)` (`n` a counter that
+moves on every try) for which Morpho's factory holds no vault of (maker, asset, salt), refusing with `NoFreeSalt()`
+after 16 taken salts; calls `createVaultV2(maker, asset, salt)`; makes itself curator; raises the timelock of
+`addAdapter`, `setIsAllocator`, `increaseAbsoluteCap` and `increaseRelativeCap` to `TIMELOCK` (180 s in the
+deployment; a `decreaseTimelock` of one of them then waits as long); abdicates the four gate setters and
+`setPerformanceFee` and `setManagementFee` (each submitted and run in the same call, which a fresh vault allows),
+so that vault never has a gate or a fee; sets the vault's name; then makes the caller curator and owner. The maker
+keeps no role and holds nothing. `isVault(v)` is true only if this maker made `v` and Morpho's factory still lists
+it (`isVaultV2`); a vault made directly on Morpho's factory, even in the maker's name, is not listed. Morpho's
+own refusals apply inside (`DataAlreadyPending`, timelocked calls, `Abdicated`), so a failed step reverts the whole
+`create()`.
+
 `DemoToken` (ours, test token, 6 decimals): `mint(to, amount)` is open to anyone, at most 1,000 tokens per
 call: `MintTooLarge(amount, max)`, `ZeroAddress()` for receiver 0. `transfer`, `transferFrom`:
 `ZeroAddress()` for receiver 0, `InsufficientBalance()`, `InsufficientAllowance()`.
@@ -82,7 +97,7 @@ virtual asset: `shares = assets * (supply + 1) / (totalAssets + 1)`.
 
 | Action | Who | Refusal (exact error), checked in this order |
 |---|---|---|
-| `arm(vault, kinds, mode, maxShares)` | any share owner, for their own shares only (the owner is always `msg.sender`) | `Reentrancy()`; `UnknownVault(vault)` if the factory did not make it; `NoKinds()`; `UnknownKinds(kinds)` for bits above 8; `BadMode(mode)` for a mode other than 0 or 1; `ZeroMaxShares()`; `NoShares()`; `NoAllowance()` if the owner has not approved this contract for any shares; `AlreadyWatching(watchId)` if the owner already has an active watch on this vault; `DailyCapForAddress()`; `DailyCapReached()`; `DailyCapForTimed()` for a mode-1 arm once `MAX_TIMED_ARMS_PER_DAY` mode-1 arms were made this UTC day (all addresses together) |
+| `arm(vault, kinds, mode, maxShares)` | any share owner, for their own shares only (the owner is always `msg.sender`) | `Reentrancy()`; `UnknownVault(vault)` if the registry does not list it (`DemoVaultFactory`: it did not make it; `MorphoVaultMaker`: it did not make it, or Morpho's factory does not list it); `NoKinds()`; `UnknownKinds(kinds)` for bits above 8; `BadMode(mode)` for a mode other than 0 or 1; `ZeroMaxShares()`; `NoShares()`; `NoAllowance()` if the owner has not approved this contract for any shares; `AlreadyWatching(watchId)` if the owner already has an active watch on this vault; `DailyCapForAddress()`; `DailyCapReached()`; `DailyCapForTimed()` for a mode-1 arm once `MAX_TIMED_ARMS_PER_DAY` mode-1 arms were made this UTC day (all addresses together) |
 | `cancel(watchId)` | the watch owner | `Reentrancy()`; `NotWatchOwner()`; `WatchNotActive(watchId)` |
 | `expire(watchId)` | anyone, for a mode-1 watch only, once `LIFETIME` (1 day) has passed since the arm | `Reentrancy()`; `NoExpiry(watchId)` for any watch that is not mode 1 (a mode-0 "leave now" watch has no expiry; an unknown id also answers this); `WatchNotActive(watchId)`; `WatchNotExpired(watchId, expiresAt)` before `armedAt + LIFETIME`. Sets status `Expired` (4), emits `WatchExpired` and `WatchCancelled` (so Lasna drops it like a cancel). Moves no shares |
 | `exit(sender, watchId, vault, data, originTxHash, reason)` | the callback proxy only, and only when the network-injected `sender` is our reactive contract | `NotAuthorized(msg.sender, proxy)` for any other caller; `CallbackNotAuthorized(sender, reactive)` for any other reactive contract; `Reentrancy()`; `WatchNotActive(watchId)` for an unknown, cancelled, expired or finished watch (this is what stops a replay or a second exit); `WrongVault(watchId, vault)` if `vault` is not the watch's vault; `KindNotWatched(selector)` if `data` is not a kind this watch chose (empty `data` reads as selector 0); `AssetsNotReceived(expected, received)` if the owner did not receive the assets the vault reported |
@@ -215,7 +230,10 @@ within seconds; do not resend). A missing Base Sepolia credit only warns (deposi
 script on three local anvil chains with mocks at the real addresses and simulated credits.
 
 Deployment (no owner setter: the circular dependency is broken by computing the next contract address):
-1. Base Sepolia: `DemoToken`, then `DemoVaultFactory`.
+1. Base Sepolia: `DemoToken`, then `DemoVaultFactory` (the 2026-11-18 deployment) or, in
+   `scripts/deploy-system.sh` after it, `MorphoVaultMaker` on Morpho's factory (checked first: code present,
+   `isVaultV2(0x…dEaD)` false). The maker is then `NoticeExit`'s registry, every value is read back, and one
+   smoke `create()` is checked (listed, four timelocks of 180 s, six setters abdicated, caller is curator and owner).
 2. Read the deployer's Base Sepolia nonce `n`; the exit contract will live at `CREATE(deployer, n)`.
 3. Lasna: `NoticeReactive` with that address, sent no value (not yet shown on Lasna: that a reactive
    contract deployed with a zero balance keeps the subscriptions its constructor made; if the hello loop
@@ -325,6 +343,7 @@ on Base Sepolia; balances read before and after each loop; reactive gas price 10
 | DemoVault | `Revoke(address sender, bytes4 selector, bytes data)` | sender (topic1), selector (topic2) |
 | DemoVault | `Accept(bytes4 selector, bytes data)` | selector (topic1) |
 | DemoVaultFactory | `VaultCreated(address vault, address curator)` | both |
+| MorphoVaultMaker | `VaultCreated(address vault, address curator)` (same shape as the factory's) | both |
 | NoticeExit | `WatchArmed(uint256 watchId, address owner, address vault, uint8 kinds, uint8 mode, uint256 maxShares)` | watchId, owner, vault |
 | NoticeExit | `WatchCancelled(uint256 watchId, address owner, address vault)` | all three |
 | NoticeExit | `WatchExpired(uint256 watchId)` (followed by `WatchCancelled` for the same watch) | watchId |
@@ -345,7 +364,10 @@ on Base Sepolia; balances read before and after each loop; reactive gas price 10
 - The demo vault is ours. It imitates Vault V2's timelock and events; its "adapters" and "caps" are only
   recorded, the assets stay in the vault. Morpho's own `VaultV2Factory` is deployed on Base Sepolia, so a
   real Vault V2 can replace it later; `NoticeExit` and `NoticeReactive` only rely on the event shapes and
-  ERC-4626 `redeem` (the deploy and loop scripts also read `executableAt(bytes)`).
+  ERC-4626 `redeem` (the deploy and loop scripts also read `executableAt(bytes)`). The contracts after
+  2026-11-18 do that: `MorphoVaultMaker` makes real Vault V2s on Morpho's factory, with no gate and no fee
+  ever; the demo dollar in them is still ours. A Vault V2 made any other way is refused (`UnknownVault`),
+  because it may have gates, fees or a waiting period of zero.
 - The demo vault counts every demo dollar it holds as its assets (`totalAssets` is its token balance, with one
   virtual share), and `DemoToken.mint` is open to anyone. So a third party can send demo dollars to a vault
   before its first deposit and skew the share price: with 50 sent first, a deposit of 100 mints 1 share that

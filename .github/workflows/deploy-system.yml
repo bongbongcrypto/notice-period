@@ -1,14 +1,15 @@
 name: deploy-system
 
-# Deploys DemoToken, DemoVaultFactory, NoticeReactive and NoticeExit (SPEC.md section 7) with the testnet key.
+# Deploys DemoToken, MorphoVaultMaker (on Morpho's VaultV2Factory), NoticeReactive and NoticeExit (SPEC.md section 7)
+# with the testnet key, then makes one smoke vault through the maker and checks its shape.
 # Manual only, inside the "testnet" environment (main branch only; the key is the TESTNET_KEY secret).
 # Stops before sending anything if a balance is zero, unknown or too small.
 on:
   workflow_dispatch:
     inputs:
       reactive_fund:
-        description: "lREACT sent to NoticeReactive (whole coins), the operator float"
-        default: "5"
+        description: "lREACT sent to NoticeReactive (in coins, decimals allowed), the operator float"
+        default: "1"
         required: true
       exit_fund:
         description: "Base Sepolia ETH sent to NoticeExit for callback fees"
@@ -31,6 +32,8 @@ jobs:
       BASE_RPC: https://sepolia.base.org
       LASNA_RPC: https://lasna-rpc.rnk.dev/
       CALLBACK_PROXY: "0x476F44b11F5C942c58f4c8E3d0300E5710743585"
+      # Morpho's VaultV2Factory on Base Sepolia; deploy-system.sh checks it holds code and answers isVaultV2.
+      MORPHO_FACTORY: "0xE3a2CEbca662d99D0F279aF13a6bb8c9825D2ea0"
     steps:
       - name: Check out this commit (plain git, no third-party action)
         env:

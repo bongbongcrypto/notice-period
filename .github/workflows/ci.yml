@@ -77,9 +77,13 @@ jobs:
 
   dry-run:
     # The deploy and loop scripts of the testnet workflows, run against two local anvil chains with the mock network
-    # contracts at the real addresses and a relay that plays the network. Nothing leaves the runner.
+    # contracts at the real addresses and a relay that plays the network. Nothing is sent from the runner; the one
+    # network read is Morpho's factory code from Base Sepolia (scripts/dry-run.sh header).
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    outputs:
+      # real | unpinned | mock: whether Morpho's factory code in the dry run was checked against the pinned sha256.
+      factory_bytecode: ${{ steps.dryrun.outputs.factory_bytecode }}
     env:
       FOUNDRY_PROFILE: ci
       # Public anvil development keys (accounts 0 and 1 of anvil's default mnemonic), valid on the local chains only.
@@ -106,12 +110,16 @@ jobs:
         run: |
           for f in scripts/*.sh; do bash -n "$f"; done
           python3 -m py_compile scripts/mutate.py scripts/mutations.py scripts/relay-anvil.py scripts/dry-run-fund.py \
-            scripts/wait-log.py scripts/test-wait-log.py
+            scripts/wait-log.py scripts/test-wait-log.py scripts/stamp.py scripts/test-stamp.py
+
+      - name: Stamp check on a scratch copy (a hand edit inside a stamped block must fail)
+        run: python3 scripts/test-stamp.py
 
       - name: Log wait against a stub RPC (403 default agent, 413 wide ranges, failed chunk, lagging node)
         run: python3 scripts/test-wait-log.py
 
       - name: Dry run on local chains (deploy-hello, deploy-system, loop hello, loop system mode 0 and 1)
+        id: dryrun
         run: bash scripts/dry-run.sh
 
       - name: Funding dry run (three local chains, transaction and refusal checks)
