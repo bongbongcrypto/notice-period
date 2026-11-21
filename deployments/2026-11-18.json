@@ -82,7 +82,8 @@
     }
   ],
   "operators": [
-    "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4"
+    "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4",
+    "0x616FF5998E3e6AF794881Adf6Fe6cac62Cc29b19"
   ],
   "values": {
     "VAULT_TIMELOCK": 180,
