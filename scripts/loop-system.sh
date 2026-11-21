@@ -287,13 +287,20 @@ case "$action" in
     # A change the watch does not cover (a cap increase) must cause nothing at all on Lasna for this watch.
     [ $((8 & watch_kinds)) = 0 ] || die "ignored-then-exit needs a watch without the cap kind"
     stray0="$(reactive_counter strayEvents)"; unknown0="$(reactive_counter unknownEvents)"
-    l0="$(block_number "$LASNA_RPC")"
+    # From the first Lasna block after this point: the head block may hold this watch's own WatchSubscribed.
+    l0="$(($(block_number "$LASNA_RPC") + 1))"
     schedule "$vault" cap "1a. curator schedules a cap increase (not watched)"
     ignored_tx="$(last_submit)"
     sleep "${LOOP_IGNORE_WAIT:-45}"
     l1="$(block_number "$LASNA_RPC")"
-    seen="$(lasna_logs "$l0" "$l1" - "$watch_topic")"
-    n_seen="$(json_count "$seen")"
+    if [ "$l1" -ge "$l0" ]; then
+      seen="$(lasna_logs "$l0" "$l1" - "$watch_topic")"
+      n_seen="$(json_count "$seen")"
+    else
+      seen='{"count": 0, "txs": [], "logs": []}'
+      n_seen=0
+    fi
+    [ "$n_seen" = 0 ] || echo "logs of NoticeReactive for watch $watch_id after the cap increase: $seen"
     stray1="$(reactive_counter strayEvents)"; unknown1="$(reactive_counter unknownEvents)"
     st_exit="$(cast call --rpc-url "$BASE_RPC" "$NP_EXIT" 'watches(uint256)(address,uint8,uint8,uint8,address,uint256)' "$watch_id" | sed -n 4p | awk '{print $1}')"
     st_lasna="$(lasna_status "$watch_id")"
