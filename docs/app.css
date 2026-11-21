@@ -91,8 +91,8 @@ code { font-family: var(--mono); font-size: 1em; color: var(--navy); }
 /* ---------- first screen ---------- */
 .first { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--s3); padding-top: var(--s3); align-items: end; }
 .lede { display: grid; gap: var(--s3); }
-.cta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s2); max-width: 31rem; opacity: 0; animation: appear 1ms 0.5s forwards; }
-@keyframes appear { to { opacity: 1; } }
+/* Two fixed slots. A wallet being found changes which button is the filled one, never where a button is. */
+.cta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s2); max-width: 31rem; }
 .problem-line { font-size: var(--f20); line-height: 1.4; color: var(--navy); min-height: 7rem; margin-bottom: var(--s1); }
 #problem-src { min-height: 3.6rem; margin: 0; }
 .latest { grid-column: 1 / -1; margin: 0; padding: 1.5rem; background: var(--card); border: 1px solid var(--hair); border-radius: 8px; }
@@ -141,7 +141,8 @@ code { font-family: var(--mono); font-size: 1em; color: var(--navy); }
 .strip[data-stage="0"] .l-left, .strip[data-stage="1"] .l-left, .strip[data-stage="2"] .l-left { opacity: 0; }
 
 .ledger { width: 100%; border-collapse: collapse; }
-.ledger th, .ledger td { padding: 0.4375rem var(--s2) 0.4375rem 0; border-top: 1px solid var(--hair); text-align: left; vertical-align: baseline; font-size: var(--f13); line-height: 1.4; }
+.ledger th, .ledger td { padding: 0.4375rem 0.75rem 0.4375rem 0; border-top: 1px solid var(--hair); text-align: left; vertical-align: baseline; font-size: var(--f13); line-height: 1.4; }
+.ledger td { white-space: nowrap; }
 .ledger tr:first-child th, .ledger tr:first-child td { border-top: 0; }
 .ledger th { font-size: var(--f16); font-weight: 500; color: var(--navy); }
 .ledger td:last-child { padding-right: 0; }
@@ -298,7 +299,10 @@ code { font-family: var(--mono); font-size: 1em; color: var(--navy); }
   .axis-full .l-end { top: auto; bottom: -0.25rem; }
   .axis-full.late .l-back { right: 0; left: 1.75rem; top: calc(var(--pos) - 1.6rem); }
 
+  /* first screen: the three records and their links first, the drawing of the same run below them */
+  .latest .records { order: -1; }
   .ledger tr { display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.75rem; padding: var(--s1) 0; border-top: 1px solid var(--hair); }
+  .ledger td { white-space: normal; }
   /* links a thumb can hit */
   .ledger .hash, .runs .hash, .line .hash { display: inline-block; padding: 0.75rem 0; }
   .runs tbody th a { display: inline-block; padding: 0.75rem 0.75rem 0.75rem 0; }
@@ -329,14 +333,12 @@ code { font-family: var(--mono); font-size: 1em; color: var(--navy); }
 @media (prefers-reduced-motion: reduce) {
   .sk, .t-now { animation: none; }
   .tick, .lab { transition: none; }
-  .cta { animation: none; opacity: 1; }
   html { scroll-behavior: auto; }
 }
 
 @media print {
   body { background: #ffffff; }
   .skip, .top nav, .cta, .actions, #latest-check .btn, .rail { display: none; }
-  .cta { animation: none; }
   .latest, .panel { border-color: #9a9ca3; box-shadow: none; break-inside: avoid; }
   .band { margin-top: var(--s3); }
   a { text-decoration: none; }

@@ -12,7 +12,9 @@
   var ZERO = '0x' + '0'.repeat(40);
 
   var S = { epoch: 0, id: 'idle', ctx: {}, me: null, kinds: 7, step: null, started: false, last: null, shared: {}, run: {},
-    lines: null, flowState: null, pos: null, timelock: 180, processedHash: null, replayIndex: 0, linked: null };
+    lines: null, flowState: null, pos: null, timelock: 180, processedHash: null, replayIndex: 0, linked: null,
+    /* vaults this page session has seen: the block each was created in, and the scheduled changes read so far */
+    made: {}, seen: {} };
   var data = { runs: [], next: null, ready: null, baseTs: null, float: null, liveOk: null };
   var framed = false;
   try { framed = window.top !== window.self; } catch (e) { framed = true; }
@@ -36,6 +38,8 @@
     return { chain: cfg.chains[chain].name, tried: n === 1 ? 'its one public endpoint' : 'both public endpoints' };
   }
   function alive(my) { if (my !== S.epoch) { var e = new Error('cancelled'); e.cancelled = true; throw e; } }
+  /* A log read that failed says nothing about the vault's age: the page asks to try again, it never calls the vault old. */
+  function unread() { return stop('rpc-down', rpcCtx('base')); }
 
   function go(id, extra) {
     var def = NP.states[id];
@@ -188,23 +192,42 @@
     pos.vaultSupply = bigOr0(second[5]);
     /* judged only on a full answer; an empty one is settled by the reads right before the deposit */
     pos.tampered = known(second[4]) && known(second[5]) && !fairDeposit(pos.vaultAssets, pos.vaultSupply);
+    /* When was this vault made, and which changes are scheduled on it. Three outcomes are kept apart:
+       fresh (made within the window this page can search), not fresh (searched, not found: an older vault), and
+       logsFailed (a read did not answer: not known). A vault this session created is known from its own receipt,
+       so its reads start at that block and stay small enough for either endpoint. */
+    var key = vault.toLowerCase();
     try {
-      var from = Math.max(0, head.number - cfg.scan.baseVaultWindow + 1);
-      var made = await rpc.getLogs('base', { address: C.factory, topics: [EV['VaultCreated(address,address)'], topicA(vault)] }, from, head.number);
-      if (made.length) {
-        pos.created = Number(BigInt(made[0].blockNumber));
+      if (S.made[key] === undefined) {
+        var from = Math.max(0, head.number - cfg.scan.baseVaultWindow + 1);
+        var made = await rpc.getLogs('base', { address: C.factory, topics: [EV['VaultCreated(address,address)'], topicA(vault)] }, from, head.number);
+        if (made.length) S.made[key] = Number(BigInt(made[0].blockNumber));
+      }
+      if (S.made[key] !== undefined) {
+        pos.created = S.made[key];
         pos.fresh = true;
-        var logs = await rpc.getLogs('base', { address: vault, topics: [EV['Submit(bytes4,bytes,uint256)']] }, pos.created, head.number);
-        pos.submits = logs.map(function (l) {
-          var s = dec.submit(l);
-          s.hash = l.transactionHash;
-          s.block = Number(BigInt(l.blockNumber));
-          return s;
-        });
+        var memo = S.seen[key] || (S.seen[key] = { upto: pos.created - 1, list: [], ids: {} });
+        /* only the blocks since the last read, a few of them again in case an endpoint was behind */
+        var start = Math.max(pos.created, memo.upto - 9);
+        if (head.number >= start) {
+          var logs = await rpc.getLogs('base', { address: vault, topics: [EV['Submit(bytes4,bytes,uint256)']] }, start, head.number);
+          logs.forEach(function (l) {
+            var id = l.transactionHash + ':' + (l.logIndex || l.data);
+            if (memo.ids[id]) return;
+            memo.ids[id] = true;
+            var sb = dec.submit(l);
+            sb.hash = l.transactionHash;
+            sb.block = Number(BigInt(l.blockNumber));
+            memo.list.push(sb);
+          });
+          memo.upto = head.number;
+        }
+        pos.submits = memo.list.slice();
       }
     } catch (e) {
-      if (!(e && (e.rpcDown || e.rpcError))) throw e;
-      pos.fresh = false;
+      if (!rpcFail(e)) throw e;
+      pos.logsFailed = true;
+      if (pos.fresh && S.seen[key]) pos.submits = S.seen[key].list.slice(); /* what was read before; may be incomplete */
     }
     if (pos.watchId) {
       /* Reactive Lasna has one public endpoint. When it does not answer, the Base Sepolia side is still read, so a
@@ -347,7 +370,7 @@
     if (pos.eth < BigInt(cfg.amounts.minGasWei)) throw stop('no-gas', { address: S.me });
     var active = S.shared.hasWatch;
     if (active || pos.shares > 0n) {
-      if (!active && !pos.fresh) throw stop('old-vault');
+      if (!active && !pos.fresh) throw pos.logsFailed ? unread() : stop('old-vault');
       var ts = active ? pos.armedAt : null;
       if (!ts && pos.created) ts = await rpc.blockTs('base', rpc.hex(pos.created));
       alive(my);
@@ -391,6 +414,15 @@
       if (ls === 4) throw stop('watch-refused', { reason: copy.refusedGone });
       if (ls === 0) { go('armed-subscribing'); return watchSubscription(my); }
       var pending = watchedPending(pos);
+      if (!pending && pos.logsFailed) {
+        /* The vault's scheduled changes could not be read. A run this session is already following goes on;
+           otherwise the page asks to try again instead of guessing that nothing is pending. */
+        if (!keep) throw unread();
+        S.run = keep;
+        S.run.shift = 0;
+        showWait();
+        return watchRecords(my);
+      }
       if (pending) {
         if (keep && same(keep.r1.hash, pending.hash)) {
           S.run = keep;
@@ -425,7 +457,7 @@
       if (ended) return finish(my, ended);
     }
     if (pos.shares > 0n) {
-      if (!pos.fresh) throw stop('old-vault');
+      if (!pos.fresh) throw pos.logsFailed ? unread() : stop('old-vault');
       return showDeposited(pos);
     }
     return showStepDeposit(my, pos);
@@ -434,7 +466,7 @@
   /* ---------- step 1: deposit ---------- */
 
   function planDeposit(pos) {
-    var empty = !!(pos.vault && pos.fresh && !pos.submits.length && pos.shares === 0n && !S.shared.hasWatch);
+    var empty = !!(pos.vault && pos.fresh && !pos.logsFailed && !pos.submits.length && pos.shares === 0n && !S.shared.hasWatch);
     var reuse = empty && !pos.tampered;
     S.tamperNote = empty && pos.tampered ? copy.tamperedReuse : null;
     var L = copy.depositLines;
@@ -470,6 +502,7 @@
     var pos = await readPosition();
     alive(my);
     if (S.shared.hasWatch || (pos.shares > 0n && pos.fresh)) return continueFrom(my);
+    if (pos.shares > 0n && pos.logsFailed) throw unread();
     if (pos.eth < BigInt(cfg.amounts.minGasWei)) throw stop('no-gas', { address: S.me });
     var blk = await capsBlock();
     alive(my);
@@ -485,6 +518,7 @@
       var made = rec.logs.filter(function (l) { return same(l.address, C.factory) && l.topics[0] === EV['VaultCreated(address,address)']; })[0];
       if (!made) throw stop('tx-failed', { plain: 'The vault was not created', name: '', tx: rec.transactionHash });
       vault = dec.topicAddr(made.topics[1]);
+      S.made[vault.toLowerCase()] = Number(BigInt(rec.blockNumber)); /* its age is known from here on, whatever a later log read does */
       await refuseTampered(my, vault); /* before the visitor signs anything else for this vault */
     }
     if (S.lines[1].status === 'todo') await sendTx(my, 1, C.token, enc.mint(S.me, DEP));
@@ -526,6 +560,7 @@
   function showDeposited(pos) {
     S.lines = null;
     var line = pos.submits.length ? view.fillText(copy.pendingSome, { n: pos.submits.length }) : copy.pendingNone;
+    if (pos.logsFailed) line = copy.pendingUnread;
     go('deposited', { pendingLine: pos.fresh ? line : '' });
     view.setKindsWarn(S.kinds ? '' : copy.kindsNone);
   }
@@ -536,7 +571,8 @@
     var pos = await readPosition();
     alive(my);
     if (S.shared.hasWatch || pos.shares === 0n) return continueFrom(my);
-    if (!pos.fresh) throw stop('old-vault');
+    if (!pos.fresh) throw pos.logsFailed ? unread() : stop('old-vault');
+    if (!cfg.flags.unprovenKinds) S.kinds |= 1;
     if (!S.kinds) return showDeposited(pos);
     var blk = await capsBlock();
     alive(my);
@@ -644,6 +680,8 @@
       var pos = await readPosition();
       alive(my);
       if (!S.shared.hasWatch) return continueFrom(my);
+      /* only a kind the curator buttons offer (flags.unprovenKinds) */
+      if (!NP.playable(pos.base.kinds).some(function (k) { return k.bit === bit; })) return continueFrom(my);
       var kind = kindOf(bit) || kindOf(1);
       var inner = changeFor(kind.bit);
       var lh = await rpc.head('lasna');
@@ -1126,7 +1164,9 @@
     var d2 = fmt.sec(run.r2.ts, run.r1.ts), d3 = fmt.sec(run.r3.ts, run.r1.ts);
     /* A long wait is played back faster, and the screen says so. */
     var speed = d3 > T.replayLong ? d3 / T.replayPlay : 1;
-    var ctx = { id: run.id, date: fmt.date(run.r1.ts), check: run.checked ? copy.checkOk : copy.checking, model: m,
+    /* This replay's own check: the three receipts are read again now. An earlier check in the session does not count. */
+    var checking = readRun(run.id, run.r1.hash, run.r2.hash, run.r3.hash).then(function () { return true; }, function () { return false; });
+    var ctx = { id: run.id, date: fmt.date(run.r1.ts), check: copy.checking, model: m,
       modeLine: deadline ? view.fillText(copy.replayDeadline, { s: d2, left: Math.max(0, run.execAt - run.r3.ts) }) : '',
       fastLine: speed > 1 && !reduced ? view.fillText(copy.replayFast, { s: d2, play: T.replayPlay }) : '' };
     S.started = false;
@@ -1144,11 +1184,8 @@
       m.stage = el >= d3 + 0.4 * speed ? 3 : (el >= d2 + 0.4 * speed ? 2 : 1);
       view.tickStrip(m);
     }
-    var ok = run.checked;
-    if (!ok) {
-      try { await readRun(run.id, run.r1.hash, run.r2.hash, run.r3.hash); ok = true; } catch (e) { ok = false; }
-      alive(my);
-    }
+    var ok = await checking;
+    alive(my);
     ctx.check = ok ? copy.checkOk : view.fillText(copy.checkFail, { date: fmt.isoDate(NP.recorded.readAt) });
     go('replay', ctx);
   }
@@ -1289,6 +1326,7 @@
       case 'copy-text': return copyText(ctx.text, ctx.button);
       case 'kinds':
         S.kinds = ctx.on ? (S.kinds | ctx.bit) : (S.kinds & ~ctx.bit);
+        if (!cfg.flags.unprovenKinds) S.kinds |= 1;
         view.setKindsWarn(S.kinds ? '' : copy.kindsNone);
         return;
       default: view.enableActions();

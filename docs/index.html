@@ -13,6 +13,7 @@
 <meta name="twitter:card" content="summary">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="app.css">
+<script defer src="guard.js"></script>
 <script defer src="config.js"></script>
 <script defer src="sig.js"></script>
 <script defer src="abi.js"></script>
@@ -42,8 +43,8 @@
   <div class="lede">
     <h1 id="h1">Your deposit withdraws itself before a vault rule change takes effect.</h1>
     <div class="cta" id="cta">
-      <a class="btn btn-primary" id="cta-try" href="#try">Try it with a test wallet</a>
-      <a class="btn btn-second" id="cta-replay" href="#try">Replay a real run</a>
+      <a class="btn btn-primary" id="cta-replay" href="#try">Replay a real run</a>
+      <a class="btn btn-second" id="cta-try" href="#try">Try it with a test wallet</a>
     </div>
   </div>
   <div class="problem">
@@ -106,7 +107,7 @@
       <li><span class="num">4</span> Result<span class="vh"></span></li>
     </ol>
     <div class="state" id="state" tabindex="-1">
-      <noscript><p>The guided run and the replay need JavaScript. The recorded runs on this page are real and their links work without it.</p></noscript>
+      <p id="boot-line">The guided run and the replay need this page&rsquo;s scripts. The recorded runs on this page are real and their links work without them.</p>
     </div>
     <p class="vh" id="live" aria-live="polite"></p>
   </div>
@@ -240,7 +241,7 @@
       <tr>
         <th scope="row">Blocks about one second apart</th>
         <td data-l="Here">In run #1 Reactive&rsquo;s transaction carries the same second as the vault&rsquo;s event, and the deposit was back 2 s later. Every run shows its seconds.</td>
-        <td data-l="Without it">The exit would still beat a waiting period of days. It counts when the notice is short, as in this 3-minute demo.</td>
+        <td data-l="Without it">The exit would still beat a waiting period of days. It counts when the notice is short, like the 3&nbsp;minutes of this&nbsp;demo.</td>
       </tr>
     </tbody>
   </table>

@@ -121,8 +121,8 @@
   function hex(n) { return '0x' + BigInt(n).toString(16); }
 
   /* eth_getLogs over [from, to]. Each endpoint is asked in the windows it accepts: the first one whole if it can,
-     the next one only when the first does not answer. An endpoint that would need more than 12 windows for the
-     range is not asked at all. */
+     the next one only when the first does not answer or answers with an error. An endpoint that would need more
+     than 12 windows for the range is not asked at all. */
   function getLogs(chain, filter, from, to) {
     from = Math.max(0, from);
     var span = to - from + 1;
@@ -151,7 +151,7 @@
       if (k >= eps.length) return Promise.reject(RpcDown(chain, eps.length));
       var ep = eps[k++];
       return windows(ep).catch(function (err) {
-        if (err && err.rpcDown) return next();
+        if (err && (err.rpcDown || err.rpcError)) return next();
         throw err;
       });
     }

@@ -437,17 +437,21 @@
   function ruleNode(ctx) {
     var fs = el('fieldset', 'rule');
     fs.appendChild(el('legend', null, NP.copy.ruleHeading));
+    /* With flags.unprovenKinds off the curator step schedules a new adapter, so that kind stays in every watch. */
+    var locked = cfg.flags.unprovenKinds ? 0 : 1;
     cfg.kinds.forEach(function (k) {
       var lab = el('label', 'check');
       var box = el('input');
       box.type = 'checkbox';
-      box.checked = (ctx.kinds & k.bit) !== 0;
+      box.checked = ((ctx.kinds | locked) & k.bit) !== 0;
+      box.disabled = (locked & k.bit) !== 0;
       box.setAttribute('data-bit', String(k.bit));
       box.addEventListener('change', function () { handler('kinds', { bit: k.bit, on: box.checked }); });
       lab.appendChild(box);
       lab.appendChild(el('span', null, k.label));
       fs.appendChild(lab);
     });
+    if (locked) fs.appendChild(el('p', 'small', NP.copy.kindLocked));
     var p = el('p', 'small', ctx.pendingLine || '');
     p.id = 'pending-line';
     fs.appendChild(p);
@@ -569,19 +573,10 @@
     for (var i = 0; i < all.length; i++) all[i].disabled = false;
   }
 
+  /* Which first-screen button is the filled one: the replay until a wallet is found. The buttons keep their places. */
   function ctaOrder(noWallet) {
-    var box = $('cta');
-    var tryB = $('cta-try');
-    var rep = $('cta-replay');
-    if (noWallet) {
-      box.insertBefore(rep, tryB);
-      rep.className = 'btn btn-primary';
-      tryB.className = 'btn btn-second';
-    } else {
-      box.insertBefore(tryB, rep);
-      tryB.className = 'btn btn-primary';
-      rep.className = 'btn btn-second';
-    }
+    $('cta-replay').className = 'btn ' + (noWallet ? 'btn-primary' : 'btn-second');
+    $('cta-try').className = 'btn ' + (noWallet ? 'btn-second' : 'btn-primary');
   }
 
   NP.view = {

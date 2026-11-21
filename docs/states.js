@@ -13,16 +13,23 @@
   var WITHDRAW_IF = { a: 'withdraw', label: 'Withdraw my deposit now', when: 'hasDeposit' };
   var STILL_IN = { t: 'Your 100 demo dollars are still in your vault. You can take them out now.', when: 'hasDeposit' };
 
-  /* The kinds of change the page can schedule as the curator, split by what this watch covers. */
-  function split(ctx) {
+  /* The kinds of change this page schedules as the curator. With flags.unprovenKinds off: a new adapter, and a cap
+     increase only while the watch does not cover it (the case where nothing should move). */
+  NP.playable = function (kinds) {
     var K = NP.config.kinds;
+    if (NP.config.flags.unprovenKinds) return K;
+    return K.filter(function (k) { return k.bit === 1 || (k.bit === 8 && (kinds & 8) === 0); });
+  };
+  /* Those kinds, split by what this watch covers. */
+  function split(ctx) {
     var kinds = ctx.kinds || 0;
-    return { covered: K.filter(function (k) { return (kinds & k.bit) !== 0; }), rest: K.filter(function (k) { return (kinds & k.bit) === 0; }) };
+    var K = NP.playable(kinds);
+    return { all: K, covered: K.filter(function (k) { return (kinds & k.bit) !== 0; }), rest: K.filter(function (k) { return (kinds & k.bit) === 0; }) };
   }
   /* Primary: a kind the watch covers. Second: one it does not cover (a cap increase when possible), to show that nothing moves. */
   function curatorPair(ctx) {
     var s = split(ctx);
-    var first = s.covered[0] || NP.config.kinds[0];
+    var first = s.covered[0] || s.all[0];
     var second = s.rest.filter(function (k) { return k.bit === 8; })[0] || s.rest[0] ||
       s.covered.filter(function (k) { return k !== first; }).slice(-1)[0] || null;
     return [first, second];
@@ -380,6 +387,7 @@
     ruleHeading: 'Leave when the curator schedules',
     pendingNone: 'Changes already scheduled on this vault: none.',
     pendingSome: 'Changes already scheduled on this vault: {n}. A watch turned on now will not see them.',
+    pendingUnread: 'Changes already scheduled on this vault: could not be read just now.',
     curatorIntro: 'Now play the curator. On a real vault this is the operator, not you. Schedule a rule change and see what your deposit does.',
     curatorTimelock: 'This vault’s waiting period is {min} minutes. Real vaults use days.',
     hintCovered: 'your watch covers it, so the deposit should leave.',
@@ -411,6 +419,7 @@
     checking: 'Reading the three receipts from both chains…',
     watchStillOn: 'The watch is still on.',
     watchNone: 'No watch is on.',
-    kindsNone: 'Pick at least one kind of change.'
+    kindsNone: 'Pick at least one kind of change.',
+    kindLocked: 'A new adapter stays on in this demo: it is the change you schedule as the curator in the next step.'
   };
 }());
