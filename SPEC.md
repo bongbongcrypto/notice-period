@@ -325,8 +325,9 @@ pair, with 80 reactions per watch, the formula gives about 1.1 lREACT for one wa
 10 arms of a day. With the values of `scripts/deploy-system.sh`, it gives about 0.27 lREACT for a mode-1 watch
 that uses its 16 reactions (the 17th asks for the exit) and about 0.063 for a mode-0 watch, so about 4 lREACT for
 a day with every cap used (4 mode-1 and 46 mode-0 arms). That day counts each arm once and fires it; a day of
-arms that never fire, each cancelled, plus four timer watches storing 256-byte changes up to their budget, comes
-to about 5 lREACT. These are estimates, not bounds: the measured mode-1 loop below cost 0.1607 lREACT, more than
+arms that never fire, each cancelled (one reaction per cancel), plus four timer watches storing changes up to their
+budget, also comes to about 4 lREACT by the formula. A 256-byte stored change costs more per reaction than 0.013
+(about 0.035 by our estimate), which puts that day nearer 5. These are estimates, not bounds: the measured mode-1 loop below cost 0.1607 lREACT, more than
 the formula gives for its reactions, and a large stored change costs more per reaction. Two costs are outside
 these estimates and must be watched on the live float: stray events after a
 silent unsubscribe (counted in `strayEvents`, billed by the network), and callbacks that anyone can make the
