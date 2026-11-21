@@ -1,0 +1,63 @@
+name: health
+
+# Health check of one deployment (scripts/health.sh): reads the float, both debts, the exit reserve and the stray and
+# unknown counters; turns off key B's own leftover health watches; runs one "leave now" loop on a fresh vault with
+# key B; expires timer watches past their lease. Key B only: it is derived from the testnet key and masked, and this
+# workflow never sends from key A and never funds key B (a loop dispatch with depositor b does that).
+# Manual only for now. A schedule is added later, after the evidence runs, and only with the guard
+# `github.event.repository.private == false` on the job.
+on:
+  workflow_dispatch:
+    inputs:
+      deployment:
+        description: "name of deployments/<name>.json"
+        default: "2026-11-18"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testnet-key
+  cancel-in-progress: false
+
+jobs:
+  health:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: testnet
+    env:
+      BASE_RPC: https://sepolia.base.org
+      LASNA_RPC: https://lasna-rpc.rnk.dev/
+    steps:
+      - name: Check out this commit (plain git, no third-party action)
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          git init -q .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          echo "::add-mask::${auth}"
+          git -c http.extraheader="AUTHORIZATION: basic ${auth}" fetch -q --depth 1 origin "${GITHUB_SHA}"
+          git checkout -q FETCH_HEAD
+          git log -1 --format='%H %s'
+
+      - name: Install pinned Foundry, solc and libraries
+        run: bash scripts/ci-setup.sh
+
+      - name: Read the deployment file
+        id: dep
+        env:
+          DEPLOYMENT: ${{ inputs.deployment }}
+        run: python3 scripts/deployment.py "$DEPLOYMENT" --github-output
+
+      - name: Health (key B only)
+        env:
+          DEPLOY_KEY: ${{ secrets.TESTNET_KEY }}
+          NP_TOKEN: ${{ steps.dep.outputs.token }}
+          NP_FACTORY: ${{ steps.dep.outputs.factory }}
+          NP_EXIT: ${{ steps.dep.outputs.exit }}
+          NP_REACTIVE: ${{ steps.dep.outputs.reactive }}
+          LOOP_FACTORY_KIND: ${{ steps.dep.outputs.factory_kind }}
+          HEALTH_MIN_FLOAT: ${{ steps.dep.outputs.health_min_float }}
+          LOOP_RUN_ID: ${{ github.run_id }}
+        run: bash scripts/health.sh

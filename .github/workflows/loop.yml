@@ -1,34 +1,55 @@
 name: loop
 
 # Fires the origin event on Base Sepolia, waits for the reactive transaction on Lasna and the callback on
-# Base Sepolia, and prints the three transaction hashes with the seconds between them.
-# Manual only, inside the "testnet" environment (it sends transactions with the testnet key).
+# Base Sepolia, and prints the three transaction hashes with the seconds between them; or one of the other evidence
+# actions of scripts/loop-system.sh (its header lists them).
+# Manual only, inside the "testnet" environment (it sends transactions with the testnet key, and with key B, which
+# scripts/chain.sh derives from it and masks). The system addresses come from deployments/<deployment>.json, the one
+# hand-edited place for addresses. The run record (run.json) is printed into the job summary and the log, between
+# the lines NP-RUN-JSON-BEGIN and NP-RUN-JSON-END (scripts/runs.py --fetch reads it from there).
 on:
   workflow_dispatch:
     inputs:
       which:
-        description: "hello = Ping/Relayed/Ponged; system = curator action/ExitRequested/WatchEnded"
+        description: "hello = Ping/Relayed/Ponged; system = the Notice Period contracts of the deployment below"
         type: choice
         options: [hello, system]
-        default: hello
-      origin_or_token:
-        description: "hello: HelloOrigin address; system: DemoToken address"
-        required: true
-      reactive:
-        description: "HelloReactive or NoticeReactive address (Lasna)"
-        required: true
-      callback_or_exit:
-        description: "hello: HelloCallback address; system: NoticeExit address"
-        required: true
-      factory:
-        description: "system only: DemoVaultFactory address"
-        required: false
+        default: system
+      deployment:
+        description: "system: name of deployments/<name>.json (vault maker or demo factory, token, exit, reactive)"
+        default: "2026-11-18"
+      hello_addresses:
+        description: "hello only: HelloOrigin, HelloReactive, HelloCallback addresses, separated by spaces"
         default: ""
       mode:
-        description: "system only: 0 leave now, 1 leave if still pending"
+        description: "system: 0 leave now, 1 leave if still pending"
         type: choice
         options: ["0", "1"]
         default: "0"
+      kind:
+        description: "system: the change the curator schedules"
+        type: choice
+        options: [adapter, timelock, allocator, cap]
+        default: adapter
+      action:
+        description: "system: exit | ignored-then-exit | revoke-stays (mode 1) | arm-only | fire | burst | cancel | expire-stale | topup"
+        type: choice
+        options: [exit, ignored-then-exit, revoke-stays, arm-only, fire, burst, cancel, expire-stale, topup]
+        default: exit
+      depositor:
+        description: "system: key that deposits and owns the watch (a = testnet key, b = key derived from it)"
+        type: choice
+        options: [a, b]
+        default: a
+      vault:
+        description: "system, fire or burst: an existing vault"
+        default: ""
+      watch:
+        description: "system, fire or cancel: an existing watch id"
+        default: ""
+      topup:
+        description: "system, topup: lREACT moved from key A to NoticeReactive (decimals allowed)"
+        default: ""
 
 permissions:
   contents: read
@@ -62,33 +83,58 @@ jobs:
       - name: Install pinned Foundry, solc and libraries
         run: bash scripts/ci-setup.sh
 
-      - name: Check the addresses
+      - name: Read the deployment file
+        id: dep
+        if: inputs.which == 'system'
         env:
-          A1: ${{ inputs.origin_or_token }}
-          A2: ${{ inputs.reactive }}
-          A3: ${{ inputs.callback_or_exit }}
-          A4: ${{ inputs.factory }}
-          WHICH: ${{ inputs.which }}
+          DEPLOYMENT: ${{ inputs.deployment }}
+        run: python3 scripts/deployment.py "$DEPLOYMENT" --github-output
+
+      - name: Check the hello addresses
+        if: inputs.which == 'hello'
+        env:
+          HELLO_ADDRESSES: ${{ inputs.hello_addresses }}
         run: |
-          for a in "$A1" "$A2" "$A3"; do [[ "$a" =~ ^0x[0-9a-fA-F]{40}$ ]] || { echo "not an address: $a"; exit 1; }; done
-          if [ "$WHICH" = system ]; then [[ "$A4" =~ ^0x[0-9a-fA-F]{40}$ ]] || { echo "factory address needed"; exit 1; }; fi
+          read -r a1 a2 a3 rest <<<"$HELLO_ADDRESSES"
+          [ -z "${rest:-}" ] || { echo "three addresses expected"; exit 1; }
+          for a in "$a1" "$a2" "$a3"; do [[ "$a" =~ ^0x[0-9a-fA-F]{40}$ ]] || { echo "not an address: $a"; exit 1; }; done
 
       - name: Hello-world loop
         if: inputs.which == 'hello'
         env:
           DEPLOY_KEY: ${{ secrets.TESTNET_KEY }}
-          HELLO_ORIGIN: ${{ inputs.origin_or_token }}
-          HELLO_REACTIVE: ${{ inputs.reactive }}
-          HELLO_CALLBACK: ${{ inputs.callback_or_exit }}
-        run: bash scripts/loop-hello.sh
+          HELLO_ADDRESSES: ${{ inputs.hello_addresses }}
+        run: |
+          read -r HELLO_ORIGIN HELLO_REACTIVE HELLO_CALLBACK <<<"$HELLO_ADDRESSES"
+          export HELLO_ORIGIN HELLO_REACTIVE HELLO_CALLBACK
+          bash scripts/loop-hello.sh
 
-      - name: System loop (visitor journey)
+      - name: System loop
         if: inputs.which == 'system'
         env:
           DEPLOY_KEY: ${{ secrets.TESTNET_KEY }}
-          NP_TOKEN: ${{ inputs.origin_or_token }}
-          NP_REACTIVE: ${{ inputs.reactive }}
-          NP_EXIT: ${{ inputs.callback_or_exit }}
-          NP_FACTORY: ${{ inputs.factory }}
+          NP_TOKEN: ${{ steps.dep.outputs.token }}
+          NP_FACTORY: ${{ steps.dep.outputs.factory }}
+          NP_EXIT: ${{ steps.dep.outputs.exit }}
+          NP_REACTIVE: ${{ steps.dep.outputs.reactive }}
+          LOOP_FACTORY_KIND: ${{ steps.dep.outputs.factory_kind }}
           LOOP_MODE: ${{ inputs.mode }}
+          LOOP_KIND: ${{ inputs.kind }}
+          LOOP_ACTION: ${{ inputs.action }}
+          LOOP_DEPOSITOR: ${{ inputs.depositor }}
+          LOOP_CURATOR: a
+          LOOP_VAULT: ${{ inputs.vault }}
+          LOOP_WATCH: ${{ inputs.watch }}
+          LOOP_TOPUP: ${{ inputs.topup }}
+          LOOP_RUN_ID: ${{ github.run_id }}
+          LOOP_FUND_B: "1"
+          LOOP_B_GAS: "0.002"
+          LOOP_RUN_JSON: ${{ runner.temp }}/run.json
         run: bash scripts/loop-system.sh
+
+      - name: Run record (run.json) into the summary and the log
+        if: always() && inputs.which == 'system'
+        env:
+          RUN_JSON: ${{ runner.temp }}/run.json
+          DEPLOYMENT: ${{ inputs.deployment }}
+        run: python3 scripts/runs.py --emit "$RUN_JSON" --deployment "$DEPLOYMENT" --run-id "$GITHUB_RUN_ID"
