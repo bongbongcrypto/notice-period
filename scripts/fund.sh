@@ -273,29 +273,29 @@ base_target="$(add_wei "$base_before" "$base_wei")"
 [ "$base_seen" = skipped ] || base_seen=no
 echo "Waiting up to $poll_timeout s for credits"
 deadline=$((SECONDS + poll_timeout))
-while [ "$SECONDS" -lt "$deadline" ]; do
+# Read every 15 s, and once more when the window ends: with a window of 16 s, a loop that stopped at the deadline
+# read only at the start and missed a credit that came a second later. Each read may add up to 10 s.
+while :; do
+  last=0
+  [ "$SECONDS" -lt "$deadline" ] || last=1
   if [ "$react_seen" = no ]; then
-    remaining=$((deadline - SECONDS))
-    [ "$remaining" -gt 0 ] || break
-    if now="$(read_balance "$LASNA_RPC" "$((remaining < 10 ? remaining : 10))")"; then
+    if now="$(read_balance "$LASNA_RPC" 10)"; then
       if wei_ge "$now" "$lasna_target"; then react_seen=yes; fi
     else
       echo "Lasna credit: balance unknown, retrying"
     fi
   fi
-  if [ "$base_seen" = no ] && [ "$SECONDS" -lt "$deadline" ]; then
-    remaining=$((deadline - SECONDS))
-    [ "$remaining" -gt 0 ] || break
-    if now="$(read_balance "$BASE_RPC" "$((remaining < 10 ? remaining : 10))")"; then
+  if [ "$base_seen" = no ]; then
+    if now="$(read_balance "$BASE_RPC" 10)"; then
       if wei_ge "$now" "$base_target"; then base_seen=yes; fi
     else
       echo "Base Sepolia credit: balance unknown, retrying"
     fi
   fi
   if [ "$react_seen" != no ] && [ "$base_seen" != no ]; then break; fi
-  [ "$SECONDS" -lt "$deadline" ] || break
+  [ "$last" = 0 ] || break
   remaining=$((deadline - SECONDS))
-  sleep "$((remaining < 15 ? remaining : 15))"
+  [ "$remaining" -le 0 ] || sleep "$((remaining < 15 ? remaining : 15))"
 done
 if [ "$base_seen" = no ]; then
   credit_warning="Base Sepolia credit not observed within $poll_timeout s. Bridge deposits can take longer; check the explorer and do not resend."
