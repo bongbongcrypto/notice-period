@@ -415,6 +415,16 @@ exec "$FUND_REAL_CAST" "$@"
         require("WARNING: Base Sepolia credit not observed" in report, "missing Base credit must warn")
     check("lasna-only", lasna_only)
 
+    def credit_after_first_read():
+        # The credit lands after the first read and long before the 16 s window ends: only the read at the end of
+        # the window sees it (the loop once slept 15 s and stopped at the deadline without reading again).
+        reset()
+        _, report = run("credit-after-first-read", {"FUND_POLL_TIMEOUT": "16"}, credit="both", credit_delay=7)
+        assert_sends(2)
+        require("Lasna credit observed: yes" in report and "Base Sepolia credit observed: yes" in report,
+                "a credit inside the window was missed")
+    check("credit-after-first-read", credit_after_first_read)
+
     def short_lasna():
         reset()
         _, report = run("short-lasna", {"FUND_POLL_TIMEOUT": "16"}, credit="short",
