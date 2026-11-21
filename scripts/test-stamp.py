@@ -133,13 +133,18 @@ with tempfile.TemporaryDirectory() as tmp:
     list_contracts["contracts"] = []
     list_rules = deployment()
     list_rules["rules"] = ["maker"]
+    false_values = deployment()
+    false_values["values"] = False
     malformed = [("a JSON list", "[]"), ("a JSON string", '"deployed"'), ("no origin", json.dumps(no_origin)),
-                 ("contracts as a list", json.dumps(list_contracts)), ("rules as a list", json.dumps(list_rules))]
+                 ("contracts as a list", json.dumps(list_contracts)), ("rules as a list", json.dumps(list_rules)),
+                 ("values as false", json.dumps(false_values))]
     for label, raw in malformed:
         r = fresh(tmp)
         (r / "deployments" / "current.json").write_text(raw, encoding="utf-8")
         rc, out = stamp(r)
         expect(f"{label} refused", rc, 2, out)
+        if label in ("contracts as a list", "values as false"):  # an empty or false part is not taken for {}
+            expect(f"{label} named as not an object", int("is not a JSON object" in out), 1, out)
         expect(f"{label} writes nothing", int((r / "docs").exists()), 0)
 
     # The demo-factory shape (the 18 Nov 2026 deployment): no maker, no timer values, leave-now watches expire.

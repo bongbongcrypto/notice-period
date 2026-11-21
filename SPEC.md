@@ -321,12 +321,14 @@ A watch the reactive contract refuses (caps above) is reported by `WatchRefused`
 can cancel it on Base Sepolia and arm again later.
 
 Computed, not measured: about 0.013 lREACT per reactive transaction plus about 0.05 per arming. On the 11-18
-pair, with 80 reactions per watch, one watch costs at most about 1.5 lREACT, and the 10 arms a day at most about
-15 lREACT a day. With the values of `scripts/deploy-system.sh`, the same formula gives about 0.27 lREACT for a
-mode-1 watch that uses its 16 reactions (the 17th asks for the exit) and about 0.063 for a mode-0 watch, so
-about 4 lREACT for a day with every cap used (4 mode-1 and 46 mode-0 arms). These are estimates, not bounds:
-the measured mode-1 loop below cost 0.1607 lREACT, more than the formula gives for its reactions, and a large
-stored change costs more per reaction. Two costs are outside this bound and must be watched on the live float: stray events after a
+pair, with 80 reactions per watch, the formula gives about 1.1 lREACT for one watch and about 11 lREACT for the
+10 arms of a day. With the values of `scripts/deploy-system.sh`, it gives about 0.27 lREACT for a mode-1 watch
+that uses its 16 reactions (the 17th asks for the exit) and about 0.063 for a mode-0 watch, so about 4 lREACT for
+a day with every cap used (4 mode-1 and 46 mode-0 arms). That day counts each arm once and fires it; a day of
+arms that never fire, each cancelled, plus four timer watches storing 256-byte changes up to their budget, comes
+to about 5 lREACT. These are estimates, not bounds: the measured mode-1 loop below cost 0.1607 lREACT, more than
+the formula gives for its reactions, and a large stored change costs more per reaction. Two costs are outside
+these estimates and must be watched on the live float: stray events after a
 silent unsubscribe (counted in `strayEvents`, billed by the network), and callbacks that anyone can make the
 proxy bill to `NoticeExit` through their own reactive contracts (section 11).
 
@@ -411,7 +413,9 @@ on Base Sepolia; balances read before and after each loop; reactive gas price 10
   a change shortly before the lease ends and expires the watch when it ends makes Lasna close the watch and
   forget the change without an exit (pinned by `test_expiry_at_lease_end_drops_a_stored_change`). So a mode-1
   watch is sure to serve only changes scheduled at least `MAX_WAIT - LEAD` seconds (80 s as deployed by
-  `scripts/deploy-system.sh`, 780 s on the 11-18 pair), plus the delivery time, before its lease ends. A mode-0 watch has no expiry and ends only when it fires or its owner cancels it. On the 11-18
+  `scripts/deploy-system.sh`, 780 s on the 11-18 pair) before its lease ends, plus the delivery time and the
+  timer's queue: it asks for one exit per tick, so a watch due with the other timer watches can wait up to
+  `MAX_TIMED` ticks (8 x about 10.7 s, about 86 s). A mode-0 watch has no expiry and ends only when it fires or its owner cancels it. On the 11-18
   deployment every watch, mode 0 included, can still be expired after one day.
 - The callback gas limit stays 600,000 on the newer contracts too (about 415,000 reaches `exit`). A maker vault
   as made has no adapter, which keeps its redeem cheap (not yet measured on chain). Its curator can still add

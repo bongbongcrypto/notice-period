@@ -66,7 +66,7 @@ def load(path):
                 or not isinstance(chain.get("chainId"), int) or isinstance(chain.get("chainId"), bool)):
             raise StampError(f"{path}: {side} needs a name and a whole-number chainId: {chain!r}")
     for part, kind in (("contracts", dict), ("values", dict), ("rules", dict), ("operators", list)):
-        if not isinstance(doc.get(part) or kind(), kind):
+        if part in doc and not isinstance(doc[part], kind):
             raise StampError(f"{path}: {part} is not a JSON {'object' if kind is dict else 'list'}")
     contracts = doc.get("contracts") or {}
     shape = "maker" if contracts.get("maker") else "demo"
