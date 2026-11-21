@@ -129,7 +129,8 @@ exhaustive search.
 - The demo vault and the demo dollar are ours and have no value. The vault copies the timelock and the events of
   Morpho Vault V2; it is not Morpho's vault, and this project is not affiliated with Morpho.
 - A watch lasts one day in this deployment, and the demo allows 10 watches a day for everyone, 2 per address and
-  8 at a time, because Reactive fees are paid from our float.
+  8 at a time, because Reactive fees are paid from our float. A "wait for the deadline" watch stops protecting
+  when its day ends, even from a change it has already seen (SPEC.md section 11).
 - A change with no waiting period leaves no time to exit.
 - Both recorded runs exited on a new adapter. A shorter waiting period and a new allocator are kinds the contracts
   cover (SPEC.md section 3), but no testnet run has shown an exit on them yet, so the page's curator step schedules

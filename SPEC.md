@@ -66,9 +66,9 @@ caller the curator of a new vault.
 
 `MorphoVaultMaker` (ours; the vaults it makes are Morpho's code): `constructor(factory, asset, timelock)`, all
 immutable, no refusal (the deploy script checks the factory before and the vault shape after). `create()` is open
-to anyone and, in one transaction: picks the first salt `keccak256(caller, block number, n)` (`n` a counter that
-moves on every try) for which Morpho's factory holds no vault of (maker, asset, salt), refusing with `NoFreeSalt()`
-after 16 taken salts; calls `createVaultV2(maker, asset, salt)`; makes itself curator; raises the timelock of
+to anyone and, in one transaction: picks the first salt `keccak256(caller, block number, n)` (`n` a public counter
+that moves on every try and goes back when the call reverts) for which Morpho's factory holds no vault of (maker,
+asset, salt), refusing with `NoFreeSalt()` after 16 taken salts; calls `createVaultV2(maker, asset, salt)`; makes itself curator; raises the timelock of
 `addAdapter`, `setIsAllocator`, `increaseAbsoluteCap` and `increaseRelativeCap` to `TIMELOCK` (180 s in the
 deployment; a `decreaseTimelock` of one of them then waits as long); abdicates the four gate setters and
 `setPerformanceFee` and `setManagementFee` (each submitted and run in the same call, which a fresh vault allows),
@@ -76,7 +76,9 @@ so that vault never has a gate or a fee; sets the vault's name; then makes the c
 keeps no role and holds nothing. `isVault(v)` is true only if this maker made `v` and Morpho's factory still lists
 it (`isVaultV2`); a vault made directly on Morpho's factory, even in the maker's name, is not listed. Morpho's
 own refusals apply inside (`DataAlreadyPending`, timelocked calls, `Abdicated`), so a failed step reverts the whole
-`create()`.
+`create()`. Block numbers are predictable, so a stranger can take one caller's 16 salts of a coming block ahead of
+time (16 vault creations per block, paid by the stranger) and make that caller's `create()` refuse in that block.
+Such vaults are never listed or touched and no funds move; a block the stranger did not prepare works again.
 
 `DemoToken` (ours, test token, 6 decimals): `mint(to, amount)` is open to anyone, at most 1,000 tokens per
 call: `MintTooLarge(amount, max)`, `ZeroAddress()` for receiver 0. `transfer`, `transferFrom`:
@@ -186,7 +188,8 @@ counting for the tick; when no watch has one, the CRON subscription is removed.
 
 The exit is asked for at once, instead of waiting, when (reason code in brackets):
 - the change is already due within `LEAD` when it is seen (3, `TooSoon`);
-- the change is due later than `MAX_WAIT` (900 s in the demo deployment), which would cost too many ticks (4, `WaitTooLong`);
+- the change is due later than `MAX_WAIT` (900 s on the 11-18 pair, 200 s in `scripts/deploy-system.sh`), which
+  would cost too many ticks (4, `WaitTooLong`);
 - `data` is longer than 256 bytes (5, `DataTooLong`);
 - the watch already stores `MAX_PENDING` (3) changes (6, `PendingFull`);
 - the watch has used its reaction budget (7, `Budget`), on a `Submit`, a `Revoke` or a tick.
@@ -194,8 +197,11 @@ The exit is asked for at once, instead of waiting, when (reason code in brackets
 All of these protect the depositor: when the contract cannot afford to wait, it leaves. They also mean a
 curator can make every mode-1 watcher on the vault leave whenever they like (one padded change, four changes,
 or one change due within `LEAD`, revoked afterwards): the funds still go only to their owners, but the
-position is lost. And with `MAX_WAIT` 900 s, every change on a real Vault V2 (timelocks of days) is fled at
-once, so on a real vault mode 1 behaves like mode 0 until a slower CRON and a larger budget are used.
+position is lost. And with `MAX_WAIT` 900 s (200 s in `scripts/deploy-system.sh`), every change on a Vault V2
+with a waiting period of days is fled at once, so on such a vault mode 1 behaves like mode 0 until a slower CRON
+and a larger budget are used. With the values of `scripts/deploy-system.sh` (waiting period 180 s, `LEAD` 120,
+`MAX_WAIT` 200) a change is stored only if Lasna sees its `Submit` less than 60 s after it was scheduled; seen
+later it is fled at once (`TooSoon`), and mode 1 then behaves like mode 0 (`test/DeployedValues.t.sol`).
 
 Race between a vault revoke and the tick: if the revoke reaches the reactive contract first, the change is
 removed and nothing is sent. If the tick fires first, the exit is on its way and is carried out, whatever the
@@ -292,29 +298,33 @@ unknown topic) are counted in `unknownEvents` and ignored.
 - The callback proxy and the system contract can pull any amount of native balance from our two contracts
   to settle debt (`pay()` in the sponsor library). So these contracts hold only a fee reserve, never user
   assets.
-- Caps, all fixed at deployment (demo values):
+- Caps, all fixed at deployment: the 11-18 pair (deployed), and the values `scripts/deploy-system.sh` deploys
+  for the contracts after 2026-11-18 (not deployed yet):
 
-| Cap | Where | Demo value | What it limits |
-|---|---|---|---|
-| Arms per address per UTC day | NoticeExit | 2 | One visitor's spend |
-| Arms per UTC day, all addresses | NoticeExit | 10 | Total daily spend |
-| One active watch per owner and vault | NoticeExit | 1 | Duplicate watches |
-| Watch lifetime (`LIFETIME`) | NoticeExit | 1 day | Mode 1 only: how long an unused timer watch can hold a timer place; after it, anyone can `expire` it. A mode-0 watch has no expiry (contracts after 2026-11-18; on the 11-18 pair every watch can be expired) |
-| Mode-1 arms per UTC day, all addresses (`MAX_TIMED_ARMS_PER_DAY`) | NoticeExit | none on the 11-18 pair; 4 in `scripts/deploy-system.sh` | The costly mode's daily spend |
-| Mode-1 watches at a time (`MAX_TIMED`) | NoticeReactive | 8 (a constant; shared with mode 0 on the 11-18 pair) | Work per tick and `LEAD` |
-| Active watches | NoticeReactive | 8 | Work per tick and per event |
-| Watches per vault | NoticeReactive | 3 | Work per `Submit` |
-| Stored changes per watch | NoticeReactive | 3 | Work per tick |
-| Reactions per watch (mode 1: every `Submit` of a watched kind, every `Revoke` on its vault, every tick while it stores a change; mode 0 leaves on its first reaction) | NoticeReactive | 80 | Spam of submit and revoke on one vault; ends with an exit, never by dropping the watch |
-| Exits per tick | NoticeReactive | 1 | Gas per tick (900,000 cap per reactive transaction) |
-| Callback gas limit | NoticeReactive | 600,000 | Gas limit of the exit delivery; about 415,000 reaches `exit` after the proxy's share, and `NoticeExit` is billed for gas used, not for the limit (section 12) |
+| Cap | Where | 11-18 pair | `deploy-system.sh` | What it limits |
+|---|---|---|---|---|
+| Arms per address per UTC day | NoticeExit | 2 | 4 | One visitor's spend |
+| Arms per UTC day, all addresses | NoticeExit | 10 | 50 | Total daily spend |
+| One active watch per owner and vault | NoticeExit | 1 | 1 | Duplicate watches |
+| Watch lifetime (`LIFETIME`) | NoticeExit | 1 day, every watch | 1 day, mode 1 only | How long an unused timer watch can hold a timer place; after it, anyone can `expire` it. On the newer contracts a mode-0 watch has no expiry |
+| Mode-1 arms per UTC day, all addresses (`MAX_TIMED_ARMS_PER_DAY`) | NoticeExit | none | 4 | The costly mode's daily spend |
+| Mode-1 watches at a time (`MAX_TIMED`) | NoticeReactive | none (the 8 active watches bound both modes) | 8 (a constant) | Work per tick and `LEAD` |
+| Active watches (`MAX_ACTIVE`) | NoticeReactive | 8 | 1,000 | Watches armed at a time. On the 11-18 pair also the work per tick; on the newer contracts `MAX_TIMED` bounds that, and no loop runs over all armed watches |
+| Watches per vault | NoticeReactive | 3 | 3 | Work per `Submit` |
+| Stored changes per watch | NoticeReactive | 3 | 3 | Work per tick |
+| Reactions per watch (`MAX_REACTIONS`; mode 1: every `Submit` of a watched kind, every `Revoke` on its vault, every tick while it stores a change; mode 0 leaves on its first reaction) | NoticeReactive | 80 | 16 | Spam of submit and revoke on one vault; ends with an exit, never by dropping the watch |
+| Longest wait paid in ticks (`MAX_WAIT`) | NoticeReactive | 900 s | 200 s | Ticks per stored change (section 6) |
+| Exits per tick | NoticeReactive | 1 | 1 | Gas per tick (900,000 cap per reactive transaction) |
+| Callback gas limit | NoticeReactive | 600,000 | 600,000 | Gas limit of the exit delivery; about 415,000 reaches `exit` after the proxy's share, and `NoticeExit` is billed for gas used, not for the limit (section 12). A redeem that needs more fails and is not retried (section 11) |
 
 A watch the reactive contract refuses (caps above) is reported by `WatchRefused` on Lasna; the depositor
 can cancel it on Base Sepolia and arm again later.
 
-Computed, not measured: about 0.013 lREACT per reactive transaction plus about 0.05 per arming. With 80
-reactions per watch, one watch costs at most about 1.5 lREACT, and the 10 arms a day at most about 15
-lREACT a day. Two costs are outside this bound and must be watched on the live float: stray events after a
+Computed, not measured: about 0.013 lREACT per reactive transaction plus about 0.05 per arming. On the 11-18
+pair, with 80 reactions per watch, one watch costs at most about 1.5 lREACT, and the 10 arms a day at most about
+15 lREACT a day. With the values of `scripts/deploy-system.sh`, a mode-1 watch costs at most about 0.27 lREACT
+(16 reactions, then the exit the 17th asks for) and a mode-0 watch about 0.063 (one reaction), so a day with
+every cap used (4 mode-1 and 46 mode-0 arms) costs at most about 4 lREACT. Two costs are outside this bound and must be watched on the live float: stray events after a
 silent unsubscribe (counted in `strayEvents`, billed by the network), and callbacks that anyone can make the
 proxy bill to `NoticeExit` through their own reactive contracts (section 11).
 
@@ -395,8 +405,19 @@ on Base Sepolia; balances read before and after each loop; reactive gas price 10
 - `expire` is open to anyone, the curator included, but only for a mode-1 watch. A mode-1 watch protects for
   `LIFETIME` (1 day) only: after that the curator can expire it and then schedule a change, and an expiry that
   lands while an exit callback is on its way makes that callback revert (`WatchNotActive`) and the depositor
-  stays in. A mode-0 watch has no expiry and ends only when it fires or its owner cancels it. On the 11-18
+  stays in. The lease also ends the protection from a change the watch already stores: a curator who schedules
+  a change shortly before the lease ends and expires the watch when it ends makes Lasna close the watch and
+  forget the change without an exit (pinned by `test_expiry_at_lease_end_drops_a_stored_change`). So a mode-1
+  watch is sure to serve only changes scheduled at least `MAX_WAIT - LEAD` seconds (80 s as deployed by
+  `scripts/deploy-system.sh`, 780 s on the 11-18 pair), plus the delivery time, before its lease ends. A mode-0 watch has no expiry and ends only when it fires or its owner cancels it. On the 11-18
   deployment every watch, mode 0 included, can still be expired after one day.
+- The callback gas limit stays 600,000 on the newer contracts too (about 415,000 reaches `exit`). A maker vault
+  as made has no adapter, which keeps its redeem cheap (not yet measured on chain). Its curator can still add
+  adapters and allocators through 180 s changes; added before anyone arms a watch, they are never seen, and a
+  redeem through them can need more gas than that. The real-vault replay (README) ran out of gas at 600,000
+  and redeemed at 1,000,000. The reactive contract closes a watch when it asks for the exit, so an exit that
+  fails (`RedeemFailed`, or a callback that runs out of gas) is not tried again and the depositor stays in. A
+  deployment for configured vaults needs a larger limit (about 1,000,000 for the replayed vault).
 - Stray events after a silent unsubscribe are billed by the network and cannot be refused by the contract;
   they are counted (`strayEvents`) and alerted on.
 - "No server, no key that can send the funds elsewhere": the exit right exists only through the vault's own
