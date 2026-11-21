@@ -27,12 +27,12 @@ on:
         options: ["0", "1"]
         default: "0"
       kind:
-        description: "system: the change the curator schedules"
+        description: "system: the change the curator schedules (with cap the watch also covers cap increases, except in ignored-then-exit)"
         type: choice
         options: [adapter, timelock, allocator, cap]
         default: adapter
       action:
-        description: "system: exit | ignored-then-exit | revoke-stays (mode 1) | arm-only | fire | burst | cancel | expire-stale | topup"
+        description: "system: exit | ignored-then-exit | revoke-stays (mode 1) | arm-only | fire | burst (vault maker deployments only) | cancel | expire-stale | topup"
         type: choice
         options: [exit, ignored-then-exit, revoke-stays, arm-only, fire, burst, cancel, expire-stale, topup]
         default: exit
@@ -120,6 +120,8 @@ jobs:
           LOOP_FACTORY_KIND: ${{ steps.dep.outputs.factory_kind }}
           LOOP_MODE: ${{ inputs.mode }}
           LOOP_KIND: ${{ inputs.kind }}
+          # 7 = new adapter, shorter wait, allocator; 15 adds cap increases, so a cap run arms a watch that covers it.
+          LOOP_WATCH_KINDS: ${{ (inputs.kind == 'cap' && inputs.action != 'ignored-then-exit') && '15' || '7' }}
           LOOP_ACTION: ${{ inputs.action }}
           LOOP_DEPOSITOR: ${{ inputs.depositor }}
           LOOP_CURATOR: a
