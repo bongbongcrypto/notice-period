@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://sepolia.base.org https://base-sepolia-rpc.publicnode.com https://lasna-rpc.rnk.dev https://api.morpho.org; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notice Period: your deposit leaves before a vault rule change takes effect</title>
+<meta name="description" content="Pick the kinds of vault rule change you will not accept. When the vault's curator schedules one, a reactive contract withdraws your deposit to your own wallet before the change can take effect. Testnet demo with real runs you can check.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="app.css">
+<script defer src="config.js"></script>
+<script defer src="sig.js"></script>
+<script defer src="abi.js"></script>
+<script defer src="rpc.js"></script>
+<script defer src="wallet.js"></script>
+<script defer src="states.js"></script>
+<script defer src="data/runs.js"></script>
+<script defer src="view.js"></script>
+<script defer src="run.js"></script>
+</head>
+<body>
+<a class="skip" href="#try">Skip to the guided run</a>
+
+<header class="top wrap">
+  <a class="wordmark" href="./"><svg class="wm" viewBox="0 0 28 16" width="28" height="16" aria-hidden="true" focusable="false"><path class="wm-line" d="M1 8h26"/><path class="wm-a" d="M4 2v12"/><path class="wm-b" d="M9 2v12"/><path class="wm-c" d="M25 4v8"/></svg>Notice Period</a>
+  <nav aria-label="Sections">
+    <a href="#try">Run it</a>
+    <a href="#runs">Recent runs</a>
+    <a href="#how">How it works</a>
+    <a href="https://github.com/bongbongcrypto/notice-period" rel="noopener noreferrer">Source</a>
+  </nav>
+</header>
+
+<main>
+
+<section class="first wrap" aria-labelledby="h1">
+  <div class="lede">
+    <h1 id="h1">Your deposit withdraws itself before a vault rule change takes effect.</h1>
+    <div class="cta" id="cta">
+      <a class="btn btn-primary" id="cta-try" href="#try">Try it with a test wallet</a>
+      <a class="btn btn-second" id="cta-replay" href="#try">Replay a real run</a>
+    </div>
+  </div>
+  <div class="problem">
+    <p class="problem-line" id="problem">On 21 Nov 2026, 35 rule changes were waiting in 9 Morpho vaults holding $85.9M. 3 of them were a kind this tool exits on by default.</p>
+    <p class="small" id="problem-src">Read from Morpho&rsquo;s public API on 21 Nov 2026: 32 cap increases, 3 shorter waiting periods. Notice Period is not affiliated with Morpho.</p>
+  </div>
+
+  <figure class="latest" aria-labelledby="latest-cap">
+    <!-- gen:latest -->
+    <figcaption id="latest-cap">Latest real run on testnet in “leave now” mode, 18 Nov 2026: deposit back 2 s after the change was scheduled.</figcaption>
+    <div class="strip" id="strip-first" data-stage="3">
+      <div class="axis axis-full" aria-hidden="true">
+        <span class="ax"></span><span class="tick t-sched"></span><span class="tick t-back"></span><span class="tick t-end"></span><span class="tick t-now" hidden></span>
+        <span class="lab l-sched">Change scheduled <b class="num">01:04:46</b></span>
+        <span class="lab l-back">Deposit back <b class="num">+2 s</b></span>
+        <span class="lab l-left"><b class="num">178 s</b> of notice left</span>
+        <span class="lab l-end">Change can take effect <b class="num">01:07:46</b></span>
+      </div>
+      <div class="zoom" aria-hidden="true">
+        <p class="zoom-cap">The first <span class="num z-span">5</span> seconds, magnified</p>
+        <div class="axis axis-zoom">
+          <span class="ax"></span><span class="tick t-sched"></span><span class="tick t-react"></span><span class="tick t-back"></span>
+          <span class="scale s0 num">0 s</span><span class="scale s1 num">5 s</span>
+        </div>
+      </div>
+      <div class="records">
+        <p class="vh" id="strip-alt">Run #1. Change scheduled at 01:04:46 UTC. Deposit back 2 seconds later. The change could take effect at 01:07:46 UTC, 178 seconds after the deposit was back.</p>
+        <table class="ledger">
+          <caption class="vh">The three records of this run</caption>
+          <thead class="vh"><tr><th scope="col">Record</th><th scope="col">Chain</th><th scope="col">UTC time</th><th scope="col">After the change</th><th scope="col">Transaction</th></tr></thead>
+          <tbody id="ledger-first">
+            <tr class="rec rec-sched"><th scope="row"><span class="mark" aria-hidden="true"></span>Change scheduled</th><td class="chain">Base Sepolia</td><td class="num time">01:04:46</td><td class="num sec">+0&nbsp;s</td><td class="tx"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0xdd4ce73f5073de51dc3ec51c0e75fc50f01b5753c74f16ca374eb255b3544891" rel="noopener noreferrer" target="_blank" title="Change scheduled, transaction on Base Sepolia">0xdd4c…4891</a></td></tr>
+            <tr class="rec rec-react"><th scope="row"><span class="mark" aria-hidden="true"></span>Reactive transaction</th><td class="chain">Reactive Lasna</td><td class="num time">01:04:46</td><td class="num sec">+0&nbsp;s</td><td class="tx"><a class="hash" href="https://lasna.reactscan.net/tx/0x1a6b032aa7afc9f89e25fdef852bebbffad4ee1b750ba4fd4cc5bb6a5f84aa3e" rel="noopener noreferrer" target="_blank" title="Reactive transaction on Reactive Lasna">0x1a6b…aa3e</a></td></tr>
+            <tr class="rec rec-back"><th scope="row"><span class="mark" aria-hidden="true"></span>Deposit back in the depositor&#x27;s wallet</th><td class="chain">Base Sepolia</td><td class="num time">01:04:48</td><td class="num sec">+2&nbsp;s</td><td class="tx"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0x7f6456d9b7938e6a205c87a86d0e95ae5e347ec160a39c1e7a7251caebc67b04" rel="noopener noreferrer" target="_blank" title="Withdrawal, transaction on Base Sepolia">0x7f64…7b04</a></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p class="small" id="latest-check">Recorded copy read 21 Nov 2026.</p>
+    <p class="proof" id="proof">2 runs so far. 2 deposits returned. “Leave now” runs: latest 2 s.</p>
+    <!-- /gen:latest -->
+  </figure>
+</section>
+
+<section class="band wrap try" id="try" aria-labelledby="try-h">
+  <div class="try-text">
+    <h2 id="try-h">Run it yourself</h2>
+    <p>You deposit 100 demo dollars into a demo vault, turn the watch on, then play the vault&rsquo;s curator and schedule a rule change. Your deposit should come back by itself.</p>
+    <div id="intro">
+      <p>7 wallet confirmations. About 0.00002 test ETH on Base Sepolia. About one minute.</p>
+      <p>The demo vault and the demo dollars are ours and have no value. Reactive fees for this demo are paid from our float.</p>
+      <p class="small sk" id="health">Reading today&rsquo;s run count and the float from both chains.</p>
+    </div>
+  </div>
+  <div class="panel">
+    <ol class="rail" id="rail" aria-label="Steps of the guided run">
+      <li><span class="num">1</span> Deposit<span class="vh"></span></li>
+      <li><span class="num">2</span> Watch<span class="vh"></span></li>
+      <li><span class="num">3</span> Curator<span class="vh"></span></li>
+      <li><span class="num">4</span> Result<span class="vh"></span></li>
+    </ol>
+    <div class="state" id="state" tabindex="-1">
+      <noscript><p>The guided run and the replay need JavaScript. The recorded runs on this page are real and their links work without it.</p></noscript>
+    </div>
+    <p class="vh" id="live" aria-live="polite"></p>
+  </div>
+</section>
+
+<section class="band wrap" id="runs" aria-labelledby="runs-h">
+  <h2 id="runs-h">Recent runs</h2>
+  <p class="small" id="runs-cap">Recorded list read 21 Nov 2026.</p>
+  <table class="runs">
+    <thead>
+      <tr>
+        <th scope="col">Run</th>
+        <th scope="col">When (UTC)</th>
+        <th scope="col">Who</th>
+        <th scope="col">Change</th>
+        <th scope="col" class="num">Seen by Reactive</th>
+        <th scope="col" class="num">Deposit back</th>
+        <th scope="col" class="num">Notice left</th>
+        <th scope="col">Transactions</th>
+      </tr>
+    </thead>
+    <tbody id="runs-body">
+            <!-- gen:runs -->
+            <tr><th scope="row" class="num"><a href="#run=2">#2</a></th><td class="num" data-l="When (UTC)">18 Nov 2026 01:06:48</td><td data-l="Who">Our own test run</td><td data-l="Change">New adapter <span class="quiet">(wait for the deadline)</span></td><td class="num" data-l="Seen by Reactive">+61&nbsp;s</td><td class="num back" data-l="Deposit back">+62&nbsp;s</td><td class="num" data-l="Notice left">118&nbsp;s</td><td class="tx" data-l="Transactions"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0x19353d516295390f7ff762d3e3bdfce296fadf95b9d9dffffa435977a6b5a378" rel="noopener noreferrer" target="_blank" title="Run 2, change scheduled, Base Sepolia">0x1935…a378</a> <a class="hash" href="https://lasna.reactscan.net/tx/0x98b822a593a99bf8ab4d085d94f7d77a0986830755a3f15223e3c47023efc530" rel="noopener noreferrer" target="_blank" title="Run 2, reactive transaction, Reactive Lasna">0x98b8…c530</a> <a class="hash" href="https://base-sepolia.blockscout.com/tx/0x681bd1f976e0b708c29ffe7639d9a987701bf2f8fc89480ae97e8ace77470b47" rel="noopener noreferrer" target="_blank" title="Run 2, withdrawal, Base Sepolia">0x681b…0b47</a></td></tr>
+            <tr><th scope="row" class="num"><a href="#run=1">#1</a></th><td class="num" data-l="When (UTC)">18 Nov 2026 01:04:46</td><td data-l="Who">Our own test run</td><td data-l="Change">New adapter <span class="quiet">(leave now)</span></td><td class="num" data-l="Seen by Reactive">+0&nbsp;s</td><td class="num back" data-l="Deposit back">+2&nbsp;s</td><td class="num" data-l="Notice left">178&nbsp;s</td><td class="tx" data-l="Transactions"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0xdd4ce73f5073de51dc3ec51c0e75fc50f01b5753c74f16ca374eb255b3544891" rel="noopener noreferrer" target="_blank" title="Run 1, change scheduled, Base Sepolia">0xdd4c…4891</a> <a class="hash" href="https://lasna.reactscan.net/tx/0x1a6b032aa7afc9f89e25fdef852bebbffad4ee1b750ba4fd4cc5bb6a5f84aa3e" rel="noopener noreferrer" target="_blank" title="Run 1, reactive transaction, Reactive Lasna">0x1a6b…aa3e</a> <a class="hash" href="https://base-sepolia.blockscout.com/tx/0x7f6456d9b7938e6a205c87a86d0e95ae5e347ec160a39c1e7a7251caebc67b04" rel="noopener noreferrer" target="_blank" title="Run 1, withdrawal, Base Sepolia">0x7f64…7b04</a></td></tr>
+    <!-- /gen:runs -->
+    </tbody>
+  </table>
+  <p class="small">Seconds are differences of block times. The two chains&rsquo; clocks differ by about a second, so a difference below zero reads 0.</p>
+</section>
+
+<section class="band wrap" id="how" aria-labelledby="how-h">
+  <h2 id="how-h">How it works</h2>
+  <div class="how">
+    <div class="figure">
+      <svg class="fig-defs" width="0" height="0" aria-hidden="true" focusable="false">
+      <defs>
+        <marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="fig-head" d="M0 0l8 4-8 4z"/></marker>
+        <marker id="ah-o" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="fig-head-o" d="M0 0l8 4-8 4z"/></marker>
+        <marker id="ah-s" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="fig-head-s" d="M0 0l8 4-8 4z"/></marker>
+      </defs>
+      </svg>
+      <svg class="fig fig-wide" viewBox="0 0 720 300" role="img" aria-labelledby="fig-t">
+        <title id="fig-t">The curator schedules a change on your vault. The reactive contract on Reactive Lasna receives the vault&rsquo;s event and calls the exit contract on Base Sepolia, which redeems your shares to your wallet.</title>
+        <rect class="fig-lane" x="1" y="30" width="718" height="110" rx="8"/>
+        <rect class="fig-lane" x="1" y="180" width="718" height="110" rx="8"/>
+        <text class="fig-chain" x="16" y="54">Base Sepolia</text>
+        <text class="fig-chain" x="16" y="204">Reactive Lasna</text>
+        <text class="fig-actor" x="300" y="16" text-anchor="middle">The curator</text>
+        <rect class="fig-node" x="24" y="68" width="130" height="48" rx="4"/>
+        <text class="fig-name" x="89" y="97" text-anchor="middle">Your wallet</text>
+        <rect class="fig-node" x="235" y="68" width="130" height="48" rx="4"/>
+        <text class="fig-name" x="300" y="97" text-anchor="middle">Your vault</text>
+        <rect class="fig-node" x="540" y="68" width="150" height="48" rx="4"/>
+        <text class="fig-name" x="615" y="97" text-anchor="middle">Exit contract</text>
+        <rect class="fig-node" x="360" y="216" width="180" height="48" rx="4"/>
+        <text class="fig-name" x="450" y="245" text-anchor="middle">Reactive contract</text>
+        <path class="fig-line fig-o" d="M300 22v44" marker-end="url(#ah-o)"/>
+        <path class="fig-line" d="M330 116l72 98" marker-end="url(#ah)"/>
+        <path class="fig-line" d="M500 216l72-98" marker-end="url(#ah)"/>
+        <path class="fig-line" d="M540 84H367" marker-end="url(#ah)"/>
+        <path class="fig-line fig-s" d="M235 92H156" marker-end="url(#ah-s)"/>
+        <g class="fig-n"><circle cx="324" cy="44" r="11"/><text x="324" y="48.5" text-anchor="middle">1</text></g>
+        <g class="fig-n"><circle cx="350" cy="168" r="11"/><text x="350" y="172.5" text-anchor="middle">2</text></g>
+        <g class="fig-n"><circle cx="552" cy="168" r="11"/><text x="552" y="172.5" text-anchor="middle">3</text></g>
+        <g class="fig-n"><circle cx="452" cy="66" r="11"/><text x="452" y="70.5" text-anchor="middle">4</text></g>
+        <g class="fig-n"><circle cx="195" cy="74" r="11"/><text x="195" y="78.5" text-anchor="middle">5</text></g>
+      </svg>
+      <svg class="fig fig-tall" viewBox="0 0 340 470" role="img" aria-labelledby="fig-t2">
+        <title id="fig-t2">The curator schedules a change on your vault. The reactive contract on Reactive Lasna receives the vault&rsquo;s event and calls the exit contract on Base Sepolia, which redeems your shares to your wallet.</title>
+        <rect class="fig-lane" x="1" y="30" width="338" height="230" rx="8"/>
+        <rect class="fig-lane" x="1" y="340" width="338" height="120" rx="8"/>
+        <text class="fig-chain" x="14" y="52">Base Sepolia</text>
+        <text class="fig-chain" x="14" y="362">Reactive Lasna</text>
+        <text class="fig-actor" x="170" y="16" text-anchor="middle">The curator</text>
+        <rect class="fig-node" x="100" y="68" width="140" height="46" rx="4"/>
+        <text class="fig-name" x="170" y="96" text-anchor="middle">Your vault</text>
+        <rect class="fig-node" x="12" y="190" width="116" height="46" rx="4"/>
+        <text class="fig-name" x="70" y="218" text-anchor="middle">Your wallet</text>
+        <rect class="fig-node" x="204" y="190" width="124" height="46" rx="4"/>
+        <text class="fig-name" x="266" y="218" text-anchor="middle">Exit contract</text>
+        <rect class="fig-node" x="80" y="384" width="180" height="46" rx="4"/>
+        <text class="fig-name" x="170" y="412" text-anchor="middle">Reactive contract</text>
+        <path class="fig-line fig-o" d="M170 22v44" marker-end="url(#ah-o)"/>
+        <path class="fig-line" d="M170 114v268" marker-end="url(#ah)"/>
+        <path class="fig-line" d="M232 384l30-146" marker-end="url(#ah)"/>
+        <path class="fig-line" d="M262 190l-40-74" marker-end="url(#ah)"/>
+        <path class="fig-line fig-s" d="M120 114l-44 74" marker-end="url(#ah-s)"/>
+        <g class="fig-n"><circle cx="194" cy="44" r="11"/><text x="194" y="48.5" text-anchor="middle">1</text></g>
+        <g class="fig-n"><circle cx="170" cy="300" r="11"/><text x="170" y="304.5" text-anchor="middle">2</text></g>
+        <g class="fig-n"><circle cx="266" cy="300" r="11"/><text x="266" y="304.5" text-anchor="middle">3</text></g>
+        <g class="fig-n"><circle cx="258" cy="150" r="11"/><text x="258" y="154.5" text-anchor="middle">4</text></g>
+        <g class="fig-n"><circle cx="82" cy="150" r="11"/><text x="82" y="154.5" text-anchor="middle">5</text></g>
+      </svg>
+    </div>
+    <ol class="how-steps">
+      <li>The vault&rsquo;s curator schedules a rule change. The vault emits its own <code>Submit</code> event and the waiting period starts.</li>
+      <li>The reactive contract is subscribed to that vault and to the kinds of change you chose, nothing wider. Reactive delivers the event to it.</li>
+      <li>It asks for a callback on Base Sepolia. The exit contract accepts it only from Reactive&rsquo;s callback proxy, and only for our reactive contract.</li>
+      <li>The exit contract redeems your shares. The receiver is read from its own storage: always the depositor.</li>
+      <li>The vault pays your wallet. No server ran, and there is no key that can send the funds elsewhere.</li>
+    </ol>
+  </div>
+
+  <h3 id="features-h">What each Reactive feature does here</h3>
+  <table class="features" aria-labelledby="features-h">
+    <thead>
+      <tr><th scope="col">Feature</th><th scope="col">What it does here</th><th scope="col">What breaks without it</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">Event subscription with topic filters</th>
+        <td data-l="Here">The trigger: the vault&rsquo;s address, the <code>Submit</code> topic and the selector of each kind you chose.</td>
+        <td data-l="Without it">A server that polls the chain and holds a hot key. With a wildcard filter, any stranger&rsquo;s contract could bill ours into debt and switch the exit off.</td>
+      </tr>
+      <tr>
+        <th scope="row">Subscribe and unsubscribe at runtime</th>
+        <td data-l="Here">One subscription per watch, added when you turn it on and removed when it ends.</td>
+        <td data-l="Without it">One hard-coded vault, and fees for watches nobody holds.</td>
+      </tr>
+      <tr>
+        <th scope="row">A timer that runs only while a change is waiting</th>
+        <td data-l="Here">The second mode, &ldquo;wait for the deadline&rdquo;: the deposit leaves shortly before the change can run, and stays if the curator cancels it. Run #2 below used it.</td>
+        <td data-l="Without it">Only &ldquo;leave now&rdquo;. Left on all the time, the timer would spend the float while idle.</td>
+      </tr>
+      <tr>
+        <th scope="row">Callback through the callback proxy</th>
+        <td data-l="Here">The redeem on the vault&rsquo;s chain, accepted only from the proxy and only on request of our reactive contract.</td>
+        <td data-l="Without it">Nothing moves the deposit. With a weaker check anyone could force an exit; the funds would still go only to their owner.</td>
+      </tr>
+      <tr>
+        <th scope="row">Blocks about one second apart</th>
+        <td data-l="Here">The seconds between the three records, shown for every run.</td>
+        <td data-l="Without it">Little: a waiting period lasts days. The seconds are shown, not sold.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="two">
+    <div>
+      <h3>What this demo is</h3>
+      <ul class="plain">
+        <li>Test networks only.</li>
+        <li>The vault and the dollars are ours; the vault copies the events of Morpho Vault V2.</li>
+        <li>A watch lasts one day in this demo.</li>
+        <li>A change with no waiting period cannot be fled.</li>
+      </ul>
+      <p class="small">Every limit is in the <a href="https://github.com/bongbongcrypto/notice-period/blob/main/SPEC.md" rel="noopener noreferrer">rule book</a>.</p>
+    </div>
+    <div id="check">
+      <h3>Check every claim in ten minutes</h3>
+      <ol class="checks">
+        <li><strong>The three records belong together.</strong> Open the three links of a run above. Reactive&rsquo;s transaction names the Base Sepolia transaction as its origin, and the withdrawal&rsquo;s <code>WatchEnded</code> log carries the same hash.</li>
+        <li><strong>The deposit went to its owner.</strong> In the withdrawal, the token moves from the vault to the depositor. In <a href="https://github.com/bongbongcrypto/notice-period/blob/main/src/NoticeExit.sol" rel="noopener noreferrer">NoticeExit.sol</a> the receiver is read from storage, never from the callback.</li>
+        <li><strong>A cap increase never reaches Reactive by default.</strong> <a href="https://github.com/bongbongcrypto/notice-period/blob/main/src/NoticeReactive.sol" rel="noopener noreferrer">NoticeReactive.sol</a> subscribes one filter per chosen selector. Or press the second curator button in the run above.</li>
+        <li><strong>The numbers are read live.</strong> Your browser asks Morpho&rsquo;s public API and the two chains. The network tab shows four hosts and nothing else.</li>
+        <li><strong>The contracts refuse what the rule book says.</strong> Unit, attack, fuzz and invariant tests and a mutation check run on every push: see the <a href="https://github.com/bongbongcrypto/notice-period#checks" rel="noopener noreferrer">repository</a>.</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot wrap">
+  <table class="addresses">
+    <caption>Contracts of the 18 Nov 2026 testnet deployment</caption>
+    <tbody>
+      <tr><th scope="row">Exit contract <span class="quiet">Base Sepolia</span></th><td><a class="addr" href="https://base-sepolia.blockscout.com/address/0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8" rel="noopener noreferrer">0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8</a></td></tr>
+      <tr><th scope="row">Reactive contract <span class="quiet">Reactive Lasna</span></th><td><a class="addr" href="https://lasna.reactscan.net/address/0x00E4996c7255B919B619902E1Ac4b254D3c3f014" rel="noopener noreferrer">0x00E4996c7255B919B619902E1Ac4b254D3c3f014</a></td></tr>
+      <tr><th scope="row">Demo vault factory <span class="quiet">Base Sepolia</span></th><td><a class="addr" href="https://base-sepolia.blockscout.com/address/0xFFc96A898AF31e2ED652A8A0C0E90584999093CD" rel="noopener noreferrer">0xFFc96A898AF31e2ED652A8A0C0E90584999093CD</a></td></tr>
+      <tr><th scope="row">Demo dollar <span class="quiet">Base Sepolia</span></th><td><a class="addr" href="https://base-sepolia.blockscout.com/address/0x2690DF70a37939c582a800f32FFEE52ec40d150B" rel="noopener noreferrer">0x2690DF70a37939c582a800f32FFEE52ec40d150B</a></td></tr>
+    </tbody>
+  </table>
+  <div class="foot-text">
+    <p><a href="https://github.com/bongbongcrypto/notice-period" rel="noopener noreferrer">Source on GitHub</a> <a href="https://github.com/bongbongcrypto/notice-period/blob/main/SPEC.md" rel="noopener noreferrer">Rule book</a> <a href="#check">Judge guide: check every claim in ten minutes</a></p>
+    <p>No cookies, no analytics, no accounts. This page reads two public test chains and Morpho&rsquo;s public API, nothing else.</p>
+    <p>Built by Bongbong (<a href="https://x.com/bongbongcrypto" rel="noopener noreferrer">@bongbongcrypto</a>). MIT licence.</p>
+  </div>
+</footer>
+
+</body>
+</html>
