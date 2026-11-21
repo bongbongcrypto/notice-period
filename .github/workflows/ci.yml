@@ -6,7 +6,6 @@ on:
   push:
     # The page and prose do not change what these jobs check. A push that touches anything else still runs them.
     paths-ignore:
-      - 'web/**'
       - 'docs/**'
       - '**.md'
   workflow_dispatch:
