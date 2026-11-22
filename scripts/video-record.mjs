@@ -566,7 +566,14 @@ async function main() {
   save();
   await cdp.send('Browser.close', {}, undefined, 10000).catch(() => {});
   try { chrome.proc.kill('SIGKILL'); } catch (e) { /* already gone */ }
-  rmSync(chrome.profile, { recursive: true, force: true });
+  // Chrome's helper processes can still be writing the profile for a moment after the browser goes;
+  // wait for the main process, retry the removal, and never fail a finished recording over a temp folder.
+  for (let i = 0; i < 50 && chrome.proc.exitCode === null && chrome.proc.signalCode === null; i++) await sleep(100);
+  try {
+    rmSync(chrome.profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+  } catch (e) {
+    console.log(`::warning::could not remove the temporary Chrome profile ${chrome.profile}: ${e.message}`);
+  }
   if (failed.length) die(`shots failed: ${failed.join(', ')} (screenshots in debug/)`);
   console.log(`recorded ${Object.keys(manifest.shots).length} shots`);
   process.exit(0);
