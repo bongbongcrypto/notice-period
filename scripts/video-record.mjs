@@ -335,7 +335,7 @@ async function prepare(tab, s, entry) {
   if (!quiet) entry.warnings.push('network did not go quiet within 15 s (long polling or a slow request); captured anyway');
   if (s.soft && s.soft.textAny) {
     const text = norm(await tab.text());
-    if (!s.soft.textAny.some((x) => text.includes(norm(x)))) entry.warnings.push(`none of ${JSON.stringify(s.soft.textAny)} is on the page (block time not shown as expected)`);
+    if (!s.soft.textAny.some((x) => text.includes(norm(x)))) entry.warnings.push(`none of ${JSON.stringify(s.soft.textAny)} is on the page; it may show a fallback (a time not shown, a check that failed): look at this shot in the contact sheet`);
   }
   if (s.explorer) {
     const text = norm(await tab.text());
