@@ -4,10 +4,20 @@
 
 DEPLOYMENT_JSON is the deployment's own file, deployments/<name>.json (the only hand-edited place for addresses),
 always given explicitly: there is no default (deployments/current.json is a template every reader refuses). From
-it this script writes docs/data/deployment.js (window.NP_DEPLOYMENT) and every marked block of README.md and SPEC.md:
+it this script writes docs/data/deployment.js (window.NP_DEPLOYMENT, the part the page needs) and every marked block
+of README.md, SPEC.md and docs/index.html:
 
     <!-- stamp:contracts -->   ...generated, never edited by hand...   <!-- /stamp:contracts -->
     <!-- stamp:values -->      ...                                     <!-- /stamp:values -->
+    <!-- stamp:pagecontracts -->, <!-- stamp:demolimits -->           (docs/index.html)
+
+Two shapes of deployment file are accepted: a vault maker (contracts.maker and contracts.morphoFactory: Morpho
+Vault V2s made by Morpho's factory through our maker, the 22 Nov 2026 deployment) or a demo factory
+(contracts.factory: our own demo vault, the 18 Nov 2026 deployment). MAX_TIMED and TIMED_ARMS_PER_DAY exist only in
+the contracts of the maker deployment; when absent they are stamped as none. The page's rules follow from the file:
+`rules.vaultSource` (default: maker or demo, from the contracts) and `rules.leaveNowExpires` (default: true when
+TIMED_ARMS_PER_DAY is absent, since only the newer contracts refuse to expire a "leave now" watch). `operators` lists
+our own accounts (runs they sent are labelled as ours on the page).
 
 --check writes nothing and exits 1 if any of those places differs from what the deployment file gives (a hand edit
 inside a block, or a deployment file changed without a stamp). Exit 2: no DEPLOYMENT_JSON given, the deployment file is a
@@ -20,21 +30,30 @@ import re
 import sys
 from pathlib import Path
 
-CONTRACT_KEYS = ["exit", "reactive", "maker", "morphoFactory", "token", "callbackProxy"]
+CONTRACT_KEYS = ["exit", "reactive", "token", "callbackProxy"]
+SHAPES = {"maker": ["maker", "morphoFactory"], "demo": ["factory"]}
 VALUE_KEYS = ["VAULT_TIMELOCK", "LEAD", "MAX_WAIT", "CALLBACK_GAS", "MAX_ACTIVE", "MAX_REACTIONS", "MAX_TIMED",
               "ARMS_PER_ADDRESS_PER_DAY", "ARMS_PER_DAY", "TIMED_ARMS_PER_DAY", "LIFETIME"]
+OPTIONAL_VALUES = {"MAX_TIMED", "TIMED_ARMS_PER_DAY"}
+# rules that repeat a value: they must agree with it
+RULE_VALUES = {"timedCap": "MAX_TIMED", "timedArmsPerDay": "TIMED_ARMS_PER_DAY"}
+PAGE_KEYS = ["name", "origin", "reactive", "contracts", "operators", "values", "rules", "healthMinFloat"]
 ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 BLOCK = re.compile(r"(<!-- stamp:([a-z]+) -->\n)(.*?)(<!-- /stamp:([a-z]+) -->)", re.S)
 OPEN = re.compile(r"<!-- stamp:([a-z]+) -->")
 CLOSE = re.compile(r"<!-- /stamp:([a-z]+) -->")
 BASE_EXPLORER = "https://base-sepolia.blockscout.com/address/"
 LASNA_EXPLORER = "https://lasna.reactscan.net/address/"
-MARKDOWN_TARGETS = ["README.md", "SPEC.md"]
+MARKDOWN_TARGETS = ["README.md", "SPEC.md", "docs/index.html"]
 JS_TARGET = "docs/data/deployment.js"
 
 
 class StampError(Exception):
     pass
+
+
+def _whole(v):
+    return isinstance(v, int) and not isinstance(v, bool)
 
 
 def load(path):
@@ -49,25 +68,57 @@ def load(path):
                          "pass the deployment's own file, deployments/<name>.json")
     for side in ("origin", "reactive"):
         chain = doc.get(side)
-        if (not isinstance(chain, dict) or not isinstance(chain.get("name"), str)
-                or not isinstance(chain.get("chainId"), int) or isinstance(chain.get("chainId"), bool)):
+        if not isinstance(chain, dict) or not isinstance(chain.get("name"), str) or not _whole(chain.get("chainId")):
             raise StampError(f"{path}: {side} needs a name and a whole-number chainId: {chain!r}")
-    for part in ("contracts", "values"):
-        if part in doc and not isinstance(doc[part], dict):
-            raise StampError(f"{path}: {part} is not an object")
+    for part, kind in (("contracts", dict), ("values", dict), ("rules", dict), ("operators", list)):
+        if part in doc and not isinstance(doc[part], kind):
+            raise StampError(f"{path}: {part} is not a JSON {'object' if kind is dict else 'list'}")
     contracts = doc.get("contracts") or {}
-    for k in CONTRACT_KEYS:
+    shape = "maker" if contracts.get("maker") else "demo"
+    for k in CONTRACT_KEYS + SHAPES[shape]:
         if not isinstance(contracts.get(k), str) or not ADDRESS.match(contracts[k]):
             raise StampError(f"{path}: contracts.{k} is not an address: {contracts.get(k)!r}")
+    if shape == "maker" and contracts.get("factory"):
+        raise StampError(f"{path}: both contracts.maker and contracts.factory; one vault source per deployment")
     values = doc.get("values") or {}
     for k in VALUE_KEYS:
-        if not isinstance(values.get(k), int) or isinstance(values.get(k), bool):
-            raise StampError(f"{path}: values.{k} is not a whole number: {values.get(k)!r}")
+        v = values.get(k)
+        if v is None and k in OPTIONAL_VALUES:
+            continue
+        if not _whole(v):
+            raise StampError(f"{path}: values.{k} is not a whole number: {v!r}")
+    ops = doc.get("operators") or []
+    if not ops or any(not isinstance(a, str) or not ADDRESS.match(a) for a in ops):
+        raise StampError(f"{path}: operators must list our own accounts (addresses)")
+    rules = dict(doc.get("rules") or {})
+    rules.setdefault("vaultSource", shape)
+    if rules["vaultSource"] != shape:
+        raise StampError(f"{path}: rules.vaultSource {rules['vaultSource']!r} but the contracts are of a {shape} deployment")
+    rules.setdefault("leaveNowExpires", values.get("TIMED_ARMS_PER_DAY") is None)
+    if not isinstance(rules["leaveNowExpires"], bool):
+        raise StampError(f"{path}: rules.leaveNowExpires must be true or false")
+    for rule, value in RULE_VALUES.items():
+        if rules.get(rule) is not None and rules[rule] != values.get(value):
+            raise StampError(f"{path}: rules.{rule} {rules[rule]!r} differs from values.{value} {values.get(value)!r}")
+    doc = dict(doc)
+    doc["rules"] = rules
+    doc["shape"] = shape
     return doc
 
 
 def _link(address, explorer):
     return f"[`{address}`]({explorer}{address})"
+
+
+def vault_rows(doc):
+    """(markdown label, page label, address) of the vault source's contracts."""
+    c = doc["contracts"]
+    if doc["shape"] == "maker":
+        return [("`MorphoVaultMaker` (ours; makes Morpho Vault V2s, the list of vaults `NoticeExit` accepts)",
+                 "Vault maker (ours)", c["maker"]),
+                ("`VaultV2Factory` (Morpho's)", "Morpho&rsquo;s Vault V2 factory", c["morphoFactory"])]
+    return [("`DemoVaultFactory` (ours; makes the demo vaults, the list of vaults `NoticeExit` accepts)",
+             "Demo vault factory", c["factory"])]
 
 
 def render_contracts(doc):
@@ -77,9 +128,9 @@ def render_contracts(doc):
     rows = [
         ("`NoticeExit`", origin, _link(c["exit"], BASE_EXPLORER)),
         ("`NoticeReactive`", reactive, _link(c["reactive"], LASNA_EXPLORER)),
-        ("`MorphoVaultMaker` (ours; makes Morpho Vault V2s, the list of vaults `NoticeExit` accepts)", origin,
-         _link(c["maker"], BASE_EXPLORER)),
-        ("`VaultV2Factory` (Morpho's)", origin, _link(c["morphoFactory"], BASE_EXPLORER)),
+    ]
+    rows += [(md, origin, _link(addr, BASE_EXPLORER)) for md, _, addr in vault_rows(doc)]
+    rows += [
         ("`DemoToken` (demo dollar, 6 decimals, test only)", origin, _link(c["token"], BASE_EXPLORER)),
         ("Callback proxy (Reactive's)", origin, _link(c["callbackProxy"], BASE_EXPLORER)),
     ]
@@ -91,16 +142,91 @@ def render_contracts(doc):
 def render_values(doc):
     v = doc["values"]
     lines = ["| Value | Deployed |", "|---|---|"]
-    lines += [f"| `{k}` | {v[k]} |" for k in VALUE_KEYS]
+    lines += [f"| `{k}` | {'none (not in these contracts)' if v.get(k) is None else v[k]} |" for k in VALUE_KEYS]
     lines.append(f"| Health float threshold (lREACT) | {doc.get('healthMinFloat')} |")
     return "\n".join(lines) + "\n"
 
 
-RENDER = {"contracts": render_contracts, "values": render_values}
+def _html_addr(label, chain, address, explorer):
+    return (f'      <tr><th scope="row">{label} <span class="quiet">{chain}</span></th><td><a class="addr" '
+            f'href="{explorer}{address}" rel="noopener noreferrer">{address}</a></td></tr>')
+
+
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def deployed_on(doc):
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", str(doc.get("name", "")))
+    return f"{int(m.group(3))} {MONTHS[int(m.group(2)) - 1]} {m.group(1)}" if m else str(doc.get("name", ""))
+
+
+def render_pagecontracts(doc):
+    c = doc["contracts"]
+    o, r = doc["origin"]["name"], doc["reactive"]["name"]
+    rows = [_html_addr("Exit contract", o, c["exit"], BASE_EXPLORER),
+            _html_addr("Reactive contract", r, c["reactive"], LASNA_EXPLORER)]
+    rows += [_html_addr(label, o, addr, BASE_EXPLORER) for _, label, addr in vault_rows(doc)]
+    rows.append(_html_addr("Demo dollar (ours)" if doc["shape"] == "maker" else "Demo dollar", o, c["token"], BASE_EXPLORER))
+    return (f"    <caption>Contracts of the {deployed_on(doc)} testnet deployment</caption>\n    <tbody>\n"
+            + "\n".join(rows) + "\n    </tbody>\n")
+
+
+def lifetime_text(seconds):
+    if seconds % 86400 == 0:
+        d = seconds // 86400
+        return "one day" if d == 1 else f"{d} days"
+    if seconds % 3600 == 0:
+        return f"{seconds // 3600} hours"
+    return f"{seconds} seconds"
+
+
+def render_demolimits(doc):
+    rules, v = doc["rules"], doc["values"]
+    life = lifetime_text(v["LIFETIME"])
+    if rules["vaultSource"] == "maker":
+        items = [
+            "Test networks only.",
+            "Each vault is a real Morpho Vault V2, made by Morpho&rsquo;s own factory through our maker contract. The "
+            "maker and the demo dollar are ours; the dollar has no value.",
+            f"A maker vault waits {v['VAULT_TIMELOCK']} seconds before a new adapter, a new allocator, a cap increase or "
+            "a shorter waiting period can take effect. Vaults that hold real deposits usually wait days.",
+        ]
+        if rules["leaveNowExpires"]:
+            items.append(f"A watch lasts {life} in this demo.")
+        else:
+            items.append("A &ldquo;leave now&rdquo; watch does not expire: it ends when it fires or when you turn it off. "
+                         f"A timer watch can be ended by anyone {life} after it was turned on.")
+        # the limits that stand next to "does not expire" (NoticeReactive MAX_WATCHES_PER_VAULT = 3, REFUSE_VAULT_FULL;
+        # NoticeExit ends a watch whose redeem the vault refuses, without a retry)
+        items.append("A watch is served only while our float on Reactive Lasna is above zero; the page shows the float "
+                     "and any debt live. On one vault only the first three watches are served: a fourth is refused on "
+                     "Reactive Lasna and stays on in the exit contract&rsquo;s record until its owner turns it off. If the "
+                     "vault refuses the redeem, the watch ends without a retry. A version for real use would have each "
+                     "depositor fund their own watch; that is not built.")
+        caps = (f"Watches turned on per UTC day: {v['ARMS_PER_ADDRESS_PER_DAY']} per address, {v['ARMS_PER_DAY']} for "
+                "everyone.")
+        if v.get("MAX_TIMED") is not None and v.get("TIMED_ARMS_PER_DAY") is not None:
+            caps += (f" The timer mode, not offered on this page, is limited to {v['MAX_TIMED']} at a time and "
+                     f"{v['TIMED_ARMS_PER_DAY']} new a day.")
+        items += [caps, "A change with no waiting period leaves no time to exit."]
+    else:
+        items = ["Test networks only.", "The vault and the dollars are ours; the vault copies the events of Morpho Vault V2."]
+        if rules["leaveNowExpires"]:
+            items.append(f"A watch lasts {life} in this demo.")
+        else:
+            items.append(f"A &ldquo;leave now&rdquo; watch stays on until it exits or you turn it off; a timer watch can "
+                         f"be ended {life} after it was turned on.")
+        items.append("A change with no waiting period leaves no time to exit.")
+    return "".join(f"        <li>{x}</li>\n" for x in items)
+
+
+RENDER = {"contracts": render_contracts, "values": render_values, "pagecontracts": render_pagecontracts,
+          "demolimits": render_demolimits}
 
 
 def render_js(doc, source_name):
-    body = json.dumps(doc, indent=2, sort_keys=True)
+    page = {k: doc[k] for k in PAGE_KEYS if k in doc}
+    body = json.dumps(page, indent=2, sort_keys=True)
     return (f"// Written by scripts/stamp.py from deployments/{source_name}; never edit by hand.\n"
             f"window.NP_DEPLOYMENT = {body};\n")
 
@@ -165,9 +291,8 @@ def main(argv=None):
     ap.add_argument("--root", default=str(Path(__file__).resolve().parent.parent))
     ap.add_argument("--check", action="store_true")
     a = ap.parse_args(argv)
-    deployment = a.deployment
     try:
-        return run(a.root, deployment, a.check)
+        return run(a.root, a.deployment, a.check)
     except StampError as e:
         print(f"STOP: {e}", file=sys.stderr)
         return 2

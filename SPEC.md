@@ -1,8 +1,9 @@
 # Notice Period: rule book
 
 This file says what the contracts do and refuse. If the code and this file disagree, that is a bug.
-All contracts are testnet contracts. The demo token and the demo vault are ours: they imitate the
-events of Morpho Vault V2 and are not Morpho's vault.
+All contracts are testnet contracts. The demo token is ours. The contracts after 2026-11-18 watch real Morpho
+Vault V2s made by Morpho's own factory through our `MorphoVaultMaker`; the 18 Nov pair used our demo vault, which
+imitates the events of Morpho Vault V2 and is not Morpho's vault.
 
 ## 1. The parts
 
@@ -298,10 +299,10 @@ unknown topic) are counted in `unknownEvents` and ignored.
 - The callback proxy and the system contract can pull any amount of native balance from our two contracts
   to settle debt (`pay()` in the sponsor library). So these contracts hold only a fee reserve, never user
   assets.
-- Caps, all fixed at deployment: the 11-18 pair (deployed), and the values `scripts/deploy-system.sh` deploys
-  for the contracts after 2026-11-18 (not deployed yet):
+- Caps, all fixed at deployment: the 11-18 pair and the 22 Nov 2026 pair (`deployments/2026-11-22.json`, the
+  values of `scripts/deploy-system.sh`):
 
-| Cap | Where | 11-18 pair | `deploy-system.sh` | What it limits |
+| Cap | Where | 11-18 pair | 22 Nov pair | What it limits |
 |---|---|---|---|---|
 | Arms per address per UTC day | NoticeExit | 2 | 4 | One visitor's spend |
 | Arms per UTC day, all addresses | NoticeExit | 10 | 50 | Total daily spend |

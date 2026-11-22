@@ -11,10 +11,12 @@
   var DEP = BigInt(cfg.amounts.deposit);
   var ZERO = '0x' + '0'.repeat(40);
 
-  var S = { epoch: 0, id: 'idle', ctx: {}, me: null, kinds: 7, step: null, started: false, last: null, shared: {}, run: {},
+  /* mode: the watch mode this page turns on, 0 "leave now" (the timer, mode 1, is off: flags.mode1) */
+  var S = { epoch: 0, id: 'idle', ctx: {}, me: null, kinds: 7, mode: 0, step: null, started: false, last: null, shared: {}, run: {},
     lines: null, flowState: null, pos: null, timelock: 180, processedHash: null, replayIndex: 0, linked: null,
-    /* vaults this page session has seen: the block each was created in, and the scheduled changes read so far */
-    made: {}, seen: {} };
+    /* vaults this page session has seen: the block and the transaction each was created in, the scheduled changes read
+       so far, the share decimals, and the vaults not to reuse (Reactive refused a watch on them) */
+    made: {}, madeTx: {}, seen: {}, decimals: {}, avoid: {} };
   var data = { runs: [], next: null, ready: null, baseTs: null, float: null, liveOk: null };
   var framed = false;
   try { framed = window.top !== window.self; } catch (e) { framed = true; }
@@ -27,7 +29,27 @@
   function topicN(n) { return '0x' + abi.word(n); }
   function topicA(a) { return '0x' + abi.addrWord(a); }
   function same(a, b) { return String(a || '').toLowerCase() === String(b || '').toLowerCase(); }
+  /* When a watch frees its place without exiting, in words, from the deployment's rules (config.js). */
+  function leaseWords() {
+    var s = cfg.deployment.lifetime, d = s / 86400;
+    var life = s % 86400 === 0 ? (d === 1 ? 'one day' : d + ' days') : Math.round(s / 3600) + ' hours';
+    return cfg.deployment.leaveNowExpires ? ', or ' + life + ' after it was turned on' :
+      '. A timer watch can also be ended by anyone ' + life + ' after it was turned on';
+  }
   function units(v) { return fmt.units(v, cfg.token.decimals, 2); }
+  /* Vault shares in the vault's own decimals (decimals(), read with the position): a Morpho Vault V2 has 18 for a
+     6-decimal asset. Until it is read: 18 for a vault of the maker, the token's for our demo vault. */
+  function shareDecimals() {
+    if (S.pos && S.pos.vault && S.decimals[S.pos.vault.toLowerCase()] !== undefined) return S.decimals[S.pos.vault.toLowerCase()];
+    return cfg.deployment.vaultSource === 'maker' ? 18 : cfg.token.decimals;
+  }
+  function shareUnits(v) { return fmt.units(v, shareDecimals(), 2); }
+  /* Test ETH this address must hold before the next step: the whole run when a vault is still to be made, else the
+     steps without the create (config.js amounts). */
+  function gasNeed(withCreate) { return BigInt(withCreate ? cfg.amounts.minGasWei : cfg.amounts.minGasStepWei); }
+  function gasCtx(need) {
+    return { address: S.me, need: fmt.units(need === undefined ? gasNeed(true) : need, 18, 6), typical: cfg.amounts.typicalEth };
+  }
   function ether(v, places) { return fmt.units(v, 18, places === undefined ? 4 : places); }
   function now() { return performance.now(); }
 
@@ -44,7 +66,7 @@
   function go(id, extra) {
     var def = NP.states[id];
     if (def.step) { S.step = def.step; S.started = true; }
-    var ctx = Object.assign({ kinds: S.kinds, step: S.step, started: S.started, min: Math.round(S.timelock / 60) }, S.shared, extra || {});
+    var ctx = Object.assign({ kinds: S.kinds, step: S.step, started: S.started, sec: S.timelock }, S.shared, extra || {});
     ctx.noDeposit = !ctx.hasDeposit;
     S.id = id;
     S.ctx = ctx;
@@ -78,20 +100,28 @@
     });
   }
 
+  /* The timer mode's caps exist on the 22 Nov 2026 contracts only (deployment values MAX_TIMED, TIMED_ARMS_PER_DAY). */
+  var TIMED = cfg.deployment.values.MAX_TIMED !== undefined;
+
+  /* The float and the debts on both chains, and the watch places on Reactive Lasna. A "leave now" watch on these
+     contracts does not expire, so MAX_ACTIVE (refusal code 3) can fill up over the days: it is read before every run. */
   function readFloat() {
+    var lasna = [
+      { method: 'eth_getBalance', params: [C.reactive, 'latest'] },
+      { to: C.system, data: enc.oneAddr('debt(address)', C.reactive) },
+      { to: C.reactive, data: enc.noArg('activeWatches()') },
+      { to: C.reactive, data: enc.noArg('MAX_ACTIVE()') }
+    ];
+    if (TIMED) lasna.push({ to: C.reactive, data: enc.noArg('timedWatches()') }, { to: C.reactive, data: enc.noArg('MAX_TIMED()') });
     return Promise.all([
-      multi('lasna', [
-        { method: 'eth_getBalance', params: [C.reactive, 'latest'] },
-        { to: C.system, data: enc.oneAddr('debt(address)', C.reactive) },
-        { to: C.reactive, data: enc.noArg('activeWatches()') },
-        { to: C.reactive, data: enc.noArg('MAX_ACTIVE()') }
-      ]),
+      multi('lasna', lasna),
       multi('base', [
         { method: 'eth_getBalance', params: [C.exit, 'latest'] },
         { to: C.callbackProxy, data: enc.oneAddr('debt(address)', C.exit) }
       ])
     ]).then(function (r) {
       var f = { float: BigInt(r[0][0]), debtL: BigInt(r[0][1]), active: Number(BigInt(r[0][2])), maxActive: Number(BigInt(r[0][3])),
+        timed: TIMED ? Number(BigInt(r[0][4])) : 0, maxTimed: TIMED ? Number(BigInt(r[0][5])) : 0,
         reserve: BigInt(r[1][0]), debtB: BigInt(r[1][1]) };
       data.float = f;
       S.shared.x = ether(f.float, 2);
@@ -103,28 +133,31 @@
     });
   }
 
-  /* The caps and the float, read before the first confirmation so nobody signs and is then refused. */
-  function capsBlock() {
+  /* The caps and the float, read before the first confirmation so nobody signs and is then refused. mode 1 (the
+     timer, switched off on this page by flags.mode1) also has its own caps on both chains. */
+  function capsBlock(mode) {
     var me = S.me;
+    var timed = TIMED && mode === 1;
     return rpc.head('base').then(function (head) {
       var day = Math.floor(head.ts / 86400);
       var left = 86400 - (head.ts % 86400);
       var reset = { h: Math.floor(left / 3600), m: Math.floor((left % 3600) / 60) };
-      return Promise.all([
-        multi('base', [
-          { to: C.exit, data: enc.oneUint('armsOnDay(uint256)', day) },
-          { to: C.exit, data: enc.noArg('MAX_ARMS_PER_DAY()') },
-          { to: C.exit, data: enc.addrUint('armsByAddressOnDay(address,uint256)', me, day) },
-          { to: C.exit, data: enc.noArg('MAX_ARMS_PER_ADDRESS_PER_DAY()') }
-        ]),
-        readFloat()
-      ]).then(function (r) {
+      var calls = [
+        { to: C.exit, data: enc.oneUint('armsOnDay(uint256)', day) },
+        { to: C.exit, data: enc.noArg('MAX_ARMS_PER_DAY()') },
+        { to: C.exit, data: enc.addrUint('armsByAddressOnDay(address,uint256)', me, day) },
+        { to: C.exit, data: enc.noArg('MAX_ARMS_PER_ADDRESS_PER_DAY()') }
+      ];
+      if (timed) calls.push({ to: C.exit, data: enc.oneUint('timedArmsOnDay(uint256)', day) }, { to: C.exit, data: enc.noArg('MAX_TIMED_ARMS_PER_DAY()') });
+      return Promise.all([multi('base', calls), readFloat()]).then(function (r) {
         var used = Number(BigInt(r[0][0])), cap = Number(BigInt(r[0][1]));
         var mine = Number(BigInt(r[0][2])), capMine = Number(BigInt(r[0][3]));
         var f = r[1];
         if (used >= cap) return { id: 'runs-used-up', ctx: Object.assign({ cap: cap }, reset) };
         if (mine >= capMine) return { id: 'address-used-up', ctx: Object.assign({ cap: capMine }, reset) };
-        if (f.active >= f.maxActive) return { id: 'slots-full', ctx: { n: f.maxActive } };
+        if (timed && Number(BigInt(r[0][4])) >= Number(BigInt(r[0][5]))) return { id: 'timer-full', ctx: Object.assign({ cap: Number(BigInt(r[0][5])), today: true, places: false }, reset) };
+        if (f.active >= f.maxActive) return { id: 'slots-full', ctx: { n: f.maxActive, slots: f.maxActive.toLocaleString('en-US'), frees: leaseWords() } };
+        if (timed && f.timed >= f.maxTimed) return { id: 'timer-full', ctx: { cap: f.maxTimed, today: false, places: true } };
         if (f.float < BigInt(cfg.amounts.floatMinWei) || f.reserve < BigInt(cfg.amounts.exitMinWei) || f.debtL > 0n || f.debtB > 0n) {
           return { id: 'float-empty', ctx: {} };
         }
@@ -133,28 +166,31 @@
     });
   }
 
-  /* The demo vault counts every demo dollar it holds, and demo dollars are free to mint to any address. So someone can
-     send some to a vault before a visitor deposits and skew the share price. This is the vault's own arithmetic
-     (shares = assets * (supply + 1) / (held + 1), redeem = shares * (held + 1) / (supply + 1)): a deposit is fair when
-     100 in gives 100 back. An empty vault that already holds demo dollars never is. */
-  function fairDeposit(held, supply) {
-    if (supply === 0n) return held === 0n;
-    var shares = DEP * (supply + 1n) / (held + 1n);
-    if (shares === 0n) return false;
-    return shares * (held + DEP + 1n) / (supply + shares + 1n) >= DEP;
-  }
   /* A public endpoint can answer from a block behind the one that returned a receipt. A vault made a moment ago
      then has no code there yet and a read of it comes back empty ("0x"). Empty means "not known yet", never zero. */
   function known(x) { return typeof x === 'string' && x.length > 2; }
   function bigOr0(x) { return known(x) ? BigInt(x) : 0n; }
+  /* What a deposit of 100 would be worth, priced by the vault itself: previewDeposit gives the shares it would mint,
+     previewRedeem what those shares pay back now. A Morpho Vault V2 is not 1:1 (18-decimal shares, rounding down),
+     so a fair vault is one that pays back at least fairPercent of the deposit; no shares at all never is. A Vault V2
+     counts the assets it booked, not the tokens it holds, so tokens sent to it do not move this price; our demo
+     vault counts what it holds, and there a gift of demo dollars before the deposit would. */
+  function fair(worth) { return worth * 100n >= DEP * BigInt(cfg.amounts.fairPercent); }
+  function priceOf(sharesHex, worthHex) {
+    if (!known(sharesHex)) return null;
+    var shares = BigInt(sharesHex);
+    if (shares === 0n) return { shares: 0n, worth: 0n, fair: false };
+    if (!known(worthHex)) return null;
+    var worth = BigInt(worthHex);
+    return { shares: shares, worth: worth, fair: fair(worth) };
+  }
   /* Reads again for about five seconds before giving up; null means it could not be learned. */
-  async function vaultState(vault) {
+  async function vaultPrice(vault) {
     for (var i = 0; i < 8; i++) {
-      var r = await multi('base', [
-        { to: C.token, data: enc.oneAddr('balanceOf(address)', vault) },
-        { to: vault, data: enc.noArg('totalSupply()') }
-      ]);
-      if (known(r[0]) && known(r[1])) return { held: BigInt(r[0]), supply: BigInt(r[1]) };
+      var s = await rpc.ethCall('base', vault, enc.oneUint('previewDeposit(uint256)', DEP));
+      var w = known(s) && BigInt(s) > 0n ? await rpc.ethCall('base', vault, enc.oneUint('previewRedeem(uint256)', BigInt(s))) : null;
+      var p = priceOf(s, w);
+      if (p) return p;
       await rpc.sleep(700);
     }
     return null;
@@ -176,32 +212,45 @@
     var vault = dec.addr(first[0]);
     if (same(vault, ZERO)) return pos;
     pos.vault = vault;
-    var second = await multi('base', [
+    var key = vault.toLowerCase();
+    var calls = [
       { to: vault, data: enc.oneAddr('balanceOf(address)', me) },
       { to: C.exit, data: enc.twoAddr('activeWatchOf(address,address)', me, vault) },
       { to: C.token, data: enc.twoAddr('allowance(address,address)', me, vault) },
       { to: vault, data: enc.twoAddr('allowance(address,address)', me, C.exit) },
-      { to: C.token, data: enc.oneAddr('balanceOf(address)', vault) },
-      { to: vault, data: enc.noArg('totalSupply()') }
-    ]);
+      { to: vault, data: enc.noArg('decimals()') },
+      { to: vault, data: enc.oneUint('previewDeposit(uint256)', DEP) }
+    ];
+    /* Morpho's own factory says whether this is one of its Vault V2s (the maker shape only) */
+    if (C.morphoFactory) calls.push({ to: C.morphoFactory, data: enc.oneAddr('isVaultV2(address)', vault) });
+    var second = await multi('base', calls);
     pos.shares = bigOr0(second[0]);
     pos.watchId = Number(BigInt(second[1]));
     pos.tokenAllow = BigInt(second[2]);
     pos.exitAllow = bigOr0(second[3]);
-    pos.vaultAssets = bigOr0(second[4]);
-    pos.vaultSupply = bigOr0(second[5]);
-    /* judged only on a full answer; an empty one is settled by the reads right before the deposit */
-    pos.tampered = known(second[4]) && known(second[5]) && !fairDeposit(pos.vaultAssets, pos.vaultSupply);
+    if (known(second[4])) S.decimals[key] = Number(BigInt(second[4]));
+    pos.isV2 = C.morphoFactory && known(second[6]) ? BigInt(second[6]) === 1n : null;
+    /* The vault's price, judged only for a vault this run might reuse and only on a full answer; an empty one is
+       settled by the reads right before the deposit. */
+    if (pos.shares === 0n && known(second[5]) && BigInt(second[5]) > 0n) {
+      var worth = await rpc.ethCall('base', vault, enc.oneUint('previewRedeem(uint256)', BigInt(second[5])));
+      var price = priceOf(second[5], worth);
+      pos.tampered = !!price && !price.fair;
+    } else {
+      pos.tampered = known(second[5]) && BigInt(second[5]) === 0n;
+    }
     /* When was this vault made, and which changes are scheduled on it. Three outcomes are kept apart:
        fresh (made within the window this page can search), not fresh (searched, not found: an older vault), and
        logsFailed (a read did not answer: not known). A vault this session created is known from its own receipt,
        so its reads start at that block and stay small enough for either endpoint. */
-    var key = vault.toLowerCase();
     try {
       if (S.made[key] === undefined) {
         var from = Math.max(0, head.number - cfg.scan.baseVaultWindow + 1);
         var made = await rpc.getLogs('base', { address: C.factory, topics: [EV['VaultCreated(address,address)'], topicA(vault)] }, from, head.number);
-        if (made.length) S.made[key] = Number(BigInt(made[0].blockNumber));
+        if (made.length) {
+          S.made[key] = Number(BigInt(made[0].blockNumber));
+          S.madeTx[key] = made[0].transactionHash;
+        }
       }
       if (S.made[key] !== undefined) {
         pos.created = S.made[key];
@@ -212,6 +261,10 @@
         if (head.number >= start) {
           var logs = await rpc.getLogs('base', { address: vault, topics: [EV['Submit(bytes4,bytes,uint256)']] }, start, head.number);
           logs.forEach(function (l) {
+            /* The maker's create() submits and runs ten changes of its own (the waiting periods, the gates and fees
+               switched off) in the transaction that made the vault: none of them is still scheduled. Other
+               transactions of that block still count. */
+            if (S.madeTx[key] && same(l.transactionHash, S.madeTx[key])) return;
             var id = l.transactionHash + ':' + (l.logIndex || l.data);
             if (memo.ids[id]) return;
             memo.ids[id] = true;
@@ -246,12 +299,14 @@
     }
     S.pos = pos;
     S.shared.address = me;
-    S.shared.shares = units(pos.shares);
+    S.shared.shares = shareUnits(pos.shares);
     S.shared.hasDeposit = pos.shares > 0n;
     S.shared.hasWatch = !!(pos.watchId && pos.base && pos.base.status === 1);
     S.shared.noWatch = !S.shared.hasWatch;
     S.shared.hasAllowance = pos.exitAllow > 0n;
-    S.shared.z = units(pos.exitAllow);
+    S.shared.z = shareUnits(pos.exitAllow);
+    /* Reactive Lasna refused this watch (status 4): the exit contract records it as on until its owner turns it off */
+    S.shared.refused = !!(S.shared.hasWatch && pos.lasna && pos.lasna.status === 4);
     if (S.shared.hasWatch) { S.shared.id = pos.watchId; S.kinds = pos.base.kinds; }
     return pos;
   }
@@ -272,7 +327,17 @@
   function capState(err) {
     if (err.sig === 'DailyCapReached()') return 'runs-used-up';
     if (err.sig === 'DailyCapForAddress()') return 'address-used-up';
+    if (err.sig === 'DailyCapForTimed()') return 'timer-full';
     return null;
+  }
+
+  /* A revert reason the page has no sentence for, from a vault (not the token, the maker or the exit contract): the
+     usual cause is an endpoint that has not seen the step confirmed just before. */
+  function txError(to, revertData) {
+    var err = abi.decodeError(revertData);
+    var ours = same(to, C.token) || same(to, C.exit) || same(to, C.factory);
+    if (!ours && /^0x/.test(err.name)) return { name: err.name, text: copy.vaultRefused };
+    return err;
   }
 
   async function sendTx(my, index, to, data) {
@@ -285,8 +350,11 @@
     if (!sim.ok) { await rpc.sleep(1200); sim = await rpc.simulate('base', me, to, data); }
     alive(my);
     if (!sim.ok) {
-      var err = abi.decodeError(sim.data);
-      if (capState(err)) { var blk = await capsBlock(); throw stop(blk ? blk.id : 'would-fail', blk ? blk.ctx : { plain: err.text, name: err.name }); }
+      var err = txError(to, sim.data);
+      if (capState(err)) {
+        var blk = await capsBlock(S.mode);
+        throw stop(blk ? blk.id : 'would-fail', blk ? blk.ctx : { plain: err.text, name: err.name });
+      }
       throw stop('would-fail', { plain: err.text, name: err.name });
     }
     setLine(index, 'wallet');
@@ -297,7 +365,7 @@
       alive(my);
       if (e.code === 4001) throw stop('confirm-rejected', { i: S.i || 1, n: S.n || 1, lines: resetLine(index) });
       if (e.code === -32002) throw stop('wallet-busy');
-      if (/insufficient funds|not enough (eth|funds)|exceeds balance/i.test(e.message)) throw stop('no-gas', { address: me });
+      if (/insufficient funds|not enough (eth|funds)|exceeds balance/i.test(e.message)) throw stop('no-gas', gasCtx(gasNeed(same(to, C.factory))));
       throw stop('wallet-error', { message: e.message });
     }
     alive(my);
@@ -317,7 +385,7 @@
     }
     if (rec.status !== '0x1') {
       var why = await rpc.simulate('base', me, to, data).catch(function () { return { ok: true }; });
-      var d = why.ok ? { text: 'The transaction was mined and reverted', name: '' } : abi.decodeError(why.data);
+      var d = why.ok ? { text: 'The transaction was mined and reverted', name: '' } : txError(to, why.data);
       throw stop('tx-failed', { plain: d.text, name: d.name, tx: hash });
     }
     setLine(index, 'done', hash);
@@ -367,8 +435,12 @@
     if (cid !== BASE.hex) throw stop('wrong-network');
     var pos = await readPosition();
     alive(my);
-    if (pos.eth < BigInt(cfg.amounts.minGasWei)) throw stop('no-gas', { address: S.me });
     var active = S.shared.hasWatch;
+    /* A deposit or a watch already there: the steps left (or a withdrawal) need no vault create. */
+    var need = gasNeed(!(active || pos.shares > 0n) && !planDeposit(pos).reuse);
+    if (pos.eth < need) throw stop('no-gas', gasCtx(need));
+    /* Reactive refused this watch: say so now, with the way to turn it off, instead of offering to continue. */
+    if (S.shared.refused) { refusedVault(pos.vault); throw stop('watch-refused', refusedCtx(copy.refusedGone)); }
     if (active || pos.shares > 0n) {
       if (!active && !pos.fresh) throw pos.logsFailed ? unread() : stop('old-vault');
       var ts = active ? pos.armedAt : null;
@@ -380,6 +452,17 @@
     }
     return showStepDeposit(my, pos);
   }
+
+  /* A watch Reactive refused stays on in the exit contract until its owner turns it off. A vault with three watches
+     already (code 4) would refuse the next one too, so after a refusal this session starts a fresh vault. */
+  function refusedVault(vault) { if (vault) S.avoid[vault.toLowerCase()] = true; }
+  function refusedReason(code) {
+    if (code === 3) return copy.refused3;
+    if (code === 4) return copy.refused4;
+    if (code === 5) return copy.refused5;
+    return view.fillText(copy.refusedOther, { code: code });
+  }
+  function refusedCtx(reason) { return { reason: reason, refused: true }; }
 
   function watchedPending(pos) {
     var out = null;
@@ -411,7 +494,7 @@
       S.run = { watchId: pos.watchId, baseFrom: pos.created || Math.max(0, pos.head.number - 2000),
         lasnaFrom: Math.max(0, lh.number - cfg.chains.lasna.endpoints[0].maxRange + 1), attempt: 1 };
       S.run.lasnaFromSubmit = S.run.lasnaFrom;
-      if (ls === 4) throw stop('watch-refused', { reason: copy.refusedGone });
+      if (ls === 4) { refusedVault(pos.vault); throw stop('watch-refused', refusedCtx(copy.refusedGone)); }
       if (ls === 0) { go('armed-subscribing'); return watchSubscription(my); }
       var pending = watchedPending(pos);
       if (!pending && pos.logsFailed) {
@@ -436,7 +519,9 @@
         showWait();
         return watchRecords(my);
       }
-      if (ls !== 1) throw stop('watch-refused', { reason: copy.refusedClosed });
+      /* Reactive Lasna has ended the watch (it asked for the exit, or saw it cancelled) while Base Sepolia still shows
+         it on: a closed watch, not a refused one. */
+      if (ls !== 1) { refusedVault(pos.vault); throw stop('watch-closed'); }
       var subs = await rpc.getLogs('lasna', { address: C.reactive,
         topics: [EV['WatchSubscribed(uint256,address,uint8,uint8)'], topicN(pos.watchId)] }, S.run.lasnaFrom, lh.number);
       alive(my);
@@ -466,7 +551,8 @@
   /* ---------- step 1: deposit ---------- */
 
   function planDeposit(pos) {
-    var empty = !!(pos.vault && pos.fresh && !pos.logsFailed && !pos.submits.length && pos.shares === 0n && !S.shared.hasWatch);
+    var empty = !!(pos.vault && pos.fresh && !pos.logsFailed && !pos.submits.length && pos.shares === 0n && !S.shared.hasWatch &&
+      !S.avoid[pos.vault.toLowerCase()]);
     var reuse = empty && !pos.tampered;
     S.tamperNote = empty && pos.tampered ? copy.tamperedReuse : null;
     var L = copy.depositLines;
@@ -480,7 +566,7 @@
   function countTodo(lines) { return lines.filter(function (l) { return l.status === 'todo'; }).length; }
 
   async function showStepDeposit(my, pos) {
-    var blk = await capsBlock();
+    var blk = await capsBlock(S.mode);
     alive(my);
     if (blk) throw stop(blk.id, blk.ctx);
     var plan = planDeposit(pos);
@@ -490,12 +576,13 @@
   }
 
   async function refuseTampered(my, vault) {
-    var v = await vaultState(vault);
+    var p = await vaultPrice(vault);
     alive(my);
-    if (!v || fairDeposit(v.held, v.supply)) return; /* not learned: go on, the worth of the shares is checked after the deposit */
+    if (!p || p.fair) return; /* not learned: go on, the worth of the shares is checked after the deposit */
     S.tampers = (S.tampers || 0) + 1;
     S.lines = null;
-    throw stop('vault-tampered', { amount: units(v.held), again: S.tampers > 1 ? copy.tamperedAgain : '' });
+    refusedVault(vault);
+    throw stop('vault-tampered', { worth: units(p.worth), again: S.tampers > 1 ? copy.tamperedAgain : '' });
   }
 
   async function doDeposit(my) {
@@ -503,11 +590,12 @@
     alive(my);
     if (S.shared.hasWatch || (pos.shares > 0n && pos.fresh)) return continueFrom(my);
     if (pos.shares > 0n && pos.logsFailed) throw unread();
-    if (pos.eth < BigInt(cfg.amounts.minGasWei)) throw stop('no-gas', { address: S.me });
-    var blk = await capsBlock();
+    var plan = planDeposit(pos);
+    var need = gasNeed(!plan.reuse);
+    if (pos.eth < need) throw stop('no-gas', gasCtx(need));
+    var blk = await capsBlock(S.mode);
     alive(my);
     if (blk) throw stop(blk.id, blk.ctx);
-    var plan = planDeposit(pos);
     S.lines = plan.lines;
     S.flowState = 'depositing';
     S.note = pos.token >= DEP ? null : copy.noTokens;
@@ -519,6 +607,7 @@
       if (!made) throw stop('tx-failed', { plain: 'The vault was not created', name: '', tx: rec.transactionHash });
       vault = dec.topicAddr(made.topics[1]);
       S.made[vault.toLowerCase()] = Number(BigInt(rec.blockNumber)); /* its age is known from here on, whatever a later log read does */
+      S.madeTx[vault.toLowerCase()] = rec.transactionHash; /* its own Submits (the maker's set-up) are not scheduled changes */
       await refuseTampered(my, vault); /* before the visitor signs anything else for this vault */
     }
     if (S.lines[1].status === 'todo') await sendTx(my, 1, C.token, enc.mint(S.me, DEP));
@@ -544,15 +633,16 @@
       })[0];
       if (minted) {
         after.shares = dec.big(minted.data, 0);
-        S.shared.shares = units(after.shares);
+        S.shared.shares = shareUnits(after.shares);
         S.shared.hasDeposit = after.shares > 0n;
       }
     }
     if (after.shares > 0n) {
-      /* What the shares would pay out now. Lower than the deposit means the share price moved in the last moment. */
+      /* What the shares would pay out now. Clearly lower than the deposit (fairPercent; one unit of rounding is not)
+         means the share price moved in the last moment. */
       var raw = await rpc.ethCall('base', after.vault || vault, enc.oneUint('previewRedeem(uint256)', after.shares));
       alive(my);
-      if (known(raw) && BigInt(raw) < DEP) throw stop('deposit-short', { worth: units(BigInt(raw)) });
+      if (known(raw) && !fair(BigInt(raw))) throw stop('deposit-short', { worth: units(BigInt(raw)) });
     }
     return showDeposited(after);
   }
@@ -561,7 +651,8 @@
     S.lines = null;
     var line = pos.submits.length ? view.fillText(copy.pendingSome, { n: pos.submits.length }) : copy.pendingNone;
     if (pos.logsFailed) line = copy.pendingUnread;
-    go('deposited', { pendingLine: pos.fresh ? line : '' });
+    /* Morpho's own factory lists the vault (isVaultV2 read with the position); not said when it was not read */
+    go('deposited', { pendingLine: pos.fresh ? line : '', vaultLine: pos.isV2 === true ? copy.vaultIsV2 : (pos.isV2 === false ? copy.vaultNotV2 : '') });
     view.setKindsWarn(S.kinds ? '' : copy.kindsNone);
   }
 
@@ -574,11 +665,11 @@
     if (!pos.fresh) throw pos.logsFailed ? unread() : stop('old-vault');
     if (!cfg.flags.unprovenKinds) S.kinds |= 1;
     if (!S.kinds) return showDeposited(pos);
-    var blk = await capsBlock();
+    var blk = await capsBlock(S.mode);
     alive(my);
     if (blk) throw stop(blk.id, blk.ctx);
     S.lines = [
-      { label: view.fillText(copy.armLines[0], { shares: units(pos.shares) }), status: pos.exitAllow === pos.shares ? 'skip' : 'todo' },
+      { label: view.fillText(copy.armLines[0], { shares: shareUnits(pos.shares) }), status: pos.exitAllow === pos.shares ? 'skip' : 'todo' },
       { label: copy.armLines[1], status: 'todo' }
     ];
     S.flowState = 'arming';
@@ -588,7 +679,7 @@
     S.run = { lasnaFrom: Math.max(0, lh.number - 2), attempt: 0 };
     go('arming', { i: 1, n: countTodo(S.lines), lines: S.lines });
     if (S.lines[0].status === 'todo') await sendTx(my, 0, pos.vault, enc.approve(C.exit, pos.shares));
-    var rec = await sendTx(my, 1, C.exit, enc.arm(pos.vault, S.kinds, 0, pos.shares));
+    var rec = await sendTx(my, 1, C.exit, enc.arm(pos.vault, S.kinds, S.mode, pos.shares));
     var log = rec.logs.filter(function (l) { return same(l.address, C.exit) && l.topics[0] === EV['WatchArmed(uint256,address,address,uint8,uint8,uint256)']; })[0];
     if (!log) throw stop('tx-failed', { plain: 'The watch was not recorded', name: '', tx: rec.transactionHash });
     S.lines = null;
@@ -619,7 +710,9 @@
         var log = logs[0];
         if (log.topics[0] === EV['WatchRefused(uint256,uint8)']) {
           var code = dec.num(log.data, 0);
-          throw stop('watch-refused', { reason: code === 3 ? copy.refused3 : (code === 4 ? copy.refused4 : view.fillText(copy.refusedOther, { code: code })) });
+          refusedVault(S.pos && S.pos.vault);
+          S.shared.refused = true;
+          throw stop('watch-refused', refusedCtx(refusedReason(code)));
         }
         S.shared.subTx = log.transactionHash;
         var subTs = await rpc.blockTs('lasna', log.blockNumber);
@@ -787,7 +880,7 @@
               if (elapsed >= T.ignoredAfter) {
                 var sh = BigInt(await rpc.ethCall('base', S.pos.vault, enc.oneAddr('balanceOf(address)', S.me)));
                 alive(my);
-                if (sh === r.sharesBefore) throw stop('ignored', { shares: units(sh), kindA: r.kindA || 'a change' });
+                if (sh === r.sharesBefore) throw stop('ignored', { shares: shareUnits(sh), kindA: r.kindA || 'a change' });
                 r.expectExit = true; /* the shares moved after all: follow it as an exit */
               }
             } else if (elapsed >= T.reactiveTimeout && (r.attempt > 1 || r.shift)) {
@@ -866,7 +959,7 @@
     S.shared.noWatch = true;
     S.shared.hasDeposit = BigInt(parts[1][1]) > 0n;
     S.shared.hasAllowance = allow > 0n;
-    S.shared.z = units(allow);
+    S.shared.z = shareUnits(allow);
     if (e.outcome === 1) return go('nothing-to-redeem');
     if (e.outcome !== 0) {
       var rv = (parts[2] ? parts[2].logs : []).filter(function (l) { return same(l.address, C.exit) && l.topics[0] === EV['RedeemReverted(uint256,bytes)']; })[0];
@@ -880,7 +973,7 @@
       w: r.resumed || !r.seen1 ? null : ((r.seen3 - r.seen1) / 1000).toFixed(1),
       a: r.tokenBefore === null || r.tokenBefore === undefined ? null : units(r.tokenBefore),
       b: units(BigInt(parts[1][0])),
-      c: r.sharesBefore === null || r.sharesBefore === undefined ? null : units(r.sharesBefore)
+      c: r.sharesBefore === null || r.sharesBefore === undefined ? null : shareUnits(r.sharesBefore)
     };
     go('returned', ctx);
     writeHash(e.watchId);
@@ -922,6 +1015,8 @@
       });
       var labels = { withdraw: 'Withdraw your deposit', cancel: 'Turn the watch off', allowance: 'Remove the allowance' };
       var before = pos.token;
+      /* a watch Reactive Lasna refused was never subscribed: the "off" screen says so */
+      var wasRefused = !!S.shared.refused;
       if (todo.length) {
         S.lines = todo.map(function (k) { return { label: labels[k], status: 'todo', kind: k }; });
         S.flowState = 'recovering';
@@ -938,12 +1033,12 @@
       alive(my);
       if (then === 'restart') return showStepDeposit(my, after);
       if (then === 'returned' && S.returnedCtx) {
-        return go('returned', Object.assign({}, S.returnedCtx, { z: units(after.exitAllow), hasAllowance: after.exitAllow > 0n }));
+        return go('returned', Object.assign({}, S.returnedCtx, { z: shareUnits(after.exitAllow), hasAllowance: after.exitAllow > 0n }));
       }
       if (kinds[0] === 'withdraw' && kinds.length === 1) {
         return go('withdrawn-by-hand', { assets: units(after.token - before), watchLine: S.shared.hasWatch ? copy.watchStillOn : copy.watchNone });
       }
-      return go('watch-off');
+      return go('watch-off', { refused: wasRefused, subscribedOff: !wasRefused });
     };
   }
 
@@ -1017,11 +1112,17 @@
     var returned = withTx.filter(function (r) { return r.r3 && r.r3.outcome === 0; });
     var nowTimes = returned.filter(function (r) { return r.mode === 0; }).sort(function (a, b) { return b.r1.ts - a.r1.ts; })
       .map(function (r) { return fmt.sec(r.r3.ts, r.r1.ts); });
-    var total = data.next !== null ? data.next - 1 : withTx.length;
-    var unlisted = list.filter(function (r) { return !r.r1 && r.status === 3; }).length + Math.max(0, total - list.length);
-    var ours = list.filter(function (r) { return r.owner && cfg.isOurs(r.owner); }).length;
-    var visitors = list.filter(function (r) { return r.owner && !cfg.isOurs(r.owner); }).length;
-    view.proof({ runs: total, returned: returned.length, nowTimes: nowTimes, unlisted: unlisted, ours: ours, visitors: visitors });
+    /* Live: every watch on the exit contract, by what became of it. Without the live read: the runs in the list. */
+    var live = data.liveOk === true && data.next !== null;
+    var total = live ? data.next - 1 : withTx.length;
+    var bare = function (st) { return list.filter(function (r) { return !r.r1 && r.status === st; }).length; };
+    var unlisted = live ? bare(3) + Math.max(0, total - list.length) : 0;
+    var pool = live ? list : withTx;
+    var ours = pool.filter(function (r) { return r.owner && cfg.isOurs(r.owner); }).length;
+    var visitors = pool.filter(function (r) { return r.owner && !cfg.isOurs(r.owner); }).length;
+    view.proof({ live: live, runs: total, returned: returned.length, noReturn: withTx.length - returned.length,
+      off: live ? bare(2) : 0, on: live ? bare(1) : 0, expired: live ? bare(4) : 0,
+      nowTimes: nowTimes, unlisted: unlisted, ours: ours, visitors: visitors });
   }
 
   async function loadChain() {
@@ -1096,7 +1197,11 @@
       showProof(list);
       var mine = list.filter(function (r) { return r.r3 && r.r3.outcome === 0 && r.mode === 0 && cfg.isOurs(r.owner); })
         .sort(function (a, b) { return b.r3.ts - a.r3.ts; })[0];
+      var debts = [];
+      if (data.float.debtL > 0n) debts.push(S.shared.dL + ' on Reactive Lasna');
+      if (data.float.debtB > 0n) debts.push(S.shared.dB + ' on Base Sepolia');
       view.health({ left: Math.max(0, cap - used), cap: cap, float: ether(data.float.float, 2),
+        debt: debts.length ? 'debt ' + debts.join(' and ') : 'no debt',
         lastAge: mine ? Math.max(0, heads[0].ts - mine.r3.ts) : null, lastTs: mine ? mine.r3.ts : null,
         lastSec: mine ? fmt.sec(mine.r3.ts, mine.r1.ts) : null },
       function () { data.ready = loadChain(); });
@@ -1224,6 +1329,11 @@
           numbering: n < 1 ? 'Runs are numbered from 1.' : '' });
       }
       var w = dec.watchOf(await rpc.ethCall('base', C.exit, enc.oneUint('watchOf(uint256)', n)));
+      alive(my);
+      /* Only an ended watch has an exit to replay. One still on, turned off or expired never asked for one. */
+      if (w.status === 1) throw stop('run-still-on', { id: n });
+      if (w.status === 2) throw stop('run-no-exit', { id: n, why: copy.noExitOff });
+      if (w.status === 4) throw stop('run-no-exit', { id: n, why: copy.noExitExpired });
       throw stop('run-too-old', { id: n, state: view.STATUS[w.status] || 'unknown', date: fmt.isoDate(NP.recorded.readAt) });
     };
   }

@@ -14,6 +14,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="app.css">
 <script defer src="guard.js"></script>
+<script defer src="data/deployment.js"></script>
 <script defer src="config.js"></script>
 <script defer src="sig.js"></script>
 <script defer src="abi.js"></script>
@@ -49,19 +50,19 @@
   </div>
   <div class="problem">
     <p class="problem-line" id="problem">On 21 Nov 2026, 35 rule changes were waiting in 9 Morpho vaults holding $85.9M. 3 of them were a kind this tool would exit on by default.</p>
-    <p class="small" id="problem-src">Morpho&rsquo;s public API, 21 Nov 2026: 32 cap increases, 3 shorter waiting periods. The demo below runs on our own test vault. Not affiliated with Morpho.</p>
+    <p class="small" id="problem-src">Morpho&rsquo;s public API, 21 Nov 2026: 32 cap increases, 3 shorter waiting periods. The demo below runs on test Morpho Vault V2s made by Morpho&rsquo;s own factory through our maker contract, holding our demo dollar; these contracts accept no other vault. Not affiliated with Morpho.</p>
   </div>
 
   <figure class="latest" aria-labelledby="latest-cap">
     <!-- recorded:latest -->
-    <figcaption id="latest-cap">Latest “leave now” run on testnet, on our own demo vault, 22 Nov 2026: deposit back 1 s after the change was scheduled.</figcaption>
+    <figcaption id="latest-cap">Latest “leave now” run on testnet, on a test Morpho Vault V2 of ours, our own keys as curator and depositor, 22 Nov 2026: deposit back 1 s after the change was scheduled.</figcaption>
     <div class="strip" id="strip-first" data-stage="3">
       <div class="axis axis-full" aria-hidden="true">
         <span class="ax"></span><span class="tick t-sched"></span><span class="tick t-back"></span><span class="tick t-end"></span><span class="tick t-now" hidden></span>
-        <span class="lab l-sched">Change scheduled <b class="num">09:21:44 UTC</b></span>
+        <span class="lab l-sched">Change scheduled <b class="num">09:30:39 UTC</b></span>
         <span class="lab l-back">Deposit back <b class="num">+1 s</b></span>
         <span class="lab l-left"><b class="num">179 s</b> of notice left</span>
-        <span class="lab l-end">Change can take effect <b class="num">09:24:44 UTC</b></span>
+        <span class="lab l-end">Change can take effect <b class="num">09:33:39 UTC</b></span>
       </div>
       <div class="zoom" aria-hidden="true">
         <p class="zoom-cap">The first 5 seconds, magnified</p>
@@ -71,20 +72,21 @@
         </div>
       </div>
       <div class="records">
-        <p class="vh" id="strip-alt">Run #8. Change scheduled at 09:21:44 UTC. Deposit back 1 second later. The change could take effect at 09:24:44 UTC, 179 seconds after the deposit was back.</p>
+        <p class="vh" id="strip-alt">Run #1. Change scheduled at 09:30:39 UTC. Deposit back 1 second later. The change could take effect at 09:33:39 UTC, 179 seconds after the deposit was back.</p>
         <table class="ledger">
           <caption class="vh">The three records of this run</caption>
           <thead class="vh"><tr><th scope="col">Record</th><th scope="col">Chain</th><th scope="col">UTC time</th><th scope="col">After the change</th><th scope="col">Transaction</th></tr></thead>
           <tbody id="ledger-first">
-            <tr class="rec rec-sched"><th scope="row"><span class="mark" aria-hidden="true"></span>Change scheduled</th><td class="chain">Base Sepolia</td><td class="num time">09:21:44</td><td class="num sec">+0&nbsp;s</td><td class="tx"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0x835c238cca37494c9aefea1dc03450ebe83ed1be0f9877751c2850c69c96f855" rel="noopener noreferrer" target="_blank" title="Change scheduled, transaction on Base Sepolia">0x835c…f855</a></td></tr>
-            <tr class="rec rec-react"><th scope="row"><span class="mark" aria-hidden="true"></span>Reactive transaction</th><td class="chain">Reactive Lasna</td><td class="num time">09:21:43</td><td class="num sec">+0&nbsp;s</td><td class="tx"><a class="hash" href="https://lasna.reactscan.net/tx/0x833910d12d0f9004679e29a9973e95c4d19ce2e56089dac10024a6e169bd44e0" rel="noopener noreferrer" target="_blank" title="Reactive transaction on Reactive Lasna">0x8339…44e0</a></td></tr>
-            <tr class="rec rec-back"><th scope="row"><span class="mark" aria-hidden="true"></span>Deposit back in the depositor&#x27;s wallet</th><td class="chain">Base Sepolia</td><td class="num time">09:21:45</td><td class="num sec">+1&nbsp;s</td><td class="tx"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0x1ae72fd8c1f51f5198bc03336063a1513d586bff8900118890e17a7c7a92115c" rel="noopener noreferrer" target="_blank" title="Withdrawal, transaction on Base Sepolia">0x1ae7…115c</a></td></tr>
+            <tr class="rec rec-sched"><th scope="row"><span class="mark" aria-hidden="true"></span>Change scheduled</th><td class="chain">Base Sepolia</td><td class="num time">09:30:39</td><td class="num sec">+0&nbsp;s</td><td class="tx"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0xc974112485f9350817cb58a35418cc309b7d27b536dfa3da3e4a08eeba9ce783" rel="noopener noreferrer" target="_blank" title="Change scheduled, transaction on Base Sepolia">0xc974…e783</a></td></tr>
+            <tr class="rec rec-react"><th scope="row"><span class="mark" aria-hidden="true"></span>Reactive transaction</th><td class="chain">Reactive Lasna</td><td class="num time">09:30:38</td><td class="num sec">+0&nbsp;s</td><td class="tx"><a class="hash" href="https://lasna.reactscan.net/tx/0xf9d98a074ebb38114108434a8704e50e659929c25ab510c0644e35602b4b88a9" rel="noopener noreferrer" target="_blank" title="Reactive transaction on Reactive Lasna">0xf9d9…88a9</a></td></tr>
+            <tr class="rec rec-back"><th scope="row"><span class="mark" aria-hidden="true"></span>Deposit back in the depositor&#x27;s wallet</th><td class="chain">Base Sepolia</td><td class="num time">09:30:40</td><td class="num sec">+1&nbsp;s</td><td class="tx"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0x85724300cdc2c5a21cf1f56c58133094f6f07e694644fa1d692368d296e1f549" rel="noopener noreferrer" target="_blank" title="Withdrawal, transaction on Base Sepolia">0x8572…f549</a></td></tr>
           </tbody>
         </table>
+        <p class="small">The two chains&rsquo; clocks differ by about a second, so a record can show a time one second before the change it follows.</p>
       </div>
     </div>
     <p class="small" id="latest-check">Recorded copy read 22 Nov 2026.</p>
-    <p class="proof" id="proof">7 runs so far, all our own tests. 7 deposits returned. “Leave now” runs: median 1.5 s over 6 runs.</p>
+    <p class="proof" id="proof">1 recorded run so far, our own test. 1 deposit returned.</p>
     <!-- /recorded:latest -->
   </figure>
 </section>
@@ -92,11 +94,11 @@
 <section class="band wrap try" id="try" aria-labelledby="try-h">
   <div class="try-text">
     <h2 id="try-h">Run it yourself</h2>
-    <p>You deposit 100 demo dollars into a demo vault, turn the watch on, then play the vault&rsquo;s curator and schedule a rule change. Your deposit should come back by itself.</p>
+    <p>You deposit 100 demo dollars into your own Morpho Vault V2 on a test network, turn the watch on, then play the vault&rsquo;s curator and schedule a rule change. Your deposit should come back by itself.</p>
     <div id="intro">
-      <p>7 wallet confirmations. About 0.00002 test ETH on Base Sepolia. About one minute.</p>
-      <p>The demo vault and the demo dollars are ours and have no value. Reactive fees for this demo are paid from our float.</p>
-      <p class="small" id="health">Today&rsquo;s run count and the float are read from both chains when the page&rsquo;s script runs.</p>
+      <p>7 wallet confirmations. About 0.00004 test ETH on Base Sepolia; the page asks for 0.00012 before it starts, as wallets check each transaction against its highest possible fee. About one minute.</p>
+      <p>The vault is made for you by Morpho&rsquo;s own Vault V2 factory, through a maker contract of ours that sets its waiting periods. The maker and the demo dollars are ours; the demo dollars have no value. Reactive fees for this demo are paid from our float.</p>
+      <p class="small" id="health">Today&rsquo;s run count, the float and any debt are read from both chains when the page&rsquo;s script runs.</p>
     </div>
   </div>
   <div class="panel">
@@ -131,13 +133,7 @@
     </thead>
     <tbody id="runs-body">
             <!-- recorded:runs -->
-            <tr><th scope="row" class="num"><a href="#run=8">#8</a></th><td class="num" data-l="When (UTC)">22 Nov 2026 09:21:44</td><td data-l="Who">Our own test run</td><td data-l="Change">New adapter <span class="quiet">(leave now)</span></td><td class="num" data-l="Reactive transaction">+0&nbsp;s</td><td class="num back" data-l="Deposit back">+1&nbsp;s</td><td class="num" data-l="Notice left">179&nbsp;s</td><td class="tx" data-l="Transactions"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0x835c238cca37494c9aefea1dc03450ebe83ed1be0f9877751c2850c69c96f855" rel="noopener noreferrer" target="_blank" title="Run 8, change scheduled, Base Sepolia">0x835c…f855</a> <a class="hash" href="https://lasna.reactscan.net/tx/0x833910d12d0f9004679e29a9973e95c4d19ce2e56089dac10024a6e169bd44e0" rel="noopener noreferrer" target="_blank" title="Run 8, reactive transaction, Reactive Lasna">0x8339…44e0</a> <a class="hash" href="https://base-sepolia.blockscout.com/tx/0x1ae72fd8c1f51f5198bc03336063a1513d586bff8900118890e17a7c7a92115c" rel="noopener noreferrer" target="_blank" title="Run 8, withdrawal, Base Sepolia">0x1ae7…115c</a></td></tr>
-            <tr><th scope="row" class="num"><a href="#run=7">#7</a></th><td class="num" data-l="When (UTC)">22 Nov 2026 06:20:11</td><td data-l="Who">Our own test run</td><td data-l="Change">Cap increase <span class="quiet">(leave now)</span></td><td class="num" data-l="Reactive transaction">+0&nbsp;s</td><td class="num back" data-l="Deposit back">+2&nbsp;s</td><td class="num" data-l="Notice left">178&nbsp;s</td><td class="tx" data-l="Transactions"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0x7066827c63a73722651f68b14ec0552728107040ea8bf0dc316c23a8e76c991f" rel="noopener noreferrer" target="_blank" title="Run 7, change scheduled, Base Sepolia">0x7066…991f</a> <a class="hash" href="https://lasna.reactscan.net/tx/0x02395d2ebc5d87877f40082ac24ae0768b741061e3962a1ec5ab2fd8595271b1" rel="noopener noreferrer" target="_blank" title="Run 7, reactive transaction, Reactive Lasna">0x0239…71b1</a> <a class="hash" href="https://base-sepolia.blockscout.com/tx/0xf20877f28e574b7eac8341a85afff2dac7b3f38cf9adbd06571d9546fbd48597" rel="noopener noreferrer" target="_blank" title="Run 7, withdrawal, Base Sepolia">0xf208…8597</a></td></tr>
-            <tr><th scope="row" class="num"><a href="#run=5">#5</a></th><td class="num" data-l="When (UTC)">21 Nov 2026 21:09:20</td><td data-l="Who">Our own test run</td><td data-l="Change">New adapter <span class="quiet">(leave now)</span></td><td class="num" data-l="Reactive transaction">+0&nbsp;s</td><td class="num back" data-l="Deposit back">+1&nbsp;s</td><td class="num" data-l="Notice left">179&nbsp;s</td><td class="tx" data-l="Transactions"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0xcac46e4f8088ebdbb5ba4bd46ec49f79dd1a7bbeec10c5d03844edfd6c8bb252" rel="noopener noreferrer" target="_blank" title="Run 5, change scheduled, Base Sepolia">0xcac4…b252</a> <a class="hash" href="https://lasna.reactscan.net/tx/0x9100fdc75b0896b2edfdea8f89aa019d74d4f1666d8bd1aa6b015158730df308" rel="noopener noreferrer" target="_blank" title="Run 5, reactive transaction, Reactive Lasna">0x9100…f308</a> <a class="hash" href="https://base-sepolia.blockscout.com/tx/0x7d7be1a69c3518a25c63c14ac517eeb350fbbb891c552a911222e9a68ab87932" rel="noopener noreferrer" target="_blank" title="Run 5, withdrawal, Base Sepolia">0x7d7b…7932</a></td></tr>
-            <tr><th scope="row" class="num"><a href="#run=4">#4</a></th><td class="num" data-l="When (UTC)">21 Nov 2026 19:36:24</td><td data-l="Who">Our own test run</td><td data-l="Change">New allocator <span class="quiet">(leave now)</span></td><td class="num" data-l="Reactive transaction">+0&nbsp;s</td><td class="num back" data-l="Deposit back">+1&nbsp;s</td><td class="num" data-l="Notice left">179&nbsp;s</td><td class="tx" data-l="Transactions"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0xcb46ba5b790545fe26a4102d709c24cc2f393ec393565910ce7370176dfc0656" rel="noopener noreferrer" target="_blank" title="Run 4, change scheduled, Base Sepolia">0xcb46…0656</a> <a class="hash" href="https://lasna.reactscan.net/tx/0x394f2e9b74612cead05c02972f57f16e3e07d9d88ce6962b36556b7f81f68aeb" rel="noopener noreferrer" target="_blank" title="Run 4, reactive transaction, Reactive Lasna">0x394f…8aeb</a> <a class="hash" href="https://base-sepolia.blockscout.com/tx/0xfeefba149291d58e5bcb775d74f11e2bb589806288d0511da2c78f75b5fb15b1" rel="noopener noreferrer" target="_blank" title="Run 4, withdrawal, Base Sepolia">0xfeef…15b1</a></td></tr>
-            <tr><th scope="row" class="num"><a href="#run=3">#3</a></th><td class="num" data-l="When (UTC)">21 Nov 2026 19:31:53</td><td data-l="Who">Our own test run</td><td data-l="Change">Shorter waiting period <span class="quiet">(leave now)</span></td><td class="num" data-l="Reactive transaction">+0&nbsp;s</td><td class="num back" data-l="Deposit back">+2&nbsp;s</td><td class="num" data-l="Notice left">178&nbsp;s</td><td class="tx" data-l="Transactions"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0xb0934f38424d40a15e29813221e2ff5fcaa1d7890270091b79852b7afe4718d9" rel="noopener noreferrer" target="_blank" title="Run 3, change scheduled, Base Sepolia">0xb093…18d9</a> <a class="hash" href="https://lasna.reactscan.net/tx/0xd6781732b0ebc3605e4935bbdfff19f099e7734363ee6cc825f32a1469fbd950" rel="noopener noreferrer" target="_blank" title="Run 3, reactive transaction, Reactive Lasna">0xd678…d950</a> <a class="hash" href="https://base-sepolia.blockscout.com/tx/0xd4e0142294a334290c093c6e55ad4ae121dd3419cc47c5c2f4d05420481aeed2" rel="noopener noreferrer" target="_blank" title="Run 3, withdrawal, Base Sepolia">0xd4e0…eed2</a></td></tr>
-            <tr><th scope="row" class="num"><a href="#run=2">#2</a></th><td class="num" data-l="When (UTC)">18 Nov 2026 01:06:48</td><td data-l="Who">Our own test run</td><td data-l="Change">New adapter <span class="quiet">(wait for the deadline)</span></td><td class="num" data-l="Reactive transaction">+61&nbsp;s <span class="quiet">(timer)</span></td><td class="num back" data-l="Deposit back">+62&nbsp;s</td><td class="num" data-l="Notice left">118&nbsp;s</td><td class="tx" data-l="Transactions"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0x19353d516295390f7ff762d3e3bdfce296fadf95b9d9dffffa435977a6b5a378" rel="noopener noreferrer" target="_blank" title="Run 2, change scheduled, Base Sepolia">0x1935…a378</a> <a class="hash" href="https://lasna.reactscan.net/tx/0x98b822a593a99bf8ab4d085d94f7d77a0986830755a3f15223e3c47023efc530" rel="noopener noreferrer" target="_blank" title="Run 2, reactive transaction, Reactive Lasna">0x98b8…c530</a> <a class="hash" href="https://base-sepolia.blockscout.com/tx/0x681bd1f976e0b708c29ffe7639d9a987701bf2f8fc89480ae97e8ace77470b47" rel="noopener noreferrer" target="_blank" title="Run 2, withdrawal, Base Sepolia">0x681b…0b47</a></td></tr>
-            <tr><th scope="row" class="num"><a href="#run=1">#1</a></th><td class="num" data-l="When (UTC)">18 Nov 2026 01:04:46</td><td data-l="Who">Our own test run</td><td data-l="Change">New adapter <span class="quiet">(leave now)</span></td><td class="num" data-l="Reactive transaction">+0&nbsp;s</td><td class="num back" data-l="Deposit back">+2&nbsp;s</td><td class="num" data-l="Notice left">178&nbsp;s</td><td class="tx" data-l="Transactions"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0xdd4ce73f5073de51dc3ec51c0e75fc50f01b5753c74f16ca374eb255b3544891" rel="noopener noreferrer" target="_blank" title="Run 1, change scheduled, Base Sepolia">0xdd4c…4891</a> <a class="hash" href="https://lasna.reactscan.net/tx/0x1a6b032aa7afc9f89e25fdef852bebbffad4ee1b750ba4fd4cc5bb6a5f84aa3e" rel="noopener noreferrer" target="_blank" title="Run 1, reactive transaction, Reactive Lasna">0x1a6b…aa3e</a> <a class="hash" href="https://base-sepolia.blockscout.com/tx/0x7f6456d9b7938e6a205c87a86d0e95ae5e347ec160a39c1e7a7251caebc67b04" rel="noopener noreferrer" target="_blank" title="Run 1, withdrawal, Base Sepolia">0x7f64…7b04</a></td></tr>
+            <tr><th scope="row" class="num"><a href="#run=1">#1</a></th><td class="num" data-l="When (UTC)">22 Nov 2026 09:30:39</td><td data-l="Who">Our own test run</td><td data-l="Change">New adapter <span class="quiet">(leave now)</span></td><td class="num" data-l="Reactive transaction">+0&nbsp;s</td><td class="num back" data-l="Deposit back">+1&nbsp;s</td><td class="num" data-l="Notice left">179&nbsp;s</td><td class="tx" data-l="Transactions"><a class="hash" href="https://base-sepolia.blockscout.com/tx/0xc974112485f9350817cb58a35418cc309b7d27b536dfa3da3e4a08eeba9ce783" rel="noopener noreferrer" target="_blank" title="Run 1, change scheduled, Base Sepolia">0xc974…e783</a> <a class="hash" href="https://lasna.reactscan.net/tx/0xf9d98a074ebb38114108434a8704e50e659929c25ab510c0644e35602b4b88a9" rel="noopener noreferrer" target="_blank" title="Run 1, reactive transaction, Reactive Lasna">0xf9d9…88a9</a> <a class="hash" href="https://base-sepolia.blockscout.com/tx/0x85724300cdc2c5a21cf1f56c58133094f6f07e694644fa1d692368d296e1f549" rel="noopener noreferrer" target="_blank" title="Run 1, withdrawal, Base Sepolia">0x8572…f549</a></td></tr>
     <!-- /recorded:runs -->
     </tbody>
   </table>
@@ -230,12 +226,12 @@
       </tr>
       <tr>
         <th scope="row">Subscribe and unsubscribe at runtime</th>
-        <td data-l="Here">One subscription per watch, added when you turn it on and removed when it ends.</td>
+        <td data-l="Here">One topic filter per kind of change you chose on your vault (three for the default watch; a cap increase adds two), subscribed when you turn the watch on. Watches on the same vault share filters by count, so the last one to end unsubscribes.</td>
         <td data-l="Without it">One hard-coded vault, and fees for watches nobody holds.</td>
       </tr>
       <tr>
         <th scope="row">A timer that runs only while a change is waiting</th>
-        <td data-l="Here">The second mode, &ldquo;wait for the deadline&rdquo;: Reactive stores the change and asks for the exit 2 minutes before it can run (this demo&rsquo;s setting). The deposit stays if the curator cancels first. <a href="#run=2">Run #2</a> above used it.</td>
+        <td data-l="Here">The second mode, &ldquo;wait for the deadline&rdquo;: Reactive stores the change and asks for the exit 2 minutes before it can run (this demo&rsquo;s setting). The deposit stays if the curator cancels first. Built in and switched off on this page; our run #6 on these contracts used it, deposit back 65 s after the change with 115 s of notice left (<a href="https://github.com/bongbongcrypto/notice-period/blob/main/records/2026-11-22-8.json" rel="noopener noreferrer">its record</a>).</td>
         <td data-l="Without it">Only &ldquo;leave now&rdquo;. Left on all the time, the timer would spend the float while idle.</td>
       </tr>
       <tr>
@@ -245,7 +241,7 @@
       </tr>
       <tr>
         <th scope="row">Blocks about one second apart</th>
-        <td data-l="Here">In run #1 Reactive&rsquo;s transaction carries the same second as the vault&rsquo;s event, and the deposit was back 2 s later. Every run shows its seconds.</td>
+        <td data-l="Here">In run #1 Reactive&rsquo;s transaction landed within a second of the vault&rsquo;s event, and the deposit was back 1 s after the event. Every run shows its seconds.</td>
         <td data-l="Without it">The exit would still beat a waiting period of days. It counts when the notice is short, like the 3&nbsp;minutes of this&nbsp;demo.</td>
       </tr>
     </tbody>
@@ -255,18 +251,24 @@
     <div>
       <h3>What this demo is</h3>
       <ul class="plain">
+<!-- stamp:demolimits -->
         <li>Test networks only.</li>
-        <li>The vault and the dollars are ours; the vault copies the events of Morpho Vault V2.</li>
-        <li>A watch lasts one day in this demo.</li>
+        <li>Each vault is a real Morpho Vault V2, made by Morpho&rsquo;s own factory through our maker contract. The maker and the demo dollar are ours; the dollar has no value.</li>
+        <li>A maker vault waits 180 seconds before a new adapter, a new allocator, a cap increase or a shorter waiting period can take effect. Vaults that hold real deposits usually wait days.</li>
+        <li>A &ldquo;leave now&rdquo; watch does not expire: it ends when it fires or when you turn it off. A timer watch can be ended by anyone one day after it was turned on.</li>
+        <li>A watch is served only while our float on Reactive Lasna is above zero; the page shows the float and any debt live. On one vault only the first three watches are served: a fourth is refused on Reactive Lasna and stays on in the exit contract&rsquo;s record until its owner turns it off. If the vault refuses the redeem, the watch ends without a retry. A version for real use would have each depositor fund their own watch; that is not built.</li>
+        <li>Watches turned on per UTC day: 4 per address, 50 for everyone. The timer mode, not offered on this page, is limited to 8 at a time and 4 new a day.</li>
         <li>A change with no waiting period leaves no time to exit.</li>
+<!-- /stamp:demolimits -->
       </ul>
       <p class="small">Every limit is in the <a href="https://github.com/bongbongcrypto/notice-period/blob/main/SPEC.md" rel="noopener noreferrer">rule book</a>.</p>
     </div>
     <div id="check">
       <h3>Check every claim in ten minutes</h3>
       <ol class="checks">
-        <li><strong>The three records belong together.</strong> Open the three links of a run above. In a &ldquo;leave now&rdquo; run, Reactive&rsquo;s transaction names the Base Sepolia transaction as its origin. In a &ldquo;wait for the deadline&rdquo; run the origin is the timer tick, and the Base Sepolia hash is a topic of the <code>ExitRequested</code> log. In both, the withdrawal&rsquo;s <code>WatchEnded</code> log carries the same hash.</li>
+        <li><strong>The three records belong together.</strong> Open the three links of a run above. In a &ldquo;leave now&rdquo; run, Reactive&rsquo;s transaction names the Base Sepolia transaction as its origin. In a &ldquo;wait for the deadline&rdquo; run (our run #6, linked in the timer row above) the origin is the timer tick, and the Base Sepolia hash is a topic of the <code>ExitRequested</code> log. In both, the withdrawal&rsquo;s <code>WatchEnded</code> log carries the same hash.</li>
         <li><strong>The deposit went to its owner.</strong> In the withdrawal, the token moves from the vault to the depositor. In <a href="https://github.com/bongbongcrypto/notice-period/blob/main/src/NoticeExit.sol" rel="noopener noreferrer">NoticeExit.sol</a> the receiver is read from storage, never from the callback.</li>
+        <li><strong>The vault is a real Morpho Vault V2.</strong> On Morpho&rsquo;s Vault V2 factory (address below), <code>isVaultV2</code> of the run&rsquo;s vault (the address its &ldquo;Change scheduled&rdquo; transaction was sent to) returns true; the page reads it after your deposit. Our maker sets the waiting periods and switches gates and fees off for good, then hands the vault to its caller as curator and owner: you in the guided run, one of our own keys in our recorded runs, where the depositor is also a key of ours. It is a test vault on a test network: it has no adapter and holds only our demo dollar: <a href="https://github.com/bongbongcrypto/notice-period/blob/main/src/morpho/MorphoVaultMaker.sol" rel="noopener noreferrer">MorphoVaultMaker.sol</a>.</li>
         <li><strong>A cap increase never reaches Reactive by default.</strong> <a href="https://github.com/bongbongcrypto/notice-period/blob/main/src/NoticeReactive.sol" rel="noopener noreferrer">NoticeReactive.sol</a> subscribes one filter per chosen selector. Or schedule a cap increase as the curator in the run above: nothing moves.</li>
         <li><strong>The numbers are read live.</strong> Your browser asks Morpho&rsquo;s public API and one public endpoint per chain (a second Base Sepolia endpoint only if the first fails). The network tab shows those hosts and this page&rsquo;s own files, nothing else.</li>
         <li><strong>The contracts refuse what the rule book says.</strong> Unit, attack, fuzz and invariant tests and a mutation check run in GitHub Actions: see the <a href="https://github.com/bongbongcrypto/notice-period#checks" rel="noopener noreferrer">repository</a>.</li>
@@ -279,13 +281,16 @@
 
 <footer class="foot wrap">
   <table class="addresses">
-    <caption>Contracts of the 18 Nov 2026 testnet deployment</caption>
+<!-- stamp:pagecontracts -->
+    <caption>Contracts of the 22 Nov 2026 testnet deployment</caption>
     <tbody>
-      <tr><th scope="row">Exit contract <span class="quiet">Base Sepolia</span></th><td><a class="addr" href="https://base-sepolia.blockscout.com/address/0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8" rel="noopener noreferrer">0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8</a></td></tr>
-      <tr><th scope="row">Reactive contract <span class="quiet">Reactive Lasna</span></th><td><a class="addr" href="https://lasna.reactscan.net/address/0x00E4996c7255B919B619902E1Ac4b254D3c3f014" rel="noopener noreferrer">0x00E4996c7255B919B619902E1Ac4b254D3c3f014</a></td></tr>
-      <tr><th scope="row">Demo vault factory <span class="quiet">Base Sepolia</span></th><td><a class="addr" href="https://base-sepolia.blockscout.com/address/0xFFc96A898AF31e2ED652A8A0C0E90584999093CD" rel="noopener noreferrer">0xFFc96A898AF31e2ED652A8A0C0E90584999093CD</a></td></tr>
-      <tr><th scope="row">Demo dollar <span class="quiet">Base Sepolia</span></th><td><a class="addr" href="https://base-sepolia.blockscout.com/address/0x2690DF70a37939c582a800f32FFEE52ec40d150B" rel="noopener noreferrer">0x2690DF70a37939c582a800f32FFEE52ec40d150B</a></td></tr>
+      <tr><th scope="row">Exit contract <span class="quiet">Base Sepolia</span></th><td><a class="addr" href="https://base-sepolia.blockscout.com/address/0xc3451Dc97fBF3ba019524E68939192BEC4b83Fca" rel="noopener noreferrer">0xc3451Dc97fBF3ba019524E68939192BEC4b83Fca</a></td></tr>
+      <tr><th scope="row">Reactive contract <span class="quiet">Reactive Lasna</span></th><td><a class="addr" href="https://lasna.reactscan.net/address/0xb27F7223B83D3596868EAc0299Ab5B132b0B8D32" rel="noopener noreferrer">0xb27F7223B83D3596868EAc0299Ab5B132b0B8D32</a></td></tr>
+      <tr><th scope="row">Vault maker (ours) <span class="quiet">Base Sepolia</span></th><td><a class="addr" href="https://base-sepolia.blockscout.com/address/0x373628f4D8edA26E5ced03a4ec76Fa38162f6cC5" rel="noopener noreferrer">0x373628f4D8edA26E5ced03a4ec76Fa38162f6cC5</a></td></tr>
+      <tr><th scope="row">Morpho&rsquo;s Vault V2 factory <span class="quiet">Base Sepolia</span></th><td><a class="addr" href="https://base-sepolia.blockscout.com/address/0xE3a2CEbca662d99D0F279aF13a6bb8c9825D2ea0" rel="noopener noreferrer">0xE3a2CEbca662d99D0F279aF13a6bb8c9825D2ea0</a></td></tr>
+      <tr><th scope="row">Demo dollar (ours) <span class="quiet">Base Sepolia</span></th><td><a class="addr" href="https://base-sepolia.blockscout.com/address/0xA73cD0eCA5bda9c98EFdEc8bbc7c32684d36A5D7" rel="noopener noreferrer">0xA73cD0eCA5bda9c98EFdEc8bbc7c32684d36A5D7</a></td></tr>
     </tbody>
+<!-- /stamp:pagecontracts -->
   </table>
   <div class="foot-text">
     <p><a href="https://github.com/bongbongcrypto/notice-period" rel="noopener noreferrer">Source on GitHub</a> <a href="https://github.com/bongbongcrypto/notice-period/blob/main/SPEC.md" rel="noopener noreferrer">Rule book</a> <a href="#check">Judge guide: check every claim in ten minutes</a></p>

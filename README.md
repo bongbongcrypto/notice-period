@@ -193,10 +193,10 @@ as the callback proxy would. Nothing was sent; the result is in
 | Feature | What it does here | What breaks without it | Where |
 |---|---|---|---|
 | Event subscription with topic filters | The trigger: the vault's address, the `Submit` topic and the selector of each kind the depositor chose | A server that polls the chain and holds a hot key. With a wildcard filter, any stranger's contract could bill ours into debt and switch the exit off | `NoticeReactive._onArmed`, `_filter` |
-| Subscribe and unsubscribe at runtime | One subscription per watch, added when it is turned on and removed when it ends | One hard-coded vault, and fees for watches nobody holds | `NoticeReactive._filter` (reference-counted) |
+| Subscribe and unsubscribe at runtime | One topic filter per kind of change the depositor chose on the vault (three for the default watch; a cap increase adds two), subscribed when the watch is turned on. Watches on the same vault share filters by count, so the last one to end unsubscribes | One hard-coded vault, and fees for watches nobody holds | `NoticeReactive._filter` (reference-counted) |
 | A timer that runs only while a change is waiting | The second mode: store the change, ask for the exit `LEAD` seconds before it can run, stay if the curator revokes | Only "leave now". Left on all the time, the timer would spend the float while idle | `NoticeReactive._cronFilter`, `_onTick` |
 | Callback through the callback proxy | The redeem on the vault's chain | Nothing moves the deposit. With a weaker check anyone could force an exit; the funds would still go only to their owner | `NoticeReactive._fire`, `NoticeExit.exit` |
-| Blocks about one second apart | In run 1 Reactive's transaction carries the same second as the vault's event, and the deposit was back 2 s later | The exit would still beat a waiting period of days. It counts when the notice is short, as in the 3-minute demo | the run table above |
+| Blocks about one second apart | In run 1 of the 22 Nov 2026 contracts Reactive's transaction landed within a second of the vault's event, and the deposit was back 1 s later | The exit would still beat a waiting period of days. It counts when the notice is short, as in the 3-minute demo | the run table above |
 
 ## Prior art, and why an exit
 
@@ -280,7 +280,8 @@ Toolchain: Foundry v1.9.0 and solc 0.8.30, both checked against sha256 digests; 
 
 ## Testnet workflows (manual)
 
-`deploy-hello`, `deploy-system` and `loop` run only by hand, inside the `testnet` environment (main branch only),
+`deploy-hello`, `deploy-system`, `loop`, `fund`, `health` and `page-walk` run only by hand, inside the `testnet`
+environment (main branch only, a deployment-branch rule of that environment on GitHub),
 with the key in that environment's `TESTNET_KEY` secret. Each stops before sending anything when a balance is
 zero, unknown or too small, and prints addresses and transaction hashes. `loop` fires the origin event and waits
 for the reactive transaction and the callback, then prints the three hashes and the seconds between them.
@@ -288,6 +289,8 @@ Its other actions (a change the watch ignores, a revoked change, a watch held an
 top-up) and `health` (a second key derived from the testnet key; reads the float and debts, runs one loop) take
 their addresses from `deployments/<name>.json`. `verify` needs no key: it builds the deployment's source commit and
 compares the bytecode.
+`page-walk` walks the guided run of the hosted page with an injected wallet that signs only the calls listed in
+the header of `scripts/page-walk.mjs`, then checks the three transactions the page showed by receipt.
 
 ## Licence
 
