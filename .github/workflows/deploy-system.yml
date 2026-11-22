@@ -1,19 +1,20 @@
 name: deploy-system
 
 # Deploys DemoToken, MorphoVaultMaker (on Morpho's VaultV2Factory), NoticeReactive and NoticeExit (SPEC.md section 7)
-# with the testnet key, then makes one smoke vault through the maker and checks its shape.
+# with the testnet key, then makes one smoke vault through the maker and checks its shape. The job summary carries
+# the whole deployment file (deployments/<UTC date>.json, between NP-DEPLOYMENT-JSON-BEGIN and -END) to commit to main.
 # Manual only, inside the "testnet" environment (main branch only; the key is the TESTNET_KEY secret).
 # Stops before sending anything if a balance is zero, unknown or too small.
 on:
   workflow_dispatch:
     inputs:
       reactive_fund:
-        description: "lREACT sent to NoticeReactive (in coins, decimals allowed), the operator float; health asks for 4, so top up after the first run"
+        description: "lREACT sent to NoticeReactive (in coins, decimals allowed), the operator float. Staged: health asks for 4, so 8 more are topped up only after the first loop on this pair"
         default: "1"
         required: true
       exit_fund:
-        description: "Base Sepolia ETH sent to NoticeExit for callback fees"
-        default: "0.005"
+        description: "Base Sepolia ETH sent to NoticeExit for callback fees (0.007 pays about 1,180 exits that burn the whole 1,000,000 callback limit at 0.006 gwei)"
+        default: "0.007"
         required: true
 
 permissions:

@@ -1,7 +1,11 @@
 {
   "name": "current",
   "status": "template",
+  "note": "Shape of the file scripts/deploy-system.sh prints after a deploy, to be committed as deployments/<UTC date>.json (status deployed). Nothing reads this template: deployment.py and stamp.py refuse any status but deployed.",
+  "sourceCommit": null,
   "commit": null,
+  "deployRun": null,
+  "registryKind": "maker",
   "origin": {
     "name": "Base Sepolia",
     "chainId": 84532
@@ -14,8 +18,8 @@
     "token": null,
     "maker": null,
     "morphoFactory": "0xE3a2CEbca662d99D0F279aF13a6bb8c9825D2ea0",
-    "reactive": null,
     "exit": null,
+    "reactive": null,
     "callbackProxy": "0x476F44b11F5C942c58f4c8E3d0300E5710743585"
   },
   "deployTxs": {
@@ -28,6 +32,44 @@
     "address": null,
     "tx": null
   },
+  "build": [
+    {
+      "key": "token",
+      "chainId": 84532,
+      "address": null,
+      "artifact": "src/demo/DemoToken.sol:DemoToken",
+      "constructorArgs": "0x",
+      "creationTx": null,
+      "creationBlock": null
+    },
+    {
+      "key": "maker",
+      "chainId": 84532,
+      "address": null,
+      "artifact": "src/morpho/MorphoVaultMaker.sol:MorphoVaultMaker",
+      "constructorArgs": null,
+      "creationTx": null,
+      "creationBlock": null
+    },
+    {
+      "key": "reactive",
+      "chainId": 5318007,
+      "address": null,
+      "artifact": "src/NoticeReactive.sol:NoticeReactive",
+      "constructorArgs": null,
+      "creationTx": null,
+      "creationBlock": null
+    },
+    {
+      "key": "exit",
+      "chainId": 84532,
+      "address": null,
+      "artifact": "src/NoticeExit.sol:NoticeExit",
+      "constructorArgs": null,
+      "creationTx": null,
+      "creationBlock": null
+    }
+  ],
   "operators": [],
   "values": {
     "VAULT_TIMELOCK": 180,
@@ -41,6 +83,12 @@
     "ARMS_PER_DAY": 50,
     "TIMED_ARMS_PER_DAY": 4,
     "LIFETIME": 86400
+  },
+  "rules": {
+    "leaveNowExpires": false,
+    "timedCap": 8,
+    "timedArmsPerDay": 4,
+    "vaultSource": "maker"
   },
   "healthMinFloat": "4"
 }
