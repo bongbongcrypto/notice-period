@@ -123,6 +123,15 @@ jobs:
           python3 scripts/check-workflows.py
           python3 scripts/check-values.py
 
+      - name: Page walk signer rules (no key, no browser, no network)
+        run: |
+          node --version
+          # the runner's own node; the test needs only ES modules, top-level await and BigInt (no fetch, no WebSocket)
+          node -e 'if (Number(process.versions.node.split(".")[0]) < 18) { console.error("Node 18 or later is needed"); process.exit(1); }'
+          node --check scripts/page-walk.mjs
+          node --check scripts/test-page-walk.mjs
+          node scripts/test-page-walk.mjs
+
       - name: Offline self-tests (Keccak, bytecode match, run records, deployment file)
         run: |
           python3 -c 'import sys; sys.path.insert(0, "scripts"); import keccak; keccak.self_test(); print("keccak self-test passed")'
