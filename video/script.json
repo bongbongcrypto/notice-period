@@ -84,10 +84,10 @@
       "soft": { "textAny": ["Live from the chain"], "notText": ["visitor"] },
       "seconds": 12,
       "label": "Hosted page · Recent runs, all our own tests",
-      "caption": "Each exit run is on the page with its three transactions. All are our own tests on our own demo vaults: six exits, and every kind of change has a recorded exit.",
+      "caption": "Each exit run is on the page with its three transactions. All are our own tests on our own demo vaults: seven exits, and every kind of change has a recorded exit.",
       "evidence": [
         { "readme": "The three records belong together." },
-        { "readme": "Runs on chain: six exits and one change revoked" },
+        { "readme": "Runs on chain: seven exits and one change revoked" },
         { "readme": "All runs were sent by our own test accounts" },
         { "readme": "Every kind has a recorded exit on testnet" }
       ],

@@ -43,11 +43,11 @@ increases off.
 Reactive's own contracts used here: the callback proxy on Base Sepolia `0x476F44b11F5C942c58f4c8E3d0300E5710743585`
 and the system contract on Lasna `0x8888888888888888888888888888888888888888`.
 
-## Runs on chain: six exits and one change revoked
+## Runs on chain: seven exits and one change revoked
 
-All runs were sent by our own test accounts (`0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4`, and for runs 5 and 6 the
+All runs were sent by our own test accounts (`0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4`, and for runs 5, 6 and 8 the
 second key derived from it, `0x616FF5998E3e6AF794881Adf6Fe6cac62Cc29b19`), each on a demo vault of its own: runs 1 and 2
-on 18 Nov 2026, runs 3 to 6 on 21 Nov 2026, run 7 on 22 Nov 2026. Run 6 is the one where the deposit must stay.
+on 18 Nov 2026, runs 3 to 6 on 21 Nov 2026, runs 7 and 8 on 22 Nov 2026. Run 6 is the one where the deposit must stay.
 Seconds are differences of block times. Each run is a file in [`records/`](records/), and
 `python scripts/runs.py --check 2026-11-18` re-reads every one of them from the chains' receipts.
 
@@ -101,6 +101,16 @@ and the deposit was back 2 s later
 ([`0xf20877f2…8597`](https://base-sepolia.blockscout.com/tx/0xf20877f28e574b7eac8341a85afff2dac7b3f38cf9adbd06571d9546fbd48597)),
 178 s before the change could run. With run 5 this shows both sides of the same rule: a cap increase moves nothing
 unless the depositor chose it.
+
+Run 8 checks that a watch keeps working while nobody touches it. The second key turned it on at 06:21:12 UTC
+([`0x06e42190…bea6`](https://base-sepolia.blockscout.com/tx/0x06e421902f5c3a94e9121b79671a647e8d38c16295c5e5746f1bc3fa5111bea6))
+and left it. 10832 s later, at 09:21:44 UTC, the curator scheduled a new adapter
+([`0x835c238c…f855`](https://base-sepolia.blockscout.com/tx/0x835c238cca37494c9aefea1dc03450ebe83ed1be0f9877751c2850c69c96f855)),
+Reactive answered (Lasna's block time is 1 s earlier)
+([`0x833910d1…44e0`](https://lasna.reactscan.net/tx/0x833910d12d0f9004679e29a9973e95c4d19ce2e56089dac10024a6e169bd44e0)),
+and the deposit was back 1 s later
+([`0x1ae72fd8…115c`](https://base-sepolia.blockscout.com/tx/0x1ae72fd8c1f51f5198bc03336063a1513d586bff8900118890e17a7c7a92115c)),
+179 s before the change could run.
 
 ## Check every claim in ten minutes
 
