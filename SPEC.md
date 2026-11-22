@@ -534,7 +534,8 @@ recipient replaced by a probe that logs `gasleft()`):
 - On a fork (`fork/RealVault.fork.t.sol`, the non-blocking `fork` job of `ci.yml`, public archive endpoints): the
   replay's real `Submit` goes through our current contracts on Ethereum mainnet state at block 26,406,895 and must
   redeem the holder at 1,000,000 and not at 600,000; an allocator that clears the liquidity adapter first makes
-  the exit end `RedeemFailed` for a holder whose claim exceeds the idle assets. Not run yet at this writing.
+  the exit end `RedeemFailed` for a holder whose claim exceeds the idle assets. All four fork tests passed in ci run
+  45003290072 (22 Nov 2026).
 
 Shown by the first real loops (2026-11-18, hashes above and in section 9): the network injects our reactive
 contract's address; a subscription added inside `react()` caught the curator's `Submit` after the loop's 15 s

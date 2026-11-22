@@ -233,7 +233,7 @@ we start it by hand on the branch head. Pushes that change only the page or pros
   the mock network contracts at the real addresses and a relay script playing the network;
 - fork (non-blocking, its result does not fail the run): `fork/RealVault.fork.t.sol` on Ethereum mainnet state at
   block 26,406,895 from public archive endpoints, the real Vault V2 exit at 1,000,000 and 600,000 (SPEC.md
-  section 12). Not run yet at this writing.
+  section 12). Its four tests passed in ci run 45003290072 (22 Nov 2026).
 
 Toolchain: Foundry v1.9.0 and solc 0.8.30, both checked against sha256 digests; the sponsor library
 `reactive-lib-omni` and `forge-std` are fetched at pinned commits in CI and never committed. EVM target `cancun`.
