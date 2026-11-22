@@ -34,14 +34,17 @@ from rpclib import Rpc, RpcError, pad32, uint, word  # noqa: E402
 
 LABEL = "replay of our deployed exit code on a real vault; Reactive not in it"
 BLOCK = 26_406_895
-ETH_ENDPOINTS = ["https://eth.drpc.org", "https://ethereum-rpc.publicnode.com", "https://eth.merkle.io"]
+# Archive state at BLOCK is needed. publicnode answers archive reads with 403 (since 2026-11); these three served
+# state at BLOCK on 2026-11-22, eth.merkle.io is kept last (rate-limited when probed, archive unverified).
+ETH_ENDPOINTS = ["https://eth.drpc.org", "https://rpc.mevblocker.io", "https://eth-mainnet.public.blastapi.io",
+                 "https://eth.merkle.io"]
 BASE_ENDPOINTS = ["https://sepolia.base.org", "https://base-sepolia-rpc.publicnode.com"]
 
 EXIT = "0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8"        # NoticeExit, Base Sepolia, 18 Nov 2026
 REACTIVE = "0x00E4996c7255B919B619902E1Ac4b254D3c3f014"    # NoticeReactive, Lasna (its _CALLBACK_SENDER)
 VAULT = "0x9a1D6bd5b8642C41F25e0958129B85f8E1176F3e"       # Gauntlet USDC Frontier (Morpho Vault V2), mainnet
 HOLDER = "0xa69abE7a806a1b75E148b1d7977B87CC3e0fEE94"      # a holder of its shares
-USDC = "0xA0b86991c6218b36c1D19D4a2e9Eb0cE3606eB48"
+USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
 SUBMIT_TX = "0x335fe3887288e04ddf6daf958b0634cd211dddd5f8bd260aaafd62ee694a2441"
 SUBMIT_LOG_INDEX = 259
 SUBMIT_SELECTOR = selector("decreaseTimelock(bytes4,uint256)")  # a default watched kind
