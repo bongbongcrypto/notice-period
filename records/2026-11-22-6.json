@@ -1,0 +1,63 @@
+{
+  "deployment": "2026-11-22",
+  "n": 6,
+  "loopRun": 45008942931,
+  "exit": "0xc3451Dc97fBF3ba019524E68939192BEC4b83Fca",
+  "reactive": "0xb27F7223B83D3596868EAc0299Ab5B132b0B8D32",
+  "token": "0xA73cD0eCA5bda9c98EFdEc8bbc7c32684d36A5D7",
+  "kind": "allocator",
+  "mode": 0,
+  "action": "exit",
+  "depositorKey": "a",
+  "curatorKey": "a",
+  "depositor": "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4",
+  "curator": "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4",
+  "vault": "0xCcEF7A5feeFb336628fD44f2Eb54f95022558fFa",
+  "watchId": 4,
+  "armTx": "0xe3c497267942738930397ee75c6edc8387771ed02ee5232d333dbd1d5bf8573b",
+  "hash1": "0xb2f3b82017938a457a5dd5957cef1e4e54c5a92c400fbba2f6853964a8fbaffb",
+  "hash2": "0xf418f45b402d158c4253c0fc01c581fc851664947a4833159acd6abb3f669fea",
+  "hash3": "0xde051159cc4782505f1834624cd1ff4c783c0e4d4348d535d0896bf625773521",
+  "lasnaFrom": 8964783,
+  "seconds": 2,
+  "subTx": "0x4f1dac430689d5e869f6c801d075580ac714abe828daa7336fe897a6c170656f",
+  "derived": {
+    "page": {
+      "id": 4,
+      "mode": 0,
+      "kinds": 7,
+      "owner": "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4",
+      "vault": "0xCcEF7A5feeFb336628fD44f2Eb54f95022558fFa",
+      "selector": "0xb192a84a",
+      "execAt": 1795340837,
+      "armTx": "0xe3c497267942738930397ee75c6edc8387771ed02ee5232d333dbd1d5bf8573b",
+      "armTs": 1795340638,
+      "subTx": "0x4f1dac430689d5e869f6c801d075580ac714abe828daa7336fe897a6c170656f",
+      "subTs": 1795340637,
+      "r1": {
+        "hash": "0xb2f3b82017938a457a5dd5957cef1e4e54c5a92c400fbba2f6853964a8fbaffb",
+        "block": 62093945,
+        "ts": 1795340657
+      },
+      "r2": {
+        "hash": "0xf418f45b402d158c4253c0fc01c581fc851664947a4833159acd6abb3f669fea",
+        "block": 8964807,
+        "ts": 1795340657,
+        "refTx": "0xb2f3b82017938a457a5dd5957cef1e4e54c5a92c400fbba2f6853964a8fbaffb",
+        "refChainId": "0x14a34",
+        "reason": 1
+      },
+      "r3": {
+        "hash": "0xde051159cc4782505f1834624cd1ff4c783c0e4d4348d535d0896bf625773521",
+        "block": 62093955,
+        "ts": 1795340659,
+        "outcome": 0,
+        "reason": 1,
+        "shares": "100000000000000000000",
+        "assets": "100000000"
+      },
+      "exit": "0xc3451Dc97fBF3ba019524E68939192BEC4b83Fca",
+      "reactive": "0xb27F7223B83D3596868EAc0299Ab5B132b0B8D32"
+    }
+  }
+}

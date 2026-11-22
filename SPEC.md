@@ -439,8 +439,9 @@ on Base Sepolia; balances read before and after each loop; reactive gas price 10
   contracts (run 1 of `deployments/2026-11-22.json`, 22 Nov 2026) delivered our callback at 1,000,000 on a vault
   made through `MorphoVaultMaker`, which has no adapter: it shows the limit is accepted and the exit lands, not
   that the replayed vault's heavier redeem fits on chain (that is the fork test, section 12).
-- Stray events after a silent unsubscribe are billed by the network and cannot be refused by the contract;
-  they are counted (`strayEvents`) and alerted on.
+- Stray events after a silent unsubscribe would be billed by the network and cannot be refused by the contract;
+  they are counted (`strayEvents`) and alerted on. In the one test made (22 Nov 2026, section 12), events on a
+  vault after its last watch ended were not delivered at all.
 - "No server, no key that can send the funds elsewhere": the exit right exists only through the vault's own
   event, the network's callback, and a redeem whose receiver is fixed to the owner.
 - If an exit callback reverts on Base Sepolia (`AssetsNotReceived`, or a failure of the callback itself), the
@@ -533,6 +534,17 @@ recipient replaced by a probe that logs `gasleft()`):
   curator's `Submit`. The vault had no adapter, so the redeem itself was light. The 8 lREACT top-up of the float
   followed. The lREACT charge on Lasna per reaction at 1,000,000 is not measured separately (the float, funded
   with 1, stood at 0.9508 after the deployment and this run).
+- Shown on 22 Nov 2026, runs 3 to 7 of the newer contracts, each on a new vault made through `MorphoVaultMaker`
+  (README): "leave now" exits on a shorter waiting period (+1 s), a new allocator (+2 s) and a new adapter after an
+  ignored cap increase (+1 s; Lasna blocks 8964872 to 8964915 logged nothing for that watch); a "wait for the
+  deadline" exit on the timer (+65 s, 115 s of notice left); and a revoked change on a mode-1 watch that left every
+  share in the vault 30 s past the time the change could have run.
+- Shown on 22 Nov 2026, the burst test: three `Submit`s of a watched kind in one `multicall`
+  (`0x6d92a52c…bb8f`) on a vault whose last watch had ended reached our reactive contract not at all. Lasna blocks
+  8964625 to 8964684: no transaction of `NoticeReactive`, no `StrayEvent`, `strayEvents` 0 to 0, float
+  8.9037806 lREACT before and after. So after an unsubscribe the network did not deliver that vault's events, and a
+  burst on such a vault costs the float nothing. A burst on a vault that still has a watch is delivered like any
+  other reaction and is bounded by the caps of section 9.
 - In Foundry: `test/CallbackGas.t.sol` runs its exit paths at 1,000,000, and a redeem that burns 340,000 gas more
   than the demo vault's (about the replayed vault's extra) must redeem at 1,000,000 and must not at 600,000.
 - On a fork (`fork/RealVault.fork.t.sol`, the non-blocking `fork` job of `ci.yml`, public archive endpoints): the
@@ -547,9 +559,8 @@ grace (mode 0: `WatchSubscribed` at Lasna 1794963864, `Submit` at Base 179496388
 second); real reaction gas 106,806 to 285,385, far under the 900,000 cap; the exit reached the depositor 2 s
 (mode 0) and 62 s (mode 1, at the deadline, 118 s before the change could run) after the curator's
 transaction; no stray or unknown events afterwards. Still not shown: how much shorter than 15 s the
-subscription delay can be, whether an unsubscribe really goes silent (strayEvents stayed 0 but no event was
-sent after the watches closed), the gas of a large padded log on chain, and the cost of a mode-1 watch over a
-whole timelock.
+subscription delay can be, the gas of a large padded log on chain, and the cost of a mode-1 watch over a whole
+timelock. Whether an unsubscribe really goes silent was shown once on 22 Nov 2026 (the burst test above).
 
 ## 13. Build targets
 

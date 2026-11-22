@@ -1,0 +1,28 @@
+{
+  "deployment": "2026-11-22",
+  "n": 4,
+  "loopRun": 45008709035,
+  "exit": "0xc3451Dc97fBF3ba019524E68939192BEC4b83Fca",
+  "reactive": "0xb27F7223B83D3596868EAc0299Ab5B132b0B8D32",
+  "token": "0xA73cD0eCA5bda9c98EFdEc8bbc7c32684d36A5D7",
+  "kind": "adapter",
+  "mode": 0,
+  "action": "burst",
+  "depositorKey": "a",
+  "curatorKey": "a",
+  "depositor": "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4",
+  "curator": "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4",
+  "vault": "0x43b0CED4AF6180eF0251C50454D16EF389D08C23",
+  "lasnaFrom": [
+    8964622,
+    8964625
+  ],
+  "lasnaTo": 8964684,
+  "burstTx": "0x6d92a52c571396ca88227c30a7300399307649653a33389b642b58fcb23cbb8f",
+  "reactiveTxs": 0,
+  "strayBefore": 0,
+  "strayAfter": 0,
+  "floatBefore": "8903780600000000000",
+  "floatAfter": "8903780600000000000",
+  "derived": {}
+}
