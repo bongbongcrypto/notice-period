@@ -19,7 +19,8 @@ abstract contract NoticeSetup is Network {
     /// @dev Covers MAX_TIMED Cron10 ticks (8 x 10.7 s) plus the callback's trip: one exit is asked for per tick.
     uint256 internal constant LEAD = 120;
     uint256 internal constant MAX_WAIT = 900;
-    uint64 internal constant CB_GAS = 600_000;
+    /// @dev The callback gas limit scripts/deploy-system.sh deploys (CALLBACK_GAS there; keep the two equal).
+    uint64 internal constant CB_GAS = 1_000_000;
     uint256 internal constant MAX_ACTIVE = 8;
     uint256 internal constant MAX_REACTIONS = 80;
     uint256 internal constant PER_ADDRESS = 2;

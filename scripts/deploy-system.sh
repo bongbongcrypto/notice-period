@@ -19,7 +19,7 @@ source scripts/chain.sh
 VAULT_TIMELOCK=180 # waiting period the maker sets on the four watched kinds of change
 LEAD=120 # covers MAX_TIMED (8) Cron10 ticks of 10.7 s plus the callback trip (SPEC.md section 6)
 MAX_WAIT=200
-CALLBACK_GAS=600000
+CALLBACK_GAS=1000000 # about 809,700 reaches exit() on Base Sepolia (600,000 gives about 416,000); SPEC.md section 12
 MAX_ACTIVE=1000
 MAX_REACTIONS=16
 ARMS_PER_ADDRESS_PER_DAY=4

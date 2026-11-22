@@ -1,10 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
+import { Vm } from "forge-std/Test.sol";
 import { console } from "forge-std/console.sol";
+import { IPayable } from "@reactive/src/interfaces/IPayable.sol";
 import { NoticeSetup } from "./utils/NoticeSetup.sol";
+import { ReentrantToken } from "./mocks/Hostile.sol";
 import { DemoVault } from "../src/demo/DemoVault.sol";
+import { DemoVaultFactory } from "../src/demo/DemoVaultFactory.sol";
+import { NoticeExit, IVaultRegistry } from "../src/NoticeExit.sol";
 import { NoticeKinds } from "../src/lib/NoticeKinds.sol";
+
+/// @notice Burns a fixed amount of gas when called: stands in for the extra work of a real Vault V2's redeem path.
+contract RedeemGasBurner {
+    function burn(uint256 gas_) external {
+        uint256 start = gasleft();
+        while (start - gasleft() < gas_) { }
+    }
+}
 
 /// @notice The exit callback at the deployed gas limit (CB_GAS, the value deploy-system.sh passes), once the real
 ///         proxy keeps its share (MockCallbackProxy, measured against the Base Sepolia proxy). The exit runs with
@@ -116,5 +129,83 @@ contract CallbackGasTest is NoticeSetup {
         assertEq(v.balanceOf(alice), half, "the other half stays");
         assertEq(v.allowance(alice, address(exitC)), 0, "the allowance is spent");
         assertGt(token.balanceOf(alice), 0);
+    }
+
+    // ---------------------------------------------------------------- a redeem as heavy as the real-vault replay
+
+    /// @dev Extra gas the replayed real vault's redeem needed (Gauntlet USDC Frontier at block 26,406,895, one adapter
+    ///      over 16 markets: exit() used 444,838) beyond a demo-vault exit (about 105,000 above): the hook burns it.
+    uint256 internal constant REPLAY_EXTRA_GAS = 340_000;
+    /// @dev The 11-18 pair's limit, for the comparison.
+    uint64 internal constant OLD_CB_GAS = 600_000;
+
+    struct Heavy {
+        NoticeExit exitH;
+        DemoVault v;
+        uint256 id;
+        uint256 shares;
+        ReentrantToken token;
+    }
+
+    /// @dev A demo vault on a token whose transfer calls the burner, so the redeem inside exit() costs about what the
+    ///      replayed vault's did. A separate exit contract lists that token's factory; the requester is our reactive.
+    function _heavySetup() internal returns (Heavy memory h) {
+        h.token = new ReentrantToken();
+        DemoVaultFactory heavyFactory = new DemoVaultFactory(address(h.token), TIMELOCK);
+        h.exitH = new NoticeExit(
+            IPayable(payable(address(proxy))),
+            address(reactive),
+            IVaultRegistry(address(heavyFactory)),
+            4,
+            50,
+            LIFETIME,
+            4
+        );
+        vm.startPrank(alice);
+        h.v = DemoVault(heavyFactory.create());
+        h.token.mint(alice, DEPOSIT);
+        h.token.approve(address(h.v), DEPOSIT);
+        h.v.deposit(DEPOSIT, alice);
+        h.shares = h.v.balanceOf(alice);
+        h.v.approve(address(h.exitH), type(uint256).max);
+        h.id = h.exitH.arm(address(h.v), NoticeKinds.DEFAULT, 0, type(uint256).max);
+        vm.stopPrank();
+        RedeemGasBurner burner = new RedeemGasBurner();
+        h.token.setHook(address(burner), abi.encodeCall(RedeemGasBurner.burn, (REPLAY_EXTRA_GAS)));
+    }
+
+    /// @dev Delivers the exit of the heavy watch with `gas_` as the callback limit; true when WatchEnded says redeemed.
+    function _heavyExit(Heavy memory h_, uint64 gas_) internal returns (bool redeemed) {
+        vm.cool(address(h_.exitH));
+        vm.cool(address(h_.v));
+        vm.cool(address(h_.token));
+        vm.recordLogs();
+        bytes memory payload = _exitPayload(h_.id, address(h_.v), _adapterCall(address(0xAD)), 1, 1);
+        proxy.deliverWithGas(address(h_.exitH), payload, address(reactive), gas_);
+        console.log("heavy redeem, callback limit", uint256(gas_));
+        console.log("  forwarded", proxy.lastForwarded(), "used", proxy.lastUsed());
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].emitter != address(h_.exitH) || logs[i].topics[0] != NoticeExit.WatchEnded.selector) continue;
+            (uint8 outcome,,,) = abi.decode(logs[i].data, (uint8, uint8, uint256, uint256));
+            redeemed = proxy.lastOk() && outcome == h_.exitH.OUTCOME_REDEEMED();
+        }
+    }
+
+    /// @dev At the deployed limit the heavy redeem goes through and pays the owner.
+    function test_heavy_redeem_like_the_replayed_vault_fits_the_deployed_limit() public {
+        Heavy memory h = _heavySetup();
+        assertTrue(_heavyExit(h, CB_GAS), "redeemed at the deployed callback gas limit");
+        assertGt(proxy.lastForwarded(), proxy.lastUsed(), "with gas to spare");
+        assertEq(h.v.balanceOf(alice), 0);
+        assertEq(h.token.balanceOf(alice), DEPOSIT, "the deposit is back");
+    }
+
+    /// @dev The same redeem at the 11-18 pair's 600,000 is not redeemed: the shares stay, as in the replay.
+    function test_heavy_redeem_like_the_replayed_vault_fails_at_600000() public {
+        Heavy memory h = _heavySetup();
+        assertFalse(_heavyExit(h, OLD_CB_GAS), "not redeemed at 600,000");
+        assertEq(h.v.balanceOf(alice), h.shares, "the shares stay with the owner");
+        assertEq(h.token.balanceOf(alice), 0);
     }
 }

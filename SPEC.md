@@ -315,7 +315,7 @@ unknown topic) are counted in `unknownEvents` and ignored.
 | Reactions per watch (`MAX_REACTIONS`; mode 1: every `Submit` of a watched kind, every `Revoke` on its vault, every tick while it stores a change; mode 0 leaves on its first reaction) | NoticeReactive | 80 | 16 | Spam of submit and revoke on one vault; ends with an exit, never by dropping the watch |
 | Longest wait paid in ticks (`MAX_WAIT`) | NoticeReactive | 900 s | 200 s | Ticks per stored change (section 6) |
 | Exits per tick | NoticeReactive | 1 | 1 | Gas per tick (900,000 cap per reactive transaction) |
-| Callback gas limit | NoticeReactive | 600,000 | 600,000 | Gas limit of the exit delivery; about 415,000 reaches `exit` after the proxy's share, and `NoticeExit` is billed for gas used, not for the limit (section 12). A redeem that needs more fails and is not retried (section 11) |
+| Callback gas limit | NoticeReactive | 600,000 | 1,000,000 | Gas limit of the exit delivery; after the proxy's share about 416,000 (at 600,000) or about 809,700 (at 1,000,000) reaches `exit`, and `NoticeExit` is billed for gas used, not for the limit (section 12). A redeem that needs more fails and is not retried (section 11) |
 
 A watch the reactive contract refuses (caps above) is reported by `WatchRefused` on Lasna; the depositor
 can cancel it on Base Sepolia and arm again later.
@@ -418,13 +418,16 @@ on Base Sepolia; balances read before and after each loop; reactive gas price 10
   timer's queue: it asks for one exit per tick, so a watch due with the other timer watches can wait up to
   `MAX_TIMED` ticks (8 x about 10.7 s, about 86 s). A mode-0 watch has no expiry and ends only when it fires or its owner cancels it. On the 11-18
   deployment every watch, mode 0 included, can still be expired after one day.
-- The callback gas limit stays 600,000 on the newer contracts too (about 415,000 reaches `exit`). A maker vault
-  as made has no adapter, which keeps its redeem cheap (not yet measured on chain). Its curator can still add
-  adapters and allocators through 180 s changes; added before anyone arms a watch, they are never seen, and a
-  redeem through them can need more gas than that. The real-vault replay (README) ran out of gas at 600,000
-  and redeemed at 1,000,000. The reactive contract closes a watch when it asks for the exit, so an exit that
-  fails (`RedeemFailed`, or a callback that runs out of gas) is not tried again and the depositor stays in. A
-  deployment for configured vaults needs a larger limit (about 1,000,000 for the replayed vault).
+- The newer contracts ask for a callback gas limit of 1,000,000 (the 11-18 pair: 600,000). About 809,700 of it
+  reaches `exit` on Base Sepolia, against about 416,000 at 600,000 (section 12). A maker vault as made has no
+  adapter, and a vault fresh from Morpho's factory redeems with about 126,200 forwarded (simulated; not measured on
+  a vault made through `MorphoVaultMaker`). Its curator can still add adapters and allocators through 180 s
+  changes; added before anyone arms a watch, they are never seen, and a redeem through them costs more: the
+  replayed real vault (README) needs at least 447,005 forwarded, so it runs out of gas at 600,000 and redeems at
+  1,000,000. Vault V2 bounds neither the number of adapters nor the gas they use, so no limit covers every vault.
+  The reactive contract closes a watch when it asks for the exit, so an exit that fails (`RedeemFailed`, or a
+  callback that runs out of gas) is not tried again and the depositor stays in. No callback of ours has been
+  delivered at 1,000,000 on Base Sepolia yet; the first loop on the newer contracts is that proof.
 - Stray events after a silent unsubscribe are billed by the network and cannot be refused by the contract;
   they are counted (`strayEvents`) and alerted on.
 - "No server, no key that can send the funds elsewhere": the exit right exists only through the vault's own
@@ -483,9 +486,10 @@ live `_extraGas()` 80,000, `_maxChargeGas()` 50,000):
 - The first hello delivery (`0xd6559e81729f0ea110ff4ea560450543225402f08d9c2cae433e618fd9a1bc89`, limit
   200,000) gave pong 23,253 gas; pong needs about 70,000, so it ended in `CallbackFailure`. `HelloReactive`
   now asks for 400,000 (about 220,000 forwarded).
-- `NoticeExit.exit` at the deployed 600,000: about 415,000 forwarded, 104,000 to 107,400 used with the exit
-  contract, vault and token cold (`test/CallbackGas.t.sol`, five exit paths). The tests require at least
-  twice the use plus a 20,000 cushion for slots the same test wrote before.
+- `NoticeExit.exit` at the 11-18 pair's 600,000: about 415,000 forwarded, 104,000 to 107,400 used with the exit
+  contract, vault and token cold (`test/CallbackGas.t.sol` at that limit, five exit paths: 415,049 to 416,083
+  forwarded and 104,177 to 107,386 used in CI run 44947980936 of 2026-11-21). The tests require at least twice the
+  use plus a 20,000 cushion for slots the same test wrote before; they now run at the newer contracts' 1,000,000.
 - On chain after the fix (2026-11-18): hello delivery `0xc90d8a9ed266ffd83cc5430186bf79fa83e6057a436f652c2c496a3e0398e25a`
   (limit 400,000, 139,253 used, `Ponged`; billed for 72,567 of recipient gas, CI measured 72,115); exit
   deliveries `0x7f6456d9b7938e6a205c87a86d0e95ae5e347ec160a39c1e7a7251caebc67b04` (mode 0, limit 600,000,
@@ -496,6 +500,29 @@ live `_extraGas()` 80,000, `_maxChargeGas()` 50,000):
   than the real proxy at every measured point and never more (`test/ProxyModel.t.sol` pins it to the points).
 - The fee charged to the recipient is (80,000 + gas used) × price × 1.1, so a higher limit costs nothing on
   Base Sepolia unless it is used.
+
+Callback gas limit of the newer contracts, 1,000,000 (`scripts/deploy-system.sh`), measured 2026-11-22 by
+`eth_simulateV1` on the live proxy (Base Sepolia block 62,040,724; our own 11-18 delivery inputs replayed, the
+recipient replaced by a probe that logs `gasleft()`):
+- Forwarded to the recipient: 809,760 at a limit of 1,000,000 and 416,010 at 600,000 for a 612-byte delivery
+  input (809,279 and 415,529 for 708 bytes). The slope is exactly 63/64. Our deliveries' intrinsic gas is 25,076
+  to 25,548, so the replay's formula `(limit − 23,340) × 63/64 − 150,000` overstates the forwarded gas by 1,639 to
+  2,120; its conclusion holds.
+- Needed: the replayed real Vault V2 (Gauntlet USDC Frontier at Ethereum block 26,406,895; one adapter, which is
+  also its liquidity adapter) redeems only with at least 447,005 forwarded (447,004 runs out of gas), so 600,000
+  fails there and 1,000,000 redeems. A vault fresh from Morpho's `VaultV2Factory` on Base Sepolia, with our demo
+  dollar, redeems with about 126,200 forwarded (124,004 used), well under either limit.
+- Cost: the proxy bills gas used, so an honest exit costs the same at both limits (1.13e-6 to 1.24e-6 ETH per
+  exit on 2026-11-18 at 0.006 gwei). A recipient that burns everything it is given, which a hostile adapter can
+  make the redeem do, is billed 897,765 gas at 1,000,000 (5.9252e-6 ETH at 0.006 gwei) against 504,015 at 600,000
+  (3.3265e-6 ETH), simulated behind the live proxy. `deploy-system.yml` funds `NoticeExit` with 0.007 ETH by
+  default: about 1,180 such exits at that price.
+- Not shown yet: a callback of ours delivered at 1,000,000. The proxy's operator delivered about 1,050 other
+  contracts' callbacks at exactly 1,000,000 from 2026-11-19 to 11-22, which shows the limit is accepted, not that
+  our exit lands. The first loop on the newer contracts is that proof, and the 8 lREACT top-up of the float waits
+  for it. The lREACT charge on Lasna at 1,000,000 is not measured (it was the same at 200,000 and 400,000).
+- In Foundry: `test/CallbackGas.t.sol` runs its exit paths at 1,000,000, and a redeem that burns 340,000 gas more
+  than the demo vault's (about the replayed vault's extra) must redeem at 1,000,000 and must not at 600,000.
 
 Shown by the first real loops (2026-11-18, hashes above and in section 9): the network injects our reactive
 contract's address; a subscription added inside `react()` caught the curator's `Submit` after the loop's 15 s
