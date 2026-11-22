@@ -130,7 +130,8 @@ def check_workflow(path):
         jtext = "\n".join(body)
         env_line = next((body[i] for k, i in keys.items() if k == "environment"), "")
         uses_key = "secrets.TESTNET_KEY" in jtext
-        if re.search(r"^\s*(?:-\s+)?uses:", jtext, re.M) and "secrets." in jtext:
+        # any form of reading a secret: secrets.X, secrets['X'], toJSON(secrets)
+        if re.search(r"^\s*(?:-\s+)?uses:", jtext, re.M) and re.search(r"\bsecrets\b", jtext):
             find(f"{name}: job {job} runs an outside action and reads a secret")
         if uses_key and "testnet" not in env_line:
             find(f"{name}: job {job} reads the testnet key outside the testnet environment")
