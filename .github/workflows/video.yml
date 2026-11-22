@@ -1,0 +1,137 @@
+name: video
+
+# The demo video, recorded here on GitHub's runner and never on a local machine. One source, video/script.json:
+# scripts/video-check.py checks every number and hash in it against README.md and the run records, the runner's
+# Google Chrome is driven over the DevTools protocol by a dependency-free Node script (the hosted page, three
+# explorer pages of one recorded run, the README on github.com), the captions are spoken by one synthetic voice
+# (said so on screen) and burnt in, and ffmpeg assembles 1920x1080, 30 fps, H.264 + AAC, under 180 s.
+# Manual only. No environment, no secret, no transaction, no push: the result is an artifact (the mp4, its caption
+# files, a contact sheet of one frame every 5 s, and the plan and capture log behind them).
+# The one outside action is actions/upload-artifact, pinned by the commit of its v7.0.2 tag (scripts/check-workflows.py
+# allows that pin and nothing else).
+on:
+  workflow_dispatch:
+    inputs:
+      voice:
+        description: "voice: edge (edge-tts, every wheel pinned by hash), espeak (espeak-ng from Ubuntu) or none (captions only)"
+        type: choice
+        options: ["edge", "espeak", "none"]
+        default: "edge"
+      edge_voice:
+        description: "edge-tts voice, en-US-<Name>Neural"
+        default: "en-US-AndrewNeural"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: video
+  cancel-in-progress: false
+
+jobs:
+  video:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      VOICE: ${{ inputs.voice }}
+      EDGE_VOICE: ${{ inputs.edge_voice }}
+      OUT: build/video
+    steps:
+      - name: Check out this commit (plain git, no third-party action)
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          git init -q .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          echo "::add-mask::${auth}"
+          git -c http.extraheader="AUTHORIZATION: basic ${auth}" fetch -q --depth 1 origin "${GITHUB_SHA}"
+          git checkout -q FETCH_HEAD
+          git log -1 --format='%H %s'
+
+      - name: Check the inputs
+        run: |
+          set -euo pipefail
+          case "$VOICE" in edge|espeak|none) ;; *) echo "unknown voice engine: $VOICE"; exit 1 ;; esac
+          if [ "$VOICE" = edge ] && ! [[ "$EDGE_VOICE" =~ ^en-US-[A-Za-z]+Neural$ ]]; then
+            echo "edge_voice must look like en-US-<Name>Neural"
+            exit 1
+          fi
+          echo "voice: $VOICE $([ "$VOICE" = edge ] && echo "$EDGE_VOICE")"
+
+      - name: Check the script against README, the run records and the status files (every number, hash and time)
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/video-check.py scripts/video-make.py
+          python3 scripts/video-check.py --plan "$OUT/plan.json"
+
+      - name: Install ffmpeg and fonts from Ubuntu (and espeak-ng or python3-venv for the voice)
+        run: |
+          set -euo pipefail
+          pkgs="ffmpeg fonts-dejavu-core"
+          if [ "$VOICE" = espeak ]; then pkgs="$pkgs espeak-ng"; fi
+          if [ "$VOICE" = edge ]; then pkgs="$pkgs python3-venv"; fi
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends $pkgs
+          ffmpeg -hide_banner -version | head -n 1
+          for f in subtitles loudnorm drawtext tile tpad; do
+            ffmpeg -hide_banner -filters | grep -qE "[[:space:]]${f}[[:space:]]" || { echo "ffmpeg lacks the $f filter"; exit 1; }
+          done
+          ffmpeg -hide_banner -encoders | grep -qE '[[:space:]]libx264[[:space:]]' || { echo "ffmpeg lacks libx264"; exit 1; }
+
+      - name: Install edge-tts (exact versions, every wheel checked against its sha256)
+        if: inputs.voice == 'edge'
+        run: |
+          set -euo pipefail
+          python3 -c 'import sys; v = sys.version_info[:2]; print("python", sys.version.split()[0]); sys.exit(0 if v == (3, 12) else "the pinned wheels are for Python 3.12")'
+          python3 -m venv "$RUNNER_TEMP/tts"
+          "$RUNNER_TEMP/tts/bin/pip" install --disable-pip-version-check --no-cache-dir --no-deps --only-binary=:all: \
+            --require-hashes -r video/requirements-tts.txt
+          "$RUNNER_TEMP/tts/bin/pip" check
+          echo "EDGE_TTS=$RUNNER_TEMP/tts/bin/edge-tts" >> "$GITHUB_ENV"
+
+      - name: Find Node 22 or later and Google Chrome on the runner
+        run: |
+          set -euo pipefail
+          node_bin=""
+          for c in "$(command -v node || true)" /opt/hostedtoolcache/node/*/x64/bin/node; do
+            if [ -z "$c" ] || [ ! -x "$c" ]; then continue; fi
+            major="$("$c" -p 'process.versions.node.split(".")[0]')"
+            if [ "$major" -ge 22 ]; then node_bin="$c"; break; fi
+          done
+          if [ -z "$node_bin" ]; then echo "no Node 22 or later on this runner (global WebSocket is needed)"; exit 1; fi
+          "$node_bin" -e 'if (typeof WebSocket !== "function" || typeof fetch !== "function") { console.error("no global WebSocket or fetch"); process.exit(1); }'
+          "$node_bin" --check scripts/video-record.mjs
+          chrome="$(command -v google-chrome || command -v google-chrome-stable || true)"
+          if [ -z "$chrome" ]; then echo "Google Chrome is not installed on this runner"; exit 1; fi
+          echo "node $("$node_bin" --version) at $node_bin"
+          "$chrome" --version
+          echo "NODE_BIN=$node_bin" >> "$GITHUB_ENV"
+          echo "CHROME_BIN=$chrome" >> "$GITHUB_ENV"
+
+      - name: Record (Chrome over the DevTools protocol; hosted page, explorer pages, README)
+        run: '"$NODE_BIN" scripts/video-record.mjs "$OUT/plan.json" "$OUT/capture" --voice "$VOICE"'
+
+      - name: Fill the live values from what the page showed and check them
+        run: python3 scripts/video-check.py --plan "$OUT/plan.json" --capture "$OUT/capture/manifest.json" --resolve "$OUT/resolved.json"
+
+      - name: Voice (one synthetic en-US voice for every line, or none)
+        run: python3 scripts/video-make.py voice "$OUT/resolved.json" "$OUT/voice" --engine "$VOICE" --edge-voice "$EDGE_VOICE"
+
+      - name: Assemble (1920x1080, 30 fps, H.264 + AAC, captions burnt in, loudness normalised, under 180 s)
+        run: python3 scripts/video-make.py build "$OUT/resolved.json" "$OUT/voice" "$OUT/capture" "$OUT/final"
+
+      - name: Upload the video, its captions, the contact sheet and the capture log
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: notice-period-video-${{ github.run_id }}
+          path: |
+            build/video/final/
+            build/video/plan.json
+            build/video/resolved.json
+            build/video/capture/manifest.json
+            build/video/capture/debug/
+            build/video/voice/timings.json
+          if-no-files-found: warn
+          retention-days: 14
