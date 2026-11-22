@@ -1,6 +1,7 @@
 # Testing notes for the page
 
-Date of these runs: 2026-11-21, about 14:20 to 14:45 UTC, on the files as they are in this folder. The page is plain
+Date of these runs: 2026-11-21, about 14:20 to 14:45 UTC, and the rows marked "19:40" at about 19:40 to 19:50 UTC,
+after `flags.unprovenKinds` was switched on; the rows without that mark were run with the switch off. The page is plain
 HTML, CSS and JavaScript with no build step. A row is listed only if it was run on this state of the files and its
 output was read, unless the row says "not repeated". Nothing here was run with a real wallet.
 
@@ -56,10 +57,11 @@ wide, and headless Microsoft Edge with a fresh profile for each capture.
 |---|---|
 | Encoder and decoder | 15 of 15: the seven real transaction inputs of the recorded run byte for byte (`create`, `mint`, `approve`, `deposit`, `approve`, `arm`, `submit`), the four real logs, the layouts of `increaseAbsoluteCap`, `decreaseTimelock` and `setIsAllocator`, one error. A deliberately wrong offset in `submit(bytes)` turns it red (14 of 15) |
 | Full run by clicks | connect, deposit (4 confirmations), watch (2), new adapter (1), deposit returned: 8 wallet requests, every button clicked twice and sent once |
-| The rule chooser and the curator buttons | Four kinds are listed. `A new adapter` is ticked and cannot be unticked, with the line `A new adapter stays on in this demo: it is the change you schedule as the curator in the next step.` With the default watch the curator buttons are `Schedule a new adapter`, `Schedule a cap increase instead` and `Turn the watch off`, each kind with a line saying whether the watch covers it |
+| The rule chooser and the curator buttons (switch off) | Four kinds are listed. `A new adapter` is ticked and cannot be unticked, with the line `A new adapter stays on in this demo: it is the change you schedule as the curator in the next step.` With the default watch the curator buttons are `Schedule a new adapter`, `Schedule a cap increase instead` and `Turn the watch off`, each kind with a line saying whether the watch covers it |
 | A cap increase first | `Checking for 20 s that nothing moves`, then `The curator scheduled a cap increase. Your watch does not cover that kind.` with three buttons: `Now schedule a new adapter`, `Turn the watch off`, `Withdraw my deposit now`. The new adapter then returned the deposit |
-| A watch that does not cover a new adapter | Made by switching `flags.unprovenKinds` on for the watch step only. Back on the default page its curator buttons are `Schedule a new adapter` and `Schedule a cap increase instead`, both marked as not covered. After the new adapter: `Nothing moved, as the rule says`, with `Turn the watch off` and `Withdraw my deposit now`, no button that loops. The withdrawal paid 100 back and the watch went off |
-| With `flags.unprovenKinds` switched on | The adapter box can be unticked; a watch for a shorter waiting period and a new allocator offers `Schedule a shorter waiting period`, and that change returned the deposit in the simulator. A new allocator as the scheduled change was not repeated on this state of the files. Neither kind has run against the live contracts, which is why the switch is off |
+| A watch that does not cover a new adapter | Made by switching `flags.unprovenKinds` on for the watch step only. Back on the page with the switch off, its curator buttons are `Schedule a new adapter` and `Schedule a cap increase instead`, both marked as not covered. After the new adapter: `Nothing moved, as the rule says`, with `Turn the watch off` and `Withdraw my deposit now`, no button that loops. The withdrawal paid 100 back and the watch went off |
+| 19:40. With `flags.unprovenKinds` switched on (the shipped setting) | Every box can be unticked. A watch for a new allocator only: buttons `Schedule a new allocator` and `Schedule a cap increase instead`; the new allocator returned the deposit (+3 s, 177 s of notice left, allowance left 0). A watch for a shorter waiting period only: `Schedule a shorter waiting period` returned the deposit the same way. The default watch (three kinds) still offers `Schedule a new adapter` first; a cap increase on it gave `Nothing moved, as the rule says` with `Now schedule a new adapter`, `Turn the watch off` and `Withdraw my deposit now` |
+| 19:40. The recorded copy | With four records the latest-run strip shows run 4 and reads `Deposit back 1 second later`, and the count line reads `4 runs so far, all our own tests. 4 deposits returned.`, the same with JavaScript off |
 | A log read fails at "Turn the watch on" | First Base Sepolia endpoint unreachable, or answering with an RPC error, or both endpoints unreachable, each right after a deposit: the watch went on as usual (7 wallet requests). Before this fix the first two ended in `This vault is from an earlier visit` |
 | The same failure when the vault's age is not known to the page | As after a reload: `Cannot reach Base Sepolia right now`, with `At the last read your deposit was in your vault`, `Try again` and `Withdraw my deposit now`. `Try again` went on to the watch once the read answered |
 | A vault that really is older than the page can search | The read answers and finds no creation record: `This vault is from an earlier visit`; `Withdraw my 100 demo dollars` paid out and led back to step 1 |
@@ -91,9 +93,10 @@ wide, and headless Microsoft Edge with a fresh profile for each capture.
 | What | Why | Where it can run |
 |---|---|---|
 | Any step with a real wallet: connection, the seven confirmations, the real deposit coming back | No wallet was used for these tests | A person with a browser wallet on the deployed page |
-| A shorter waiting period or a new allocator as the scheduled change, on the live contracts | Never run as real transactions; the page keeps both off (`flags.unprovenKinds`). Read-only `eth_call`s of both, from a real vault's curator, were accepted earlier the same day and not repeated | A real run for each, then the switch |
+| A cap increase on a watch that covers it (an opt-in kind), by clicks on the page | It exited on the live contracts from our loop workflow (run 7 in `records/`, 22 Nov 2026), not yet from the page's own button | A click-through on the deployed page |
+| A shorter waiting period or a new allocator scheduled from this page's buttons, on the live contracts | Both kinds have exited on the live contracts from our loop workflow (runs 3 and 4 in `records/`), not yet from the page's own buttons | A person with a browser wallet on the deployed page |
 | Whether wallet extensions inject their provider under `script-src 'self'` | Needs a real extension | First thing to check in the real-wallet walk |
-| The deployed address | The page is not deployed yet | After hosting is switched on |
+| The deployed address | The page is served from this folder by GitHub Pages since 22 Nov 2026; every row above was run on a local copy of the same files | The deployed page, with the same steps |
 | Reload in the middle of a real run, two tabs, a second browser engine, private mode | Only the simulator was available; it forgets its state on reload | Real-wallet walk |
 | Whether the public endpoints really answer a block behind, and how often their log reads fail | Not measured. The page treats an empty answer as "not known yet" and a failed log read as "try again" either way | Many reads right after a real transaction |
 | The page with scripts switched off | Not rendered: the headless capture with scripts blocked came back empty. Read in the source: the recorded runs, their links, the two first-screen buttons and one plain sentence in the panel are in the HTML | Any browser with scripts off |
@@ -101,5 +104,5 @@ wide, and headless Microsoft Edge with a fresh profile for each capture.
 | Activation with Enter and Space, a screen reader | Not run. Every control is a native button, link or checkbox; one polite live region announces state headlines | A person |
 | `callback-slow` and `deposit-short` by their real cause | Rendered and their buttons pressed, but the 90 s wait and the last-moment price move were not driven | Simulator or real run |
 | A late exit that lands before the second change is sent | Read in the code only (the result is looked up by watch id when the watch is found ended) | Simulator |
-| A table with many runs and with visitor runs | Only two runs exist on chain | After more runs |
+| A table with many runs and with visitor runs | Only four runs exist on chain, all our own (`records/`); none by a visitor | After more runs |
 | "Wait for the deadline" in the guided run | Switched off on this page (`flags.mode1`); the contracts support it and run 2 used it | Later |

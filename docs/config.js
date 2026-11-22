@@ -46,7 +46,9 @@
       reactive: '0x00E4996c7255B919B619902E1Ac4b254D3c3f014',
       system: '0x8888888888888888888888888888888888888888'
     },
-    /* Our own account: runs it sent are labelled "Our own test run". */
+    /* Our own accounts: runs they sent are labelled "Our own test run". operator is the first (the testnet key);
+       the second is the key derived from it for runs that need a second depositor (scripts/loop-system.sh). */
+    operators: ['0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4', '0x616FF5998E3e6AF794881Adf6Fe6cac62Cc29b19'],
     operator: '0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4',
 
     token: { symbol: 'npUSD', decimals: 6 },
@@ -91,10 +93,11 @@
     flags: {
       /* "Leave only if it is still scheduled near the end" is built in the contracts and switched off on this page. */
       mode1: false,
-      /* As the curator, this page schedules a new adapter (the change of both recorded runs) and, while the watch does
-         not cover it, a cap increase (nothing should move). Scheduling a shorter waiting period or a new allocator is
-         written but has not been run against the live contracts, so it stays off until a real run has shown each. */
-      unprovenKinds: false
+      /* As the curator, this page schedules every kind the watch can cover. A new adapter, a shorter waiting period,
+         a new allocator and (on a watch that covers it) a cap increase have each returned a deposit on the live
+         contracts (recorded runs 1, 3, 4 and 7). Off, the page
+         offers only a new adapter and, while the watch does not cover it, a cap increase (nothing should move). */
+      unprovenKinds: true
     },
 
     morpho: {
@@ -117,5 +120,11 @@
       contracts: 'https://github.com/bongbongcrypto/notice-period/tree/main/src',
       faucets: 'https://docs.base.org/base-chain/tools/network-faucets'
     }
+  };
+
+  /* True for one of our own accounts. */
+  NP.config.isOurs = function (address) {
+    var a = String(address || '').toLowerCase();
+    return NP.config.operators.some(function (o) { return o.toLowerCase() === a; });
   };
 }());

@@ -250,7 +250,7 @@
     var cap = $('latest-cap');
     var check = $('latest-check');
     if (run) {
-      var ours = !run.owner || run.owner.toLowerCase() === cfg.operator.toLowerCase();
+      var ours = !run.owner || cfg.isOurs(run.owner);
       var where = ours ? 'on our own demo vault' : 'by a visitor on a demo vault';
       var mode = run.mode === 1 ? '“wait for the deadline”' : '“leave now”';
       cap.textContent = (linked ? 'Run #' + run.id + ' on testnet, ' + mode + ' mode, ' + where + ', ' : 'Latest ' + mode + ' run on testnet, ' + where + ', ') +
@@ -258,8 +258,9 @@
       drawStrip($('strip-first'), { t1: run.r1.ts, t2: run.r2.ts, t3: run.r3.ts, execAt: run.execAt, stage: 3 });
       drawLedger($('ledger-first'), { t1: run.r1.ts, t2: run.r2.ts, t3: run.r3.ts, h1: run.r1.hash, h2: run.r2.hash, h3: run.r3.hash, stage: 3 });
       $('strip-alt').textContent = 'Run #' + run.id + '. Change scheduled at ' + fmt.time(run.r1.ts) + ' UTC. Deposit back ' +
-        fmt.sec(run.r3.ts, run.r1.ts) + ' seconds later. The change could take effect at ' + fmt.time(run.execAt) + ' UTC, ' +
-        Math.max(0, run.execAt - run.r3.ts) + ' seconds after the deposit was back.';
+        fmt.sec(run.r3.ts, run.r1.ts) + fmt.plural(fmt.sec(run.r3.ts, run.r1.ts), ' second', ' seconds') + ' later. The change could take effect at ' +
+        fmt.time(run.execAt) + ' UTC, ' + Math.max(0, run.execAt - run.r3.ts) + fmt.plural(Math.max(0, run.execAt - run.r3.ts), ' second', ' seconds') +
+        ' after the deposit was back.';
     }
     setBusy(check, state === 'loading');
     clear(check);
@@ -318,7 +319,7 @@
     th.appendChild(a);
     tr.appendChild(th);
     function td(cls, label, text) { var c = el('td', cls, text); c.setAttribute('data-l', label); tr.appendChild(c); return c; }
-    var who = r.owner ? (r.owner.toLowerCase() === cfg.operator.toLowerCase() ? 'Our own test run' : 'Visitor') : '';
+    var who = r.owner ? (cfg.isOurs(r.owner) ? 'Our own test run' : 'Visitor') : '';
     if (!r.r1) {
       td('num', 'When (UTC)', r.armedAt ? fmt.date(r.armedAt) + ' ' + fmt.time(r.armedAt) : '');
       td('', 'Who', who);
