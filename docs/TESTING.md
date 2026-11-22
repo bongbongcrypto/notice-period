@@ -93,7 +93,7 @@ wide, and headless Microsoft Edge with a fresh profile for each capture.
 | What | Why | Where it can run |
 |---|---|---|
 | Any step with a real wallet: connection, the seven confirmations, the real deposit coming back | No wallet was used for these tests | A person with a browser wallet on the deployed page |
-| A cap increase on a watch that covers it (an opt-in kind), on the live contracts or by clicks | It exits in the CI dry run on two local chains only | A testnet loop with the cap kind, then a click-through |
+| A cap increase on a watch that covers it (an opt-in kind), by clicks on the page | It exited on the live contracts from our loop workflow (run 7 in `records/`, 22 Nov 2026), not yet from the page's own button | A click-through on the deployed page |
 | A shorter waiting period or a new allocator scheduled from this page's buttons, on the live contracts | Both kinds have exited on the live contracts from our loop workflow (runs 3 and 4 in `records/`), not yet from the page's own buttons | A person with a browser wallet on the deployed page |
 | Whether wallet extensions inject their provider under `script-src 'self'` | Needs a real extension | First thing to check in the real-wallet walk |
 | The deployed address | The page is served from this folder by GitHub Pages since 22 Nov 2026; every row above was run on a local copy of the same files | The deployed page, with the same steps |

@@ -5,7 +5,7 @@
   'use strict';
   var NP = window.NP = window.NP || {};
   NP.recorded = {
-    "readAt": "2026-11-21T21:20:12Z",
+    "readAt": "2026-11-22T06:21:32Z",
     "runs": [
       {
         "id": 1,
@@ -184,6 +184,43 @@
           "hash": "0x7d7be1a69c3518a25c63c14ac517eeb350fbbb891c552a911222e9a68ab87932",
           "block": 61867462,
           "ts": 1795295361,
+          "outcome": 0,
+          "reason": 1,
+          "shares": "100000000",
+          "assets": "100000000"
+        },
+        "exit": "0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8",
+        "reactive": "0x00E4996c7255B919B619902E1Ac4b254D3c3f014"
+      },
+      {
+        "id": 7,
+        "mode": 0,
+        "kinds": 15,
+        "owner": "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4",
+        "vault": "0x2cc62C56d915F2567e9AB6e0d4B596A9A18EFC85",
+        "selector": "0xf6f98fd5",
+        "execAt": 1795328591,
+        "armTx": "0x337de3a9172b0b88c567b1c3193c36a3c8db69d18b63a19f5facbe68d0474279",
+        "armTs": 1795328390,
+        "subTx": "0x070fdb6c8c9ea2db9937ccd7231d9e1b80fb3d0eb70de8ee5b40c1e033decfe7",
+        "subTs": 1795328390,
+        "r1": {
+          "hash": "0x7066827c63a73722651f68b14ec0552728107040ea8bf0dc316c23a8e76c991f",
+          "block": 62032715,
+          "ts": 1795328411
+        },
+        "r2": {
+          "hash": "0x02395d2ebc5d87877f40082ac24ae0768b741061e3962a1ec5ab2fd8595271b1",
+          "block": 8953254,
+          "ts": 1795328411,
+          "refTx": "0x7066827c63a73722651f68b14ec0552728107040ea8bf0dc316c23a8e76c991f",
+          "refChainId": "0x14a34",
+          "reason": 1
+        },
+        "r3": {
+          "hash": "0xf20877f28e574b7eac8341a85afff2dac7b3f38cf9adbd06571d9546fbd48597",
+          "block": 62032723,
+          "ts": 1795328413,
           "outcome": 0,
           "reason": 1,
           "shares": "100000000",
