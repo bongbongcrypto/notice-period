@@ -98,20 +98,20 @@ def tts(engine, text, out, settings, edge_voice):
         cmd = ["espeak-ng", "-v", settings.get("espeakVoice", "en-us"), "-s", str(settings.get("espeakSpeed", 160)),
                "-w", str(out), text]
     last = ""
-    for attempt in range(1, 4):
+    for attempt in range(1, 7):
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
         except subprocess.TimeoutExpired:
             last = "no answer within 180 s"
             print(f"{engine} attempt {attempt} failed: {last}")
-            time.sleep(3 * attempt)
+            time.sleep(5 * attempt)
             continue
         if r.returncode == 0 and out.is_file() and out.stat().st_size > 1000:
             return
         last = (r.stderr or r.stdout).strip()[-400:]
         print(f"{engine} attempt {attempt} failed: {last}")
-        time.sleep(3 * attempt)
-    die(f"{engine} failed three times on one line ({last}). A video never mixes voices, so this run stops: "
+        time.sleep(5 * attempt)
+    die(f"{engine} failed six times on one line ({last}). A video never mixes voices, so this run stops: "
         "dispatch again, or choose voice espeak or none")
 
 
@@ -131,6 +131,7 @@ def cmd_voice(a):
             continue
         f = out / f"{s['id']}.{'mp3' if a.engine == 'edge' else 'wav'}"
         tts(a.engine, say, f, settings, a.edge_voice)
+        time.sleep(1.0)  # one request at a time, spaced: the edge service refuses bursts
         lines[s["id"]] = {"file": f.name, "seconds": round(seconds_of(f), 3), "spoken": say}
         print(f"{s['id']} {lines[s['id']]['seconds']:6.2f} s  {say[:90]}")
     voice_name = {"edge": a.edge_voice, "espeak": settings.get("espeakVoice", "en-us"), "none": None}[a.engine]
