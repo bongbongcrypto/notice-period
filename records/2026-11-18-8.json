@@ -1,0 +1,26 @@
+{
+  "deployment": "2026-11-18",
+  "n": 8,
+  "loopRun": 44993303357,
+  "exit": "0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8",
+  "reactive": "0x00E4996c7255B919B619902E1Ac4b254D3c3f014",
+  "token": "0x2690DF70a37939c582a800f32FFEE52ec40d150B",
+  "kind": "adapter",
+  "mode": 0,
+  "action": "arm-only",
+  "depositorKey": "b",
+  "curatorKey": "a",
+  "depositor": "0x616FF5998E3e6AF794881Adf6Fe6cac62Cc29b19",
+  "curator": "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4",
+  "vault": "0x8632dae06601b38F9cEf2c8964EE898FcdFAFa04",
+  "watchId": 8,
+  "armTx": "0x06e421902f5c3a94e9121b79671a647e8d38c16295c5e5746f1bc3fa5111bea6",
+  "lasnaFrom": 8953305,
+  "subTx": "0xc3ca17840342cd3c59a3b2eaf5472e5c635581409d5adfc0d0484e645fe1fd40",
+  "derived": {
+    "arm": {
+      "armBlock": 62033018,
+      "armTs": 1795328472
+    }
+  }
+}
