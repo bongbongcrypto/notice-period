@@ -415,26 +415,52 @@ async function shotRealtime(tab, s, dir, entry, expect) {
   await prepare(tab, s, entry);
   await scrollTo(tab, 0);
   await tab.paint();
-  const seconds = Number(s.captureSeconds);
+  // At least captureSeconds; with untilText, on until the replay's own receipt check has answered (one of those
+  // texts is on screen next to "replay of run #N"), then HOLD more seconds so the answer is readable, capped at
+  // maxCaptureSeconds. The clip lasts exactly as long as it was captured (captureSeconds in the result).
+  const HOLD = 1.5;
+  const minSeconds = Number(s.captureSeconds);
+  const until = (s.untilText || []).map(norm);
+  const maxSeconds = until.length ? Math.max(minSeconds, Number(s.maxCaptureSeconds || minSeconds)) : minSeconds;
+  const n = s.start && s.start.hash ? s.start.hash.replace('#run=', '') : null;
+  const runRe = n ? new RegExp(`replay of run #${n}(?![0-9])`, 'i') : null;
+  const stateText = async () => String(await tab.eval(`(document.getElementById('state') || document.body).innerText`));
   const frames = [];
   const t0 = performance.now();
-  if (s.start && s.start.hash) await tab.eval(`window.location.hash = ${JSON.stringify(s.start.hash)}`);
+  if (n) await tab.eval(`window.location.hash = ${JSON.stringify(s.start.hash)}`);
   let i = 0;
-  while ((performance.now() - t0) / 1000 < seconds) {
+  let endAt = until.length ? null : 0;
+  let lastPoll = -1;
+  let elapsed = 0;
+  for (;;) {
+    elapsed = (performance.now() - t0) / 1000;
+    if (elapsed >= maxSeconds) break;
+    if (endAt === null && elapsed - lastPoll >= 0.5) {
+      lastPoll = elapsed;
+      const text = norm(await stateText());
+      if ((!runRe || runRe.test(text)) && until.some((u) => text.includes(u))) endAt = elapsed;
+    }
+    if (endAt !== null && elapsed >= Math.max(minSeconds, endAt + HOLD)) break;
     const t = (performance.now() - t0) / 1000;
     const f = `f${String(i).padStart(4, '0')}.jpg`;
     await tab.capture(join(dir, f), { format: 'jpeg', quality: 90, expect });
     frames.push({ file: f, t: Number(t.toFixed(4)) });
     i += 1;
   }
+  const seconds = Number(elapsed.toFixed(3));
   const gaps = frames.slice(1).map((fr, k) => fr.t - frames[k].t);
-  entry.fps = Number((frames.length / seconds).toFixed(1));
+  entry.fps = Number((frames.length / Math.max(seconds, 0.001)).toFixed(1));
   entry.maxGap = Number((gaps.length ? Math.max(...gaps) : seconds).toFixed(3));
+  entry.captured = seconds;
   if (entry.fps < 4) entry.warnings.push(`only ${entry.fps} frames per second captured; the replay will look jerky`);
-  if (s.start && s.start.hash) {
-    entry.pageText = (await tab.eval(`(document.getElementById('state') || document.body).innerText`)).slice(0, 600);
-    const n = s.start.hash.replace('#run=', '');
-    if (!new RegExp(`replay of run #${n}(?!\\d)`, 'i').test(entry.pageText)) throw new Error(`the page did not show the replay of run ${n} after ${s.start.hash}: ${entry.pageText.slice(0, 160)}`);
+  if (n) {
+    entry.pageText = (await stateText()).slice(0, 600);
+    if (!runRe.test(entry.pageText)) throw new Error(`the page did not show the replay of run ${n} after ${s.start.hash}: ${entry.pageText.slice(0, 160)}`);
+  }
+  if (until.length) {
+    if (endAt === null) entry.warnings.push(`the replay's receipt check did not answer within ${maxSeconds} s; the clip ends before it`);
+    else entry.checkAnsweredAt = Number(endAt.toFixed(3));
+    if (/could not re-check/i.test(entry.pageText || '')) entry.warnings.push(`the page could not re-check run ${n} against the chains; the clip shows its recorded copy`);
   }
   return { frames, captureSeconds: seconds };
 }

@@ -73,11 +73,9 @@ jobs:
           if [ "$VOICE" = edge ]; then pkgs="$pkgs python3-venv"; fi
           sudo apt-get update -q
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends $pkgs
-          ffmpeg -hide_banner -version | head -n 1
-          for f in subtitles loudnorm drawtext tile tpad; do
-            ffmpeg -hide_banner -filters | grep -qE "[[:space:]]${f}[[:space:]]" || { echo "ffmpeg lacks the $f filter"; exit 1; }
-          done
-          ffmpeg -hide_banner -encoders | grep -qE '[[:space:]]libx264[[:space:]]' || { echo "ffmpeg lacks libx264"; exit 1; }
+          ffmpeg -hide_banner -version > "$RUNNER_TEMP/ffmpeg-version.txt"
+          sed -n 1p "$RUNNER_TEMP/ffmpeg-version.txt"
+          # the filters and encoders the build needs are checked by scripts/video-make.py before it encodes anything
 
       - name: Install edge-tts (exact versions, every wheel checked against its sha256)
         if: inputs.voice == 'edge'

@@ -285,6 +285,11 @@ def plan_shot(shot, script, repo, fields):
             find(f"{where}: a realtime shot's label says 'not sped up' or 'sped up'")
         if float(shot.get("captureSeconds", 0)) <= 0:
             find(f"{where}: captureSeconds missing")
+        until = shot.get("untilText", [])
+        if not isinstance(until, list) or not all(isinstance(x, str) and x for x in until):
+            find(f"{where}: untilText must be a list of page texts")
+        if until and float(shot.get("maxCaptureSeconds", 0)) < float(shot.get("captureSeconds", 0)):
+            find(f"{where}: maxCaptureSeconds must be at least captureSeconds when untilText is given")
     if shot.get("type") == "clip":
         f = ROOT / shot.get("file", "")
         if not shot.get("file") or not f.is_file():
@@ -370,11 +375,16 @@ def static(repo):
     total = sum(float(s["seconds"]) for s in plan)
     if total >= limits["maxSeconds"]:
         find(f"planned length {total:g} s is not under {limits['maxSeconds']} s")
+    # a replay is captured until the page's own receipt check answers, at most maxCaptureSeconds
+    worst = sum(max(float(s["seconds"]), float(s.get("maxCaptureSeconds", 0))) for s in plan)
+    if worst >= limits["maxSeconds"]:
+        find(f"planned length with every replay at its longest capture {worst:g} s is not under {limits['maxSeconds']} s")
     print(f"{'shot':5} {'type':9} {'s':>5}  label / caption")
     for s in plan:
         print(f"{s['id']:5} {s['type']:9} {float(s['seconds']):5.1f}  {s.get('label', '')[:70]}")
         print(f"{'':22}{s['caption'][:90]}")
-    print(f"planned {total:g} s (target {limits['targetSeconds']}, limit under {limits['maxSeconds']}), {len(plan)} shots")
+    print(f"planned {total:g} s, {worst:g} s if every replay runs to its longest capture "
+          f"(target {limits['targetSeconds']}, limit under {limits['maxSeconds']}), {len(plan)} shots")
     return {"fields": fields, "viewport": script["viewport"], "limits": limits, "voice": script["voice"],
             "card": card, "shots": plan}
 
