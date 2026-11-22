@@ -434,8 +434,10 @@ on Base Sepolia; balances read before and after each loop; reactive gas price 10
   replayed real vault (README) needs at least 447,005 forwarded, so it runs out of gas at 600,000 and redeems at
   1,000,000. Vault V2 bounds neither the number of adapters nor the gas they use, so no limit covers every vault.
   The reactive contract closes a watch when it asks for the exit, so an exit that fails (`RedeemFailed`, or a
-  callback that runs out of gas) is not tried again and the depositor stays in. No callback of ours has been
-  delivered at 1,000,000 on Base Sepolia yet; the first loop on the newer contracts is that proof.
+  callback that runs out of gas) is not tried again and the depositor stays in. The first loop on the newer
+  contracts (run 1 of `deployments/2026-11-22.json`, 22 Nov 2026) delivered our callback at 1,000,000 on a vault
+  made through `MorphoVaultMaker`, which has no adapter: it shows the limit is accepted and the exit lands, not
+  that the replayed vault's heavier redeem fits on chain (that is the fork test, section 12).
 - Stray events after a silent unsubscribe are billed by the network and cannot be refused by the contract;
   they are counted (`strayEvents`) and alerted on.
 - "No server, no key that can send the funds elsewhere": the exit right exists only through the vault's own
@@ -525,10 +527,11 @@ recipient replaced by a probe that logs `gasleft()`):
   make the redeem do, is billed 897,765 gas at 1,000,000 (5.9252e-6 ETH at 0.006 gwei) against 504,015 at 600,000
   (3.3265e-6 ETH), simulated behind the live proxy. `deploy-system.yml` funds `NoticeExit` with 0.007 ETH by
   default: about 1,180 such exits at that price.
-- Not shown yet: a callback of ours delivered at 1,000,000. The proxy's operator delivered about 1,050 other
-  contracts' callbacks at exactly 1,000,000 from 2026-11-19 to 11-22, which shows the limit is accepted, not that
-  our exit lands. The first loop on the newer contracts is that proof, and the 8 lREACT top-up of the float waits
-  for it. The lREACT charge on Lasna at 1,000,000 is not measured (it was the same at 200,000 and 400,000).
+- Shown on 22 Nov 2026: a callback of ours delivered at 1,000,000. Run 1 of the newer contracts: the proxy's
+  transaction `0x85724300…f549` had a 1,000,000 limit, used 174,428 gas and redeemed the depositor 1 s after the
+  curator's `Submit`. The vault had no adapter, so the redeem itself was light. The 8 lREACT top-up of the float
+  followed. The lREACT charge on Lasna per reaction at 1,000,000 is not measured separately (the float, funded
+  with 1, stood at 0.9508 after the deployment and this run).
 - In Foundry: `test/CallbackGas.t.sol` runs its exit paths at 1,000,000, and a redeem that burns 340,000 gas more
   than the demo vault's (about the replayed vault's extra) must redeem at 1,000,000 and must not at 600,000.
 - On a fork (`fork/RealVault.fork.t.sol`, the non-blocking `fork` job of `ci.yml`, public archive endpoints): the

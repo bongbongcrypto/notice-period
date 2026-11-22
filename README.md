@@ -31,6 +31,36 @@ A change is waiting when its `validAt` (unix seconds) is later than now. On 21 N
 live. Cap increases are routine, which is why the default rule covers the three rarer kinds and leaves cap
 increases off.
 
+## Contracts of the 22 Nov 2026 testnet deployment: real Morpho Vault V2s
+
+These contracts watch vaults made by Morpho's own `VaultV2Factory` on Base Sepolia
+(`0xE3a2CEbca662d99D0F279aF13a6bb8c9825D2ea0`), so the vault in a run is Morpho's Vault V2 code, not our copy.
+`MorphoVaultMaker` makes one for the caller, with the demo dollar as its asset and a 180 s waiting period, and
+hands it over: the caller is its curator and owner. The callback gas limit is 1,000,000 (the 18 Nov pair: 600,000),
+and a "leave now" watch has no end date (SPEC.md section 11). Deployed by the `deploy-system` workflow, run
+45007627595, from commit 3f47b8c ([`deployments/2026-11-22.json`](deployments/2026-11-22.json)). All four match their
+source exactly on Sourcify, and our `verify` workflow found the code on chain equal to the build of that commit
+([`status/bytecode-2026-11-22.json`](status/bytecode-2026-11-22.json)).
+
+| Contract | Chain | Address |
+|---|---|---|
+| `NoticeExit` | Base Sepolia (84532) | [`0xc3451Dc97fBF3ba019524E68939192BEC4b83Fca`](https://base-sepolia.blockscout.com/address/0xc3451Dc97fBF3ba019524E68939192BEC4b83Fca) |
+| `NoticeReactive` | Reactive Lasna (5318007) | [`0xb27F7223B83D3596868EAc0299Ab5B132b0B8D32`](https://lasna.reactscan.net/address/0xb27F7223B83D3596868EAc0299Ab5B132b0B8D32) |
+| `MorphoVaultMaker` | Base Sepolia | [`0x373628f4D8edA26E5ced03a4ec76Fa38162f6cC5`](https://base-sepolia.blockscout.com/address/0x373628f4D8edA26E5ced03a4ec76Fa38162f6cC5) |
+| `DemoToken` (demo dollar, 6 decimals) | Base Sepolia | [`0xA73cD0eCA5bda9c98EFdEc8bbc7c32684d36A5D7`](https://base-sepolia.blockscout.com/address/0xA73cD0eCA5bda9c98EFdEc8bbc7c32684d36A5D7) |
+
+Run 1 on these contracts, 22 Nov 2026, with a depositor that is not the curator. The second key deposited 100 demo
+dollars in a vault made through `MorphoVaultMaker`
+([`0x43b0CED4…8C23`](https://base-sepolia.blockscout.com/address/0x43b0CED4AF6180eF0251C50454D16EF389D08C23)) and turned a watch on at 09:30:20 UTC.
+The curator (`0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4`) scheduled a new adapter at 09:30:39 UTC
+([`0xc9741124…e783`](https://base-sepolia.blockscout.com/tx/0xc974112485f9350817cb58a35418cc309b7d27b536dfa3da3e4a08eeba9ce783)),
+Reactive answered (Lasna's block time is 1 s earlier)
+([`0xf9d98a07…88a9`](https://lasna.reactscan.net/tx/0xf9d98a074ebb38114108434a8704e50e659929c25ab510c0644e35602b4b88a9)),
+and the deposit was back 1 s later
+([`0x85724300…f549`](https://base-sepolia.blockscout.com/tx/0x85724300cdc2c5a21cf1f56c58133094f6f07e694644fa1d692368d296e1f549)),
+179 s before the change could run. That callback's transaction had a gas limit of 1,000,000 and used 174428.
+`python scripts/runs.py --check 2026-11-22` re-reads it from the chains' receipts.
+
 ## Contracts of the 18 Nov 2026 testnet deployment
 
 | Contract | Chain | Address |
