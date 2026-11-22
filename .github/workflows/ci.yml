@@ -137,3 +137,63 @@ jobs:
 
       - name: Funding dry run (three local chains, transaction and refusal checks)
         run: bash scripts/dry-run-fund.sh
+
+  fork:
+    # Non-blocking: fork/RealVault.fork.t.sol (F2, F2b) on Ethereum mainnet state at block 26,406,895, read from a
+    # public archive endpoint. No key, no secret, no transaction. The file sits outside test/, so the blocking jobs
+    # never compile it; this job points Foundry's test directory at fork/ (FOUNDRY_TEST overrides foundry.toml).
+    # A red job does not fail the run: read the job's own conclusion (gh run view <id> --json jobs).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    continue-on-error: true
+    env:
+      FOUNDRY_PROFILE: ci
+      FOUNDRY_TEST: fork
+      # Optional repository variable, tried first. Keyless URLs only: variables are not masked in logs.
+      FORK_RPC: ${{ vars.FORK_RPC }}
+    steps:
+      - name: Check out this commit (plain git, no third-party action)
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          git init -q .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          echo "::add-mask::${auth}"
+          git -c http.extraheader="AUTHORIZATION: basic ${auth}" fetch -q --depth 1 origin "${GITHUB_SHA}"
+          git checkout -q FETCH_HEAD
+
+      - name: Install pinned Foundry, solc and libraries
+        run: bash scripts/ci-setup.sh
+
+      - name: Fork tests F2 and F2b (first archive endpoint that completes them)
+        run: |
+          set -o pipefail
+          # ci-setup.sh forbids downloads (FOUNDRY_OFFLINE=true); a fork must reach the RPC. solc stays pinned.
+          unset FOUNDRY_OFFLINE
+          forge config --json | python3 -c "import json, sys; c = json.load(sys.stdin); print('test dir', c['test'], 'offline', c['offline']); sys.exit(0 if str(c['test']).rstrip('/').split('/')[-1] == 'fork' else 1)" \
+            || { echo "Foundry's test directory is not fork/"; exit 1; }
+          out="$RUNNER_TEMP/fork-test.log"
+          for url in "${FORK_RPC}" https://eth.drpc.org https://rpc.mevblocker.io https://eth-mainnet.public.blastapi.io; do
+            [ -n "$url" ] || continue
+            if [ "$url" = "${FORK_RPC}" ]; then echo "endpoint: repository variable FORK_RPC"; else echo "endpoint: $url"; fi
+            if ETH_RPC="$url" forge test --match-path 'fork/*' -vvv 2>&1 | tee "$out"; then
+              # A skipped or missing test would also exit 0: the four must show as passed.
+              for t in test_F2_realSubmit_redeemsHolder_at1000000 test_F2_realSubmit_notRedeemed_at600000 \
+                test_F2b_allocatorClearsLiquidityAdapter_endsRedeemFailed test_F2b_control_sameHolderRedeems_withLiquidityAdapter; do
+                grep -q "\[PASS\] ${t}(" "$out" || { echo "fork test $t did not pass with this endpoint"; exit 1; }
+              done
+              echo "ETH_RPC=$url" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            echo "fork tests did not pass with this endpoint; trying the next one"
+          done
+          echo "fork tests did not pass with any endpoint"
+          exit 1
+
+      - name: Same tests with call isolation (cross-check only; each top-level call is its own transaction)
+        # Unverified with this harness; its result is informational and never turns the job red.
+        continue-on-error: true
+        run: |
+          unset FOUNDRY_OFFLINE
+          forge test --isolate --match-path 'fork/*' -vvv

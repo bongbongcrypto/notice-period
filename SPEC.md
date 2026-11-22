@@ -531,6 +531,10 @@ recipient replaced by a probe that logs `gasleft()`):
   for it. The lREACT charge on Lasna at 1,000,000 is not measured (it was the same at 200,000 and 400,000).
 - In Foundry: `test/CallbackGas.t.sol` runs its exit paths at 1,000,000, and a redeem that burns 340,000 gas more
   than the demo vault's (about the replayed vault's extra) must redeem at 1,000,000 and must not at 600,000.
+- On a fork (`fork/RealVault.fork.t.sol`, the non-blocking `fork` job of `ci.yml`, public archive endpoints): the
+  replay's real `Submit` goes through our current contracts on Ethereum mainnet state at block 26,406,895 and must
+  redeem the holder at 1,000,000 and not at 600,000; an allocator that clears the liquidity adapter first makes
+  the exit end `RedeemFailed` for a holder whose claim exceeds the idle assets. Not run yet at this writing.
 
 Shown by the first real loops (2026-11-18, hashes above and in section 9): the network injects our reactive
 contract's address; a subscription added inside `react()` caught the curator's `Submit` after the loop's 15 s
