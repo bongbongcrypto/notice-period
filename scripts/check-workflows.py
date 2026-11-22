@@ -4,7 +4,9 @@
 Every workflow:
   - has a top-level `permissions:` block and no `pull_request_target` trigger;
   - every job has `timeout-minutes`;
-  - no step uses an outside action (`uses:`), since the repository checks out and installs with plain shell;
+  - no step uses an outside action (`uses:`), since the repository checks out and installs with plain shell. The one
+    exception is ALLOWED_ACTIONS: an action named there, pinned by exactly that full commit hash, in a job that
+    reads no secret (video.yml uploads its artifact with it; no other way to upload exists from a run step);
   - no `set -x`, and no `--private-key` followed by a literal `$` expansion echoed with `echo`;
   - a job that reads secrets.TESTNET_KEY runs in `environment: testnet`, and only such jobs name that environment;
   - every `${{ inputs.X }}` refers to a declared input;
@@ -22,6 +24,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 WF = ROOT / ".github" / "workflows"
+# Outside actions allowed, each pinned by the commit its release tag points to (read from the action's own repository
+# with the GitHub API on 2026-11-22: tag v7.0.2 -> this commit, identical to main; runs on node24). Only its
+# action.yml was read; the code that runs, dist/upload/index.js, is GitHub's own bundle and was not reviewed.
+ALLOWED_ACTIONS = {"actions/upload-artifact": "cf430e030ddbb5b0abf93d22962f4752f3646cd9"}
 TUNING = {"LOOP_AMOUNT", "LOOP_TIMEOUT", "LOOP_IGNORE_WAIT", "LOOP_REVOKE_AFTER", "LOOP_BURST_WAIT", "LOOP_SCAN",
           "LOOP_WATCH_KINDS", "LOOP_NO_KEY_A"}
 
@@ -100,8 +106,10 @@ def check_workflow(path):
         find(f"{name}: no top-level permissions block")
     if "pull_request_target" in text:
         find(f"{name}: pull_request_target trigger")
-    if re.search(r"^\s*(-\s+)?uses:", text, re.M):
-        find(f"{name}: a step uses an outside action")
+    for ref in re.findall(r"^\s*(?:-\s+)?uses:\s*([^\s#]+)", text, re.M):
+        action, _, pin = ref.partition("@")
+        if ALLOWED_ACTIONS.get(action) != pin:
+            find(f"{name}: a step uses an outside action ({ref}); only {sorted(ALLOWED_ACTIONS)} at their pinned commits")
     if re.search(r"\bset -[a-wyz]*x", text):
         find(f"{name}: set -x would print secrets")
     if re.search(r"echo[^\n]*--private-key", text):
@@ -122,6 +130,8 @@ def check_workflow(path):
         jtext = "\n".join(body)
         env_line = next((body[i] for k, i in keys.items() if k == "environment"), "")
         uses_key = "secrets.TESTNET_KEY" in jtext
+        if re.search(r"^\s*(?:-\s+)?uses:", jtext, re.M) and "secrets." in jtext:
+            find(f"{name}: job {job} runs an outside action and reads a secret")
         if uses_key and "testnet" not in env_line:
             find(f"{name}: job {job} reads the testnet key outside the testnet environment")
         if "testnet" in env_line and not uses_key:
