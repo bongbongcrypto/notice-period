@@ -1,0 +1,313 @@
+{
+  "_about": [
+    "The demo video's one source: what is on screen, for how long, and the caption of each shot. The caption is also the voice line (scripts/video-make.py speaks it with a few pronunciation rules, below).",
+    "Hashes, explorer URLs, block numbers, block times and contract addresses are never typed here: they come from records/<deployment>-<run>.json and deployments/<deployment>.json.",
+    "Every number in a caption, label or end-card line must be one of the numbers of that shot's evidence; each evidence item is read from README.md word for word, or from a JSON file in records/ or status/, or from docs/config.js (scripts/video-check.py).",
+    "seconds is the planned length; a shot grows when its voice line is longer. A realtime shot is never cut: it plays at the speed it was captured.",
+    "track1.enabled switches every shot to its ifTrack1 variant. While a {{...}} placeholder is left in an active shot, the check fails."
+  ],
+  "pageUrl": "https://bongbongcrypto.github.io/notice-period/",
+  "repoUrl": "https://github.com/bongbongcrypto/notice-period",
+  "event": "Reactive Omni Buildathon",
+  "track": "Set It and Forget It",
+  "deployment": "2026-11-18",
+  "viewport": { "width": 1280, "height": 720, "scale": 1.5 },
+  "limits": { "targetSeconds": 150, "maxSeconds": 180 },
+  "voice": {
+    "edgeRate": "+5%",
+    "espeakVoice": "en-us",
+    "espeakSpeed": 160,
+    "tag": "Synthetic voice (text to speech)",
+    "pronounce": { "Sourcify": "Source-ify", "V2": "V 2" }
+  },
+  "track1": {
+    "enabled": false,
+    "deployment": "{{TRACK1_DEPLOYMENT}}"
+  },
+  "card": {
+    "title": "Notice Period",
+    "sentence": "Your deposit withdraws itself before a vault rule change takes effect.",
+    "rows": [["Page", "{pageUrl}"], ["Source", "{repoUrl}"], ["Track", "{event} · {track}"]],
+    "contracts": [["Exit contract · Base Sepolia", "exit"], ["Reactive contract · Reactive Lasna", "reactive"]],
+    "note": "Testnet. The demo vault and curator in these runs are ours.",
+    "footVoice": "Voice: synthetic (text to speech) · Built by Bongbong (@bongbongcrypto)",
+    "footNoVoice": "Built by Bongbong (@bongbongcrypto)",
+    "evidence": [],
+    "ifTrack1": {
+      "note": "{{TRACK1_CARD_NOTE: testnet; vaults made with Morpho's VaultV2Factory by us; the curator is ours}}"
+    }
+  },
+  "shots": [
+    {
+      "id": "S01",
+      "type": "still",
+      "url": "{pageUrl}",
+      "fresh": true,
+      "wait": { "js": "/right now\\./.test(document.getElementById('problem').textContent) && /re-read from both chains|could not re-check/i.test(document.getElementById('latest-check').textContent) && /live from the chain|live read failed/i.test(document.getElementById('runs-cap').textContent)", "textAll": ["Your deposit withdraws itself"] },
+      "scrollTop": true,
+      "waitSeconds": 110,
+      "timeout": 180,
+      "soft": { "textAny": ["re-read from both chains"] },
+      "seconds": 6,
+      "caption": "Your deposit withdraws itself before a vault rule change takes effect.",
+      "evidence": []
+    },
+    {
+      "id": "S02",
+      "type": "zoom",
+      "url": "{pageUrl}",
+      "target": { "selector": ".problem" },
+      "live": "morpho",
+      "seconds": 11,
+      "label": "Hosted page · count read live from Morpho's public API",
+      "labelFailed": "Hosted page · Morpho's public API did not answer; the page shows its dated count",
+      "captionLive": "Curators of Morpho vaults schedule rule changes behind a waiting period. When this was recorded, the page read {morpho.changes} waiting in {morpho.vaults} holding {morpho.usd}.",
+      "captionZero": "Curators of Morpho vaults schedule rule changes behind a waiting period. When this was recorded, no rule change was waiting in any listed Morpho vault.",
+      "caption": "Curators of Morpho vaults schedule rule changes behind a waiting period. On 21 Nov 2026 that was 35 changes in 9 vaults holding $85.9M.",
+      "evidence": [{ "readme": "On 21 Nov 2026 that was 35 changes in 9 vaults holding $85.9M" }]
+    },
+    {
+      "id": "S03",
+      "type": "still",
+      "url": "{pageUrl}",
+      "target": { "selector": "#how", "align": "top", "offset": 16 },
+      "seconds": 13,
+      "label": "Hosted page · How it works",
+      "caption": "Pick, once, the kinds of change you will not accept. A reactive contract on Reactive Lasna watches the vault, and if the curator schedules such a change, your shares are redeemed to your own wallet.",
+      "evidence": []
+    },
+    {
+      "id": "S04",
+      "type": "still",
+      "url": "{pageUrl}",
+      "target": { "selector": "#runs", "align": "top", "offset": 16 },
+      "soft": { "textAny": ["Live from the chain"], "notText": ["visitor"] },
+      "seconds": 12,
+      "label": "Hosted page · Recent runs, all our own tests",
+      "caption": "Each exit run is on the page with its three transactions. All are our own tests on our own demo vaults: six exits, and every kind of change has a recorded exit.",
+      "evidence": [
+        { "readme": "The three records belong together." },
+        { "readme": "Runs on chain: six exits and one change revoked" },
+        { "readme": "All runs were sent by our own test accounts" },
+        { "readme": "Every kind has a recorded exit on testnet" }
+      ],
+      "ifTrack1": {
+        "caption": "{{TRACK1_RUNS_CAPTION: say whose vaults (made with Morpho's VaultV2Factory, by us) and the run count, as README says it}}",
+        "evidence": [{ "readme": "{{TRACK1_RUNS_README_PHRASE}}" }]
+      }
+    },
+    {
+      "id": "S05",
+      "type": "realtime",
+      "url": "{pageUrl}",
+      "fresh": true,
+      "run": 1,
+      "replay": true,
+      "waitSeconds": 110,
+      "timeout": 180,
+      "wait": { "js": "/right now\\./.test(document.getElementById('problem').textContent) && /re-read from both chains|could not re-check/i.test(document.getElementById('latest-check').textContent) && /live from the chain|live read failed/i.test(document.getElementById('runs-cap').textContent)" },
+      "captureSeconds": 10,
+      "untilText": ["Checked against both chains just now", "Could not re-check right now"],
+      "maxCaptureSeconds": 18,
+      "seconds": 11,
+      "clock": true,
+      "label": "Page replay of run 1, recorded 18 Nov 2026 · real speed, not sped up",
+      "caption": "Here the page replays run 1 at real speed: the curator schedules a new adapter, and 2 seconds later the deposit is back in the depositor's wallet.",
+      "evidence": [
+        { "readme": "runs 1 and 2 on 18 Nov 2026" },
+        { "readme": "+2 s" },
+        { "json": "records/{deployment}-1.json", "seconds": ["r1", "r3"] }
+      ],
+      "ifTrack1": {
+        "run": "{{TRACK1_RUN}}",
+        "label": "Page replay of run {{TRACK1_RUN}}, recorded {{TRACK1_DATE}} · real speed, not sped up",
+        "caption": "{{TRACK1_REPLAY_CAPTION}}",
+        "evidence": [{ "readme": "{{TRACK1_RUN_README_PHRASE}}" }]
+      }
+    },
+    {
+      "id": "S06",
+      "enabled": false,
+      "type": "clip",
+      "file": "video/clips/wallet-run.mp4",
+      "seconds": 35,
+      "clock": true,
+      "label": "Live run on the hosted page with a test wallet · not sped up",
+      "caption": "{{WALLET_CAPTION: written from the wallet recording, every number backed by evidence}}",
+      "evidence": []
+    },
+    {
+      "id": "S07",
+      "type": "still",
+      "run": 1,
+      "tx": "r1",
+      "seconds": 8,
+      "label": "Run 1 · record 1 of 3 · change scheduled · Base Sepolia · block time 01:04:46 UTC",
+      "caption": "The first record, on Base Sepolia: the curator's transaction, in which the vault emits its own Submit event.",
+      "evidence": [
+        { "readme": "Run 1, \"leave now\"" },
+        { "readme": "The three records belong together." },
+        { "readme": "01:04:46 UTC" }
+      ],
+      "ifTrack1": {
+        "run": "{{TRACK1_RUN}}",
+        "label": "Run {{TRACK1_RUN}} · record 1 of 3 · change scheduled · Base Sepolia · block time {{TRACK1_TIME}} UTC",
+        "evidence": [{ "readme": "{{TRACK1_RUN_README_PHRASE}}" }, { "readme": "The three records belong together." }, { "readme": "{{TRACK1_TIME}} UTC" }]
+      }
+    },
+    {
+      "id": "S08",
+      "type": "still",
+      "run": 1,
+      "tx": "r2",
+      "seconds": 9,
+      "label": "Run 1 · record 2 of 3 · reactive transaction · Reactive Lasna · +0 s",
+      "caption": "The second record, on Reactive Lasna: in the same second, our reactive contract receives that event, names it as its origin and asks for the exit.",
+      "evidence": [
+        { "readme": "Run 1, \"leave now\"" },
+        { "readme": "+2 s" },
+        { "readme": "The three records belong together." },
+        { "readme": "+0 s" },
+        { "readme": "In run 1 Reactive's transaction carries the same second as the vault's event" },
+        { "readme": "In run 1 Reactive's transaction names the Base Sepolia transaction as its origin." }
+      ],
+      "ifTrack1": {
+        "run": "{{TRACK1_RUN}}",
+        "label": "Run {{TRACK1_RUN}} · record 2 of 3 · reactive transaction · Reactive Lasna · +{{TRACK1_REACT_SECONDS}} s",
+        "caption": "{{TRACK1_REACT_CAPTION}}",
+        "evidence": [{ "readme": "{{TRACK1_RUN_README_PHRASE}}" }]
+      }
+    },
+    {
+      "id": "S09",
+      "type": "scroll",
+      "run": 1,
+      "tx": "r3",
+      "holdBefore": 3.5,
+      "scrollSeconds": 1.5,
+      "to": { "selector": "*", "text": ["Tokens transferred", "ERC-20 tokens transferred", "Token transfers"], "match": "contains", "align": "center", "required": false },
+      "seconds": 10,
+      "label": "Run 1 · record 3 of 3 · deposit back · Base Sepolia · +2 s",
+      "caption": "The third record, 2 seconds after the first: the exit contract redeems the shares, and the demo dollars go from the vault to the depositor's own wallet.",
+      "evidence": [
+        { "readme": "Run 1, \"leave now\"" },
+        { "readme": "The three records belong together." },
+        { "readme": "+2 s" },
+        { "json": "records/{deployment}-1.json", "seconds": ["r1", "r3"] },
+        { "readme": "In the withdrawal the demo dollars move from the vault to the depositor." }
+      ],
+      "ifTrack1": {
+        "run": "{{TRACK1_RUN}}",
+        "label": "Run {{TRACK1_RUN}} · record 3 of 3 · deposit back · Base Sepolia · +{{TRACK1_BACK_SECONDS}} s",
+        "caption": "{{TRACK1_BACK_CAPTION}}",
+        "evidence": [{ "readme": "{{TRACK1_RUN_README_PHRASE}}" }]
+      }
+    },
+    {
+      "id": "S10",
+      "type": "realtime",
+      "url": "{pageUrl}",
+      "fresh": true,
+      "run": 2,
+      "replay": true,
+      "waitSeconds": 110,
+      "timeout": 180,
+      "wait": { "js": "/right now\\./.test(document.getElementById('problem').textContent) && /re-read from both chains|could not re-check/i.test(document.getElementById('latest-check').textContent) && /live from the chain|live read failed/i.test(document.getElementById('runs-cap').textContent)" },
+      "captureSeconds": 11,
+      "untilText": ["Checked against both chains just now", "Could not re-check right now"],
+      "maxCaptureSeconds": 20,
+      "seconds": 14,
+      "label": "Page replay of run 2, recorded 18 Nov 2026 · sped up by the page: the 61 s of waiting play in about 8 s",
+      "caption": "The other mode waits for the deadline: our reactive contract stores the change and asks for the exit when 120 seconds or less are left. If the curator cancels first, the deposit stays, as in run 6.",
+      "evidence": [
+        { "readme": "runs 1 and 2 on 18 Nov 2026" },
+        { "readme": "+61 s" },
+        { "json": "records/{deployment}-2.json", "seconds": ["r1", "r2"] },
+        { "config": "replayPlay" },
+        { "readme": "with 120 s or less left" },
+        { "readme": "the deposit stays if the curator cancels first (run 6 below)" }
+      ]
+    },
+    {
+      "id": "S11",
+      "type": "still",
+      "url": "{repoUrl}",
+      "fresh": true,
+      "wait": { "textAll": ["Real vault replay"] },
+      "target": { "selector": "h2", "text": "Real vault replay", "align": "top", "offset": 16 },
+      "seconds": 16,
+      "label": "README · replay of our deployed exit code on a real vault; Reactive not in it",
+      "caption": "We also replayed our deployed exit code on a real Morpho Vault V2 on Ethereum mainnet, sending nothing. With a 1,000,000 gas callback limit the shares were redeemed to their holder; with 600,000 the call ran out of gas.",
+      "evidence": [
+        { "readme": "Label: replay of our deployed exit code on a real vault; Reactive not in it." },
+        { "readme": "with the gas a 1,000,000 callback limit forwards, the holder's 5,600.30 shares were redeemed" },
+        { "readme": "with the gas a 600,000 limit forwards (the limit of the 18 Nov deployment), the call ran out of gas" },
+        { "json": "status/replay-mainnet.json", "field": "results.1.callbackGasLimit" },
+        { "json": "status/replay-mainnet.json", "field": "results.0.callbackGasLimit" }
+      ],
+      "ifTrack1": {
+        "caption": "{{TRACK1_REAL_VAULT_CAPTION: the run on a vault made by Morpho's VaultV2Factory, then the mainnet replay}}",
+        "evidence": [{ "readme": "{{TRACK1_REAL_VAULT_README_PHRASE}}" }]
+      }
+    },
+    {
+      "id": "S12",
+      "type": "scroll",
+      "url": "{repoUrl}",
+      "wait": { "textAll": ["Check every claim in ten minutes"] },
+      "from": { "selector": "h2", "text": "Check every claim in ten minutes", "align": "top", "offset": 16 },
+      "to": { "selector": "h2", "text": "Real vault replay", "align": "bottom", "offset": 24 },
+      "holdBefore": 2.5,
+      "scrollSeconds": 5,
+      "seconds": 14,
+      "label": "README · Check every claim in ten minutes",
+      "caption": "No server, and no key that can send the funds elsewhere. Each claim comes with a check: the receipts, the sources verified on Sourcify with an exact match, and a script that re-reads every run.",
+      "evidence": [
+        { "readme": "Check every claim in ten minutes" },
+        { "readme": "No server, no key that can send the funds elsewhere" },
+        { "readme": "verified with an exact match on Sourcify" },
+        { "readme": "python scripts/runs.py --check reads every receipt of the recorded runs" }
+      ]
+    },
+    {
+      "id": "S13",
+      "type": "still",
+      "optional": true,
+      "url": "{repoUrl}/actions/workflows/ci.yml?query=branch%3Amain",
+      "fresh": true,
+      "wait": { "textAll": ["ci.yml"] },
+      "scrollTop": true,
+      "seconds": 9,
+      "label": "GitHub Actions · the ci workflow's runs",
+      "caption": "The ci workflow runs the tests, fuzz and invariant checks, a mutation check and a dry run in GitHub Actions; this is its list of runs on main.",
+      "evidence": [
+        { "readme": "Everything builds and runs in GitHub Actions" },
+        { "readme": "mutation check" }
+      ]
+    },
+    {
+      "id": "S14",
+      "type": "still",
+      "url": "{repoUrl}",
+      "wait": { "textAll": ["Limits, said plainly"] },
+      "target": { "selector": "h2", "text": "Limits, said plainly", "align": "top", "offset": 16 },
+      "seconds": 11,
+      "label": "README · Limits, said plainly",
+      "caption": "The limits are written down: the demo vault and dollar are ours and have no value, and a watch lasts one day in this deployment.",
+      "evidence": [
+        { "readme": "The demo vault and the demo dollar are ours and have no value." },
+        { "readme": "A watch lasts one day in this deployment" }
+      ]
+    },
+    {
+      "id": "S15",
+      "type": "card",
+      "seconds": 9,
+      "caption": "Testnet. The demo vault and curator in these runs are ours.",
+      "evidence": [],
+      "ifTrack1": {
+        "caption": "{{TRACK1_CLOSING_LINE: same claim, saying the vaults were made with Morpho's VaultV2Factory by us and the curator is ours}}"
+      }
+    }
+  ]
+}

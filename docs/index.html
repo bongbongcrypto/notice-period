@@ -115,7 +115,7 @@
 
 <section class="band wrap" id="runs" aria-labelledby="runs-h">
   <h2 id="runs-h">Recent runs</h2>
-  <p class="small" id="runs-cap">Recorded list read 21 Nov 2026.</p>
+  <p class="small" id="runs-cap">Recorded list read 22 Nov 2026.</p>
   <table class="runs">
     <thead>
       <tr>
@@ -268,7 +268,7 @@
         <li><strong>The deposit went to its owner.</strong> In the withdrawal, the token moves from the vault to the depositor. In <a href="https://github.com/bongbongcrypto/notice-period/blob/main/src/NoticeExit.sol" rel="noopener noreferrer">NoticeExit.sol</a> the receiver is read from storage, never from the callback.</li>
         <li><strong>A cap increase never reaches Reactive by default.</strong> <a href="https://github.com/bongbongcrypto/notice-period/blob/main/src/NoticeReactive.sol" rel="noopener noreferrer">NoticeReactive.sol</a> subscribes one filter per chosen selector. Or schedule a cap increase as the curator in the run above: nothing moves.</li>
         <li><strong>The numbers are read live.</strong> Your browser asks Morpho&rsquo;s public API and one public endpoint per chain (a second Base Sepolia endpoint only if the first fails). The network tab shows those hosts and this page&rsquo;s own files, nothing else.</li>
-        <li><strong>The contracts refuse what the rule book says.</strong> Unit, attack, fuzz and invariant tests and a mutation check run on every push that touches the contracts: see the <a href="https://github.com/bongbongcrypto/notice-period#checks" rel="noopener noreferrer">repository</a>.</li>
+        <li><strong>The contracts refuse what the rule book says.</strong> Unit, attack, fuzz and invariant tests and a mutation check run in GitHub Actions: see the <a href="https://github.com/bongbongcrypto/notice-period#checks" rel="noopener noreferrer">repository</a>.</li>
       </ol>
     </div>
   </div>

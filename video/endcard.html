@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Notice Period: end card</title>
+<!-- The video's last frame (scripts/video-record.mjs fills it from video/script.json through fillCard, with
+     textContent only). Laid out for a 1280x720 CSS viewport; the bottom 120 px stay clear for the burnt-in caption.
+     Colours and type follow the hosted page (docs/app.css): navy text, orange only for the scheduled change,
+     seafoam only for the deposit coming back. Loads nothing from anywhere. -->
+<style>
+  :root {
+    --canvas: #f6f6f8; --card: #ffffff; --navy: #111a4a; --text: #3b3e47; --muted: #565a66; --hair: #e3e4e8;
+    --orange: #ec652b; --sea: #167e6c;
+    --sans: system-ui, "DejaVu Sans", "Segoe UI", Arial, sans-serif;
+    --mono: ui-monospace, "DejaVu Sans Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1280px; height: 720px; overflow: hidden; background: var(--canvas); color: var(--text); font: 400 16px/1.5 var(--sans); }
+  main { position: absolute; left: 96px; right: 96px; top: 64px; bottom: 120px; display: grid; grid-template-rows: auto auto 1fr auto; row-gap: 28px; }
+  .mark { display: flex; align-items: center; gap: 14px; color: var(--navy); font-weight: 600; font-size: 22px; letter-spacing: -0.01em; }
+  .mark svg { width: 42px; height: 24px; }
+  .mark .line { stroke: var(--navy); stroke-width: 1.6; }
+  .mark .a { stroke: var(--orange); stroke-width: 2.4; }
+  .mark .b { stroke: var(--sea); stroke-width: 2.4; }
+  .mark .c { stroke: var(--navy); stroke-width: 2.4; }
+  h1 { margin: 0; color: var(--navy); font-weight: 600; font-size: 40px; line-height: 1.12; letter-spacing: -0.02em; max-width: 960px; }
+  .facts { display: grid; grid-template-columns: 1fr; row-gap: 18px; align-content: start; }
+  dl { margin: 0; display: grid; grid-template-columns: 300px 1fr; column-gap: 20px; row-gap: 10px; align-content: start; }
+  dt { color: var(--muted); font-size: 15px; }
+  dd { margin: 0; color: var(--navy); font-size: 17px; overflow-wrap: anywhere; }
+  .addr dd { font-family: var(--mono); font-size: 14.5px; letter-spacing: -0.01em; }
+  .note { margin: 0; padding: 14px 18px; background: var(--card); border: 1px solid var(--hair); border-left: 4px solid var(--orange); color: var(--navy); font-size: 20px; font-weight: 600; }
+  .foot { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="mark"><svg viewBox="0 0 28 16" aria-hidden="true"><path class="line" d="M1 8h26"/><path class="a" d="M4 2v12"/><path class="b" d="M9 2v12"/><path class="c" d="M25 4v8"/></svg><span id="title"></span></div>
+  <h1 id="sentence"></h1>
+  <div class="facts">
+    <dl id="rows"></dl>
+    <dl id="contracts" class="addr"></dl>
+  </div>
+  <div>
+    <p class="note" id="note"></p>
+    <p class="foot" id="foot"></p>
+  </div>
+</main>
+<script>
+  window.fillCard = function (d) {
+    var set = function (id, text) { document.getElementById(id).textContent = text || ''; };
+    var list = function (id, pairs) {
+      var dl = document.getElementById(id);
+      dl.textContent = '';
+      (pairs || []).forEach(function (p) {
+        var dt = document.createElement('dt'); dt.textContent = p[0];
+        var dd = document.createElement('dd'); dd.textContent = p[1];
+        dl.appendChild(dt); dl.appendChild(dd);
+      });
+    };
+    set('title', d.title);
+    set('sentence', d.sentence);
+    list('rows', d.rows);
+    list('contracts', d.contracts);
+    set('note', d.note);
+    set('foot', d.foot);
+  };
+</script>
+</body>
+</html>

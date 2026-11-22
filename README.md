@@ -221,8 +221,9 @@ Choices worth knowing:
 
 ## Checks
 
-Everything builds and runs in GitHub Actions (`.github/workflows/ci.yml`) on every push that touches the contracts,
-tests or scripts (pushes that change only the page or prose are skipped):
+Everything builds and runs in GitHub Actions (`.github/workflows/ci.yml`). It starts on a push that touches the
+contracts, tests or scripts unless the commit says `[skip ci]`, and by hand; our commits usually say `[skip ci]`, and
+we start it by hand on the branch head. Pushes that change only the page or prose never start it. It runs:
 
 - `forge test`: unit and attack tests (each refusal test sits next to a sibling call that succeeds and checks the
   exact error), fuzz tests, invariants over random visitor, curator, clock and attacker actions, and fixture
