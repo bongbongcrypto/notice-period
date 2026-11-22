@@ -1,19 +1,24 @@
 #!/usr/bin/env bash
 # Deploys the system in the order of SPEC.md section 7:
 #   Base Sepolia: DemoToken, MorphoVaultMaker (on Morpho's own VaultV2Factory) -> compute NoticeExit's address ->
-#   Lasna: NoticeReactive -> Base Sepolia: NoticeExit with the maker as its vault list, then checks NoticeExit landed on
-# the computed address and reads every value back; only then funds both (lREACT for reactions, ETH for callback fees),
-# settles any debt they ran up meanwhile, and makes one smoke vault through the maker and checks its shape.
-# Last it prints the whole deployment file, deployments/<UTC date>.json, between NP-DEPLOYMENT-JSON-BEGIN and
-# NP-DEPLOYMENT-JSON-END (log and job summary): name, sourceCommit, deployRun, addresses, operators (key A, key B),
-# values, rules and the build list verify.yml needs. Commit it to main before any loop, verify or health run on this
-# deployment: those read only that file. Nothing is sent to a contract before the wiring is checked. The values below are the ones of this deployment; the
+#   Lasna: NoticeReactive -> Base Sepolia: NoticeExit with the maker as its vault list.
+# As soon as the four addresses and creation transactions are known it prints the deployment file,
+# deployments/<UTC date>.json, between NP-DEPLOYMENT-JSON-BEGIN and NP-DEPLOYMENT-JSON-END (log and job summary):
+# name, sourceCommit, deployRun, addresses, operators (key A, key B), values, rules and the build list verify.yml
+# needs. Then it checks NoticeExit landed on the computed address, reads every value back, checks the file loads in
+# its readers and that each creation input ends with its recorded constructor arguments; only then funds both
+# (lREACT for reactions, ETH for callback fees), settles any debt they ran up meanwhile, makes one smoke vault through
+# the maker and checks its shape, and prints the file again, final, with the smoke vault. A stop after the first
+# deployment prints the table of what was deployed (EXIT trap), so the addresses are never only in stderr.
+# Commit the final file to main before any loop, verify or health run on this deployment: those read only that file.
+# Nothing is sent to a contract before the wiring is checked. The values below are the ones of this deployment; the
 # 2026-11-18 deployment used other values (SPEC.md section 9).
 #
 # Environment: BASE_RPC, LASNA_RPC, CALLBACK_PROXY, MORPHO_FACTORY (Morpho's VaultV2Factory), DEPLOY_KEY,
 #   REACTIVE_FUND (lREACT for NoticeReactive, in coins, decimals allowed), EXIT_FUND (Base ETH for NoticeExit; the
-#   workflow default 0.007 pays about 1,180 exits that burn the whole callback limit at 0.006 gwei, SPEC.md
-#   section 12), BASE_GAS_MARGIN, LASNA_GAS_MARGIN. GITHUB_SHA and GITHUB_RUN_ID (set by Actions) go into the file.
+#   workflow default 0.007 pays about 1,180 exits whose recipient burns all the gas it is given, billed 897,765 gas
+#   each at the 1,000,000 limit and 0.006 gwei, SPEC.md section 12), BASE_GAS_MARGIN, LASNA_GAS_MARGIN.
+#   GITHUB_SHA and GITHUB_RUN_ID (set by Actions) go into the file.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # shellcheck source=scripts/chain.sh
@@ -64,113 +69,55 @@ check_balance "$LASNA_RPC" "Lasna" "$(add_wei "$reactive_fund" "$(to_wei "${LASN
 
 forge build >/dev/null
 
-res="$(deploy "$BASE_RPC" "DemoToken (Base Sepolia)" src/demo/DemoToken.sol:DemoToken 0)"
-read -r token token_tx <<<"$res"
-res="$(deploy "$BASE_RPC" "MorphoVaultMaker (Base Sepolia)" src/morpho/MorphoVaultMaker.sol:MorphoVaultMaker 0 \
-  --constructor-args "$MORPHO_FACTORY" "$token" "$VAULT_TIMELOCK")"
-read -r maker maker_tx <<<"$res"
+# What has been deployed so far; filled in as the run goes, read by the table and the EXIT trap below.
+token="" token_tx="" maker="" maker_tx="" reactive="" reactive_tx="" exit_c="" exit_tx="" smoke="" smoke_tx=""
+token_blk="" maker_blk="" reactive_blk="" exit_blk="" deployment_json="" json_printed=0
 
-predicted_exit="$(next_address "$BASE_RPC")"
-echo "NoticeExit will be at $predicted_exit"
-
-res="$(deploy "$LASNA_RPC" "NoticeReactive (Lasna)" src/NoticeReactive.sol:NoticeReactive 0 \
-  --constructor-args "$BASE_CHAIN_ID" "$predicted_exit" "$CRON10_TOPIC" "$LEAD" "$MAX_WAIT" "$CALLBACK_GAS" \
-  "$MAX_ACTIVE" "$MAX_REACTIONS")"
-read -r reactive reactive_tx <<<"$res"
-
-res="$(deploy "$BASE_RPC" "NoticeExit (Base Sepolia)" src/NoticeExit.sol:NoticeExit 0 \
-  --constructor-args "$CALLBACK_PROXY" "$reactive" "$maker" "$ARMS_PER_ADDRESS_PER_DAY" "$ARMS_PER_DAY" \
-  "$LIFETIME" "$TIMED_ARMS_PER_DAY")"
-read -r exit_c exit_tx <<<"$res"
-
-same_address "$exit_c" "$predicted_exit" \
-  || die "NoticeExit landed at $exit_c, not at the computed $predicted_exit: the reactive contract watches another address"
-
-# Read back the wiring and every value (read-only calls). An empty or failed read stops the script.
-read_uint() { # rpc address signature [args...] -> first word of the answer
-  local v
-  v="$(cast call --rpc-url "$1" "$2" "$3" "${@:4}" 2>/dev/null | awk '{print $1}')" || die "$3 on $2 unknown (RPC error)"
-  [ -n "$v" ] || die "$3 on $2 unknown (empty answer)"
-  echo "$v"
+cell() { # value placeholder -> `value`, or the placeholder when the value is empty
+  if [ -n "$1" ]; then printf '`%s`' "$1"; else printf '%s' "$2"; fi
 }
-expect_uint() { # label got expected
-  [ "$2" = "$3" ] || die "$1 is $2, expected $3"
-  echo "read back $1 = $2"
+summary_table() {
+  summary "| Contract | Chain | Address | Transaction |"
+  summary "|---|---|---|---|"
+  summary "| DemoToken (ours, test only) | Base Sepolia | $(cell "$token" "not deployed") | $(cell "$token_tx" "-") |"
+  summary "| MorphoVaultMaker (ours; vaults from Morpho's factory \`$MORPHO_FACTORY\`) | Base Sepolia | $(cell "$maker" "not deployed") | $(cell "$maker_tx" "-") |"
+  summary "| NoticeReactive | Lasna | $(cell "$reactive" "not deployed") | $(cell "$reactive_tx" "-") |"
+  summary "| NoticeExit | Base Sepolia | $(cell "$exit_c" "not deployed") | $(cell "$exit_tx" "-") |"
+  summary "| Smoke vault (Morpho Vault V2) | Base Sepolia | $(cell "$smoke" "not made") | $(cell "$smoke_tx" "-") |"
 }
-same_address "$(cast call --rpc-url "$LASNA_RPC" "$reactive" 'EXIT()(address)')" "$exit_c" || die "NoticeReactive.EXIT mismatch"
-same_address "$(cast call --rpc-url "$BASE_RPC" "$exit_c" 'REGISTRY()(address)')" "$maker" || die "NoticeExit.REGISTRY is not the maker"
-same_address "$(cast call --rpc-url "$BASE_RPC" "$maker" 'FACTORY()(address)')" "$MORPHO_FACTORY" || die "MorphoVaultMaker.FACTORY mismatch"
-same_address "$(cast call --rpc-url "$BASE_RPC" "$maker" 'ASSET()(address)')" "$token" || die "MorphoVaultMaker.ASSET mismatch"
-expect_uint "MorphoVaultMaker.TIMELOCK" "$(read_uint "$BASE_RPC" "$maker" 'TIMELOCK()(uint256)')" "$VAULT_TIMELOCK"
-expect_uint "NoticeExit.MAX_ARMS_PER_ADDRESS_PER_DAY" \
-  "$(read_uint "$BASE_RPC" "$exit_c" 'MAX_ARMS_PER_ADDRESS_PER_DAY()(uint256)')" "$ARMS_PER_ADDRESS_PER_DAY"
-expect_uint "NoticeExit.MAX_ARMS_PER_DAY" "$(read_uint "$BASE_RPC" "$exit_c" 'MAX_ARMS_PER_DAY()(uint256)')" "$ARMS_PER_DAY"
-expect_uint "NoticeExit.LIFETIME" "$(read_uint "$BASE_RPC" "$exit_c" 'LIFETIME()(uint256)')" "$LIFETIME"
-expect_uint "NoticeExit.MAX_TIMED_ARMS_PER_DAY" \
-  "$(read_uint "$BASE_RPC" "$exit_c" 'MAX_TIMED_ARMS_PER_DAY()(uint256)')" "$TIMED_ARMS_PER_DAY"
-expect_uint "NoticeReactive.ORIGIN_CHAIN_ID" "$(read_uint "$LASNA_RPC" "$reactive" 'ORIGIN_CHAIN_ID()(uint256)')" "$BASE_CHAIN_ID"
-expect_uint "NoticeReactive.LEAD" "$(read_uint "$LASNA_RPC" "$reactive" 'LEAD()(uint256)')" "$LEAD"
-expect_uint "NoticeReactive.MAX_WAIT" "$(read_uint "$LASNA_RPC" "$reactive" 'MAX_WAIT()(uint256)')" "$MAX_WAIT"
-expect_uint "NoticeReactive.CALLBACK_GAS" "$(read_uint "$LASNA_RPC" "$reactive" 'CALLBACK_GAS()(uint64)')" "$CALLBACK_GAS"
-expect_uint "NoticeReactive.MAX_ACTIVE" "$(read_uint "$LASNA_RPC" "$reactive" 'MAX_ACTIVE()(uint256)')" "$MAX_ACTIVE"
-expect_uint "NoticeReactive.MAX_REACTIONS" "$(read_uint "$LASNA_RPC" "$reactive" 'MAX_REACTIONS()(uint256)')" "$MAX_REACTIONS"
-expect_uint "NoticeReactive.MAX_TIMED" "$(read_uint "$LASNA_RPC" "$reactive" 'MAX_TIMED()(uint256)')" "$MAX_TIMED_EXPECTED"
-expect_uint "NoticeReactive.MIN_CALLBACK_GAS" \
-  "$(read_uint "$LASNA_RPC" "$reactive" 'MIN_CALLBACK_GAS()(uint64)')" "$MIN_CALLBACK_GAS_EXPECTED"
 
-# Wiring checked: fund both, then settle whatever debt they ran up while empty (a debt blocks delivery).
-send "$LASNA_RPC" "fund NoticeReactive" "$reactive" --value "$reactive_fund" >/dev/null
-send "$BASE_RPC" "fund NoticeExit" "$exit_c" --value "$exit_fund" >/dev/null
-send "$LASNA_RPC" "NoticeReactive.coverDebt" "$reactive" 'coverDebt()' >/dev/null
-send "$BASE_RPC" "NoticeExit.coverDebt" "$exit_c" 'coverDebt()' >/dev/null
+# A stop after the first contract is deployed still leaves every known address in the log and job summary. No RPC
+# call and no script here: it only prints what the run already holds, then exits with the run's own code.
+on_exit() {
+  local rc=$?
+  trap - EXIT
+  set +e
+  if [ "$rc" != 0 ] && [ -n "$token" ]; then
+    summary ""
+    summary "### Notice Period deployment STOPPED (exit $rc) after contracts were deployed"
+    summary ""
+    summary_table
+    summary ""
+    if [ "$json_printed" = 1 ]; then
+      summary "The preliminary deployment file printed above holds these addresses, but this run did not"
+      summary "finish: read the STOP line above before committing it, and fund, settle or smoke-check by hand what it did not."
+    else
+      summary "No deployment file was printed: the table above and the deploy lines of the log are the only record."
+    fi
+  fi
+  exit "$rc"
+}
+trap on_exit EXIT
 
-# Smoke: one vault through the maker, on Morpho's factory, and its shape.
-smoke_tx="$(send "$BASE_RPC" "smoke: MorphoVaultMaker.create" "$maker" 'create()')"
-smoke="$(cast call --rpc-url "$BASE_RPC" "$maker" 'lastVaultOf(address)(address)' "$DEPLOYER")" || die "smoke vault unknown"
-[ "$smoke" != "0x0000000000000000000000000000000000000000" ] || die "the maker reports no vault for the deployer"
-[ "$(cast call --rpc-url "$BASE_RPC" "$maker" 'isVault(address)(bool)' "$smoke")" = true ] \
-  || die "smoke vault $smoke is not listed by the maker"
-[ "$(cast call --rpc-url "$BASE_RPC" "$MORPHO_FACTORY" 'isVaultV2(address)(bool)' "$smoke")" = true ] \
-  || die "smoke vault $smoke is not listed by Morpho's factory"
-same_address "$(cast call --rpc-url "$BASE_RPC" "$smoke" 'curator()(address)')" "$DEPLOYER" || die "smoke vault curator is not the caller"
-same_address "$(cast call --rpc-url "$BASE_RPC" "$smoke" 'owner()(address)')" "$DEPLOYER" || die "smoke vault owner is not the caller"
-for f in 'addAdapter(address)' 'setIsAllocator(address,bool)' 'increaseAbsoluteCap(bytes,uint256)' \
-  'increaseRelativeCap(bytes,uint256)'; do
-  expect_uint "smoke vault timelock of $f" \
-    "$(read_uint "$BASE_RPC" "$smoke" 'timelock(bytes4)(uint256)' "$(cast sig "$f")")" "$VAULT_TIMELOCK"
-done
-for f in 'setReceiveSharesGate(address)' 'setSendSharesGate(address)' 'setReceiveAssetsGate(address)' \
-  'setSendAssetsGate(address)' 'setPerformanceFee(uint256)' 'setManagementFee(uint256)'; do
-  [ "$(cast call --rpc-url "$BASE_RPC" "$smoke" 'abdicated(bytes4)(bool)' "$(cast sig "$f")")" = true ] \
-    || die "smoke vault: $f is not abdicated"
-  echo "read back smoke: $f abdicated"
-done
-
-# Creation blocks for the build list (informational; no script reads them). The contracts are deployed and funded by
-# now, so a failed read leaves the field out and never stops the run before the deployment file is printed.
-token_blk="$(tx_block "$BASE_RPC" "$token_tx" 2>/dev/null)" || token_blk=""
-maker_blk="$(tx_block "$BASE_RPC" "$maker_tx" 2>/dev/null)" || maker_blk=""
-reactive_blk="$(tx_block "$LASNA_RPC" "$reactive_tx" 2>/dev/null)" || reactive_blk=""
-exit_blk="$(tx_block "$BASE_RPC" "$exit_tx" 2>/dev/null)" || exit_blk=""
-
-summary "### Notice Period deployment"
-summary ""
-summary "| Contract | Chain | Address | Transaction |"
-summary "|---|---|---|---|"
-summary "| DemoToken (ours, test only) | Base Sepolia | \`$token\` | \`$token_tx\` |"
-summary "| MorphoVaultMaker (ours; vaults from Morpho's factory \`$MORPHO_FACTORY\`) | Base Sepolia | \`$maker\` | \`$maker_tx\` |"
-summary "| NoticeReactive | Lasna | \`$reactive\` | \`$reactive_tx\` |"
-summary "| NoticeExit | Base Sepolia | \`$exit_c\` | \`$exit_tx\` |"
-summary "| Smoke vault (Morpho Vault V2) | Base Sepolia | \`$smoke\` | \`$smoke_tx\` |"
-summary ""
-summary "Loop inputs: token=$token factory=$maker exit=$exit_c reactive=$reactive"
-summary ""
-deployment_json="$(python3 - "$token" "$maker" "$MORPHO_FACTORY" "$reactive" "$exit_c" "$CALLBACK_PROXY" "$DEPLOYER" \
-  "$token_tx" "$maker_tx" "$reactive_tx" "$exit_tx" "$smoke" "$smoke_tx" "${GITHUB_SHA:-unknown}" \
-  "$VAULT_TIMELOCK" "$LEAD" "$MAX_WAIT" "$CALLBACK_GAS" "$MAX_ACTIVE" "$MAX_REACTIONS" "$MAX_TIMED_EXPECTED" \
-  "$ARMS_PER_ADDRESS_PER_DAY" "$ARMS_PER_DAY" "$TIMED_ARMS_PER_DAY" "$LIFETIME" "$HEALTH_MIN_FLOAT" \
-  "$deploy_name" "$CRON10_TOPIC" "$ADDR_B" "$token_blk" "$maker_blk" "$reactive_blk" "$exit_blk" "${GITHUB_RUN_ID:-}" \
-  "$BASE_CHAIN_ID" "$LASNA_CHAIN_ID" <<'PY'
+# The deployment file (argument numbers are fixed; scripts read it by key). The smoke vault is left out while it is
+# not made yet (the preliminary print).
+deployment_file() { # smoke_vault smoke_tx -> JSON on stdout
+  python3 - "$token" "$maker" "$MORPHO_FACTORY" "$reactive" "$exit_c" "$CALLBACK_PROXY" "$DEPLOYER" \
+    "$token_tx" "$maker_tx" "$reactive_tx" "$exit_tx" "$1" "$2" "${GITHUB_SHA:-unknown}" \
+    "$VAULT_TIMELOCK" "$LEAD" "$MAX_WAIT" "$CALLBACK_GAS" "$MAX_ACTIVE" "$MAX_REACTIONS" "$MAX_TIMED_EXPECTED" \
+    "$ARMS_PER_ADDRESS_PER_DAY" "$ARMS_PER_DAY" "$TIMED_ARMS_PER_DAY" "$LIFETIME" "$HEALTH_MIN_FLOAT" \
+    "$deploy_name" "$CRON10_TOPIC" "$ADDR_B" "$token_blk" "$maker_blk" "$reactive_blk" "$exit_blk" "${GITHUB_RUN_ID:-}" \
+    "$BASE_CHAIN_ID" "$LASNA_CHAIN_ID" <<'PY'
 import json, sys
 a = sys.argv[1:]
 base, lasna = int(a[34]), int(a[35])
@@ -214,7 +161,10 @@ doc.update({
     "contracts": {"token": a[0], "maker": a[1], "morphoFactory": a[2], "exit": a[4], "reactive": a[3],
                   "callbackProxy": a[5]},
     "deployTxs": {"token": a[7], "maker": a[8], "reactive": a[9], "exit": a[10]},
-    "smokeVault": {"address": a[11], "tx": a[12]},
+})
+if a[11]:
+    doc["smokeVault"] = {"address": a[11], "tx": a[12]}
+doc.update({
     # Constructor arguments in the order of this script's forge create calls (SPEC.md section 7).
     "build": [
         entry("token", base, a[0], "src/demo/DemoToken.sol:DemoToken", "0x", a[7], a[29]),
@@ -233,24 +183,26 @@ doc.update({
 })
 print(json.dumps(doc, indent=2))
 PY
-)" || die "could not write the deployment file content"
-summary "Deployment file: commit this content to main as \`deployments/$deploy_name.json\` before any loop, verify or"
-summary "health run on this deployment (they read only that file), then stamp the page branch with"
-summary "\`python3 scripts/stamp.py deployments/$deploy_name.json\` (the path written out)."
-summary ""
-summary "NP-DEPLOYMENT-JSON-BEGIN deployments/$deploy_name.json"
-summary '```json'
-while IFS= read -r line; do summary "$line"; done <<<"$deployment_json"
-summary '```'
-summary "NP-DEPLOYMENT-JSON-END"
+}
+
+print_deployment_file() { # label: $deployment_json between the markers, to the log and the job summary
+  local line
+  summary "NP-DEPLOYMENT-JSON-BEGIN deployments/$deploy_name.json ($1)"
+  summary '```json'
+  while IFS= read -r line; do summary "$line"; done <<<"$deployment_json"
+  summary '```'
+  summary "NP-DEPLOYMENT-JSON-END"
+}
 
 # The printed file must load in the readers that will use it (deployment.py for loop, verify and health; stamp.py for
-# the page) and list exactly our four contracts in build. A failure here is a defect of this script: the contracts
-# stay deployed, and the content above is still the hand-off once corrected by hand.
-check_dir="$(mktemp -d)"
-mkdir -p "$check_dir/deployments"
-printf '%s\n' "$deployment_json" > "$check_dir/deployments/$deploy_name.json"
-python3 - "$check_dir" "$deploy_name" "$DEPLOYER" "$ADDR_B" <<'PY' || die "the printed deployment file does not pass its own readers"
+# the page) and list exactly our four contracts in build. A failure here is a defect of this script and stops the run
+# (non-zero): the contracts stay deployed, and the printed content is still the hand-off once corrected by hand.
+check_deployment_file() {
+  local check_dir
+  check_dir="$(mktemp -d)"
+  mkdir -p "$check_dir/deployments"
+  printf '%s\n' "$deployment_json" > "$check_dir/deployments/$deploy_name.json"
+  python3 - "$check_dir" "$deploy_name" "$DEPLOYER" "$ADDR_B" <<'PY' || { rm -rf "$check_dir"; die "the printed deployment file does not pass its own readers"; }
 import re, sys
 from pathlib import Path
 sys.path.insert(0, "scripts")
@@ -270,28 +222,157 @@ for b in build:
     assert re.fullmatch(r"0x([0-9a-f]{64})*", b["constructorArgs"]), b["key"]
 print(f"deployment file check passed: deployment.py and stamp.py load it; build lists {len(build)} contracts")
 PY
-rm -rf "$check_dir"
+  rm -rf "$check_dir"
+}
 
-# Each creation input must end with its recorded constructor arguments (what Sourcify will be given). An unreadable
-# input is "unknown" and only warned about; a readable one that differs stops the run (red, contracts deployed).
-while read -r key rpc tx ctor; do
-  input="$(cast tx --rpc-url "$rpc" "$tx" input 2>/dev/null)" || input=""
-  if [ -z "$input" ]; then
-    summary "WARNING: creation input of $key unknown (RPC error); its constructorArgs are not checked"
-    continue
-  fi
-  case "$(echo "$input" | tr 'A-F' 'a-f')" in
-    *"${ctor#0x}") echo "constructor arguments of $key: the end of its creation input (checked)" ;;
-    *) die "the creation input of $key does not end with the recorded constructorArgs" ;;
-  esac
-done < <(python3 -c '
+# Each creation input must end with its recorded constructor arguments (what Sourcify will be given). The rows are
+# listed first: a lister error, or any set of rows other than maker, reactive and exit (DemoToken has none), stops
+# the run, so the check can never pass by checking nothing. An unreadable input is "unknown" and only warned about;
+# a readable one that differs stops the run (red, contracts deployed).
+check_constructor_args() {
+  local rows n key rpc tx ctor input
+  rows="$(python3 -c '
 import json, sys
 d = json.loads(sys.argv[1])
 rpc = {d["origin"]["chainId"]: sys.argv[2], d["reactive"]["chainId"]: sys.argv[3]}
-for b in d["build"]:
-    if b["constructorArgs"] != "0x":
-        print(b["key"], rpc[b["chainId"]], b["creationTx"], b["constructorArgs"])
-' "$deployment_json" "$BASE_RPC" "$LASNA_RPC")
+rows = [b for b in d["build"] if b["constructorArgs"] != "0x"]
+keys = [b["key"] for b in rows]
+if keys != ["maker", "reactive", "exit"]:
+    sys.exit(f"STOP: the contracts with constructorArgs are {keys}, expected maker, reactive, exit")
+for b in rows:
+    print(b["key"], rpc[b["chainId"]], b["creationTx"], b["constructorArgs"])
+' "$deployment_json" "$BASE_RPC" "$LASNA_RPC")" || die "could not list the constructorArgs to check"
+  n="$(printf '%s\n' "$rows" | awk 'NF == 4 { n++ } END { print n + 0 }')"
+  [ "$n" = 3 ] || die "expected 3 constructorArgs rows (maker, reactive, exit), got $n well-formed"
+  while read -r key rpc tx ctor; do
+    input="$(cast tx --rpc-url "$rpc" "$tx" input 2>/dev/null)" || input=""
+    if [ -z "$input" ]; then
+      summary "WARNING: creation input of $key unknown (RPC error); its constructorArgs are not checked"
+      continue
+    fi
+    case "$(echo "$input" | tr 'A-F' 'a-f')" in
+      *"${ctor#0x}") echo "constructor arguments of $key: the end of its creation input (checked)" ;;
+      *) die "the creation input of $key does not end with the recorded constructorArgs" ;;
+    esac
+  done <<<"$rows"
+}
+
+res="$(deploy "$BASE_RPC" "DemoToken (Base Sepolia)" src/demo/DemoToken.sol:DemoToken 0)"
+read -r token token_tx <<<"$res"
+res="$(deploy "$BASE_RPC" "MorphoVaultMaker (Base Sepolia)" src/morpho/MorphoVaultMaker.sol:MorphoVaultMaker 0 \
+  --constructor-args "$MORPHO_FACTORY" "$token" "$VAULT_TIMELOCK")"
+read -r maker maker_tx <<<"$res"
+
+predicted_exit="$(next_address "$BASE_RPC")"
+echo "NoticeExit will be at $predicted_exit"
+
+res="$(deploy "$LASNA_RPC" "NoticeReactive (Lasna)" src/NoticeReactive.sol:NoticeReactive 0 \
+  --constructor-args "$BASE_CHAIN_ID" "$predicted_exit" "$CRON10_TOPIC" "$LEAD" "$MAX_WAIT" "$CALLBACK_GAS" \
+  "$MAX_ACTIVE" "$MAX_REACTIONS")"
+read -r reactive reactive_tx <<<"$res"
+
+res="$(deploy "$BASE_RPC" "NoticeExit (Base Sepolia)" src/NoticeExit.sol:NoticeExit 0 \
+  --constructor-args "$CALLBACK_PROXY" "$reactive" "$maker" "$ARMS_PER_ADDRESS_PER_DAY" "$ARMS_PER_DAY" \
+  "$LIFETIME" "$TIMED_ARMS_PER_DAY")"
+read -r exit_c exit_tx <<<"$res"
+
+# Every address and creation transaction is known: print the deployment file now, before the wiring check, the
+# funding and the smoke vault, so no later stop can lose it. Creation blocks are informational (no script reads
+# them): a failed read leaves the field out and never stops the run here.
+token_blk="$(tx_block "$BASE_RPC" "$token_tx" 2>/dev/null)" || token_blk=""
+maker_blk="$(tx_block "$BASE_RPC" "$maker_tx" 2>/dev/null)" || maker_blk=""
+reactive_blk="$(tx_block "$LASNA_RPC" "$reactive_tx" 2>/dev/null)" || reactive_blk=""
+exit_blk="$(tx_block "$BASE_RPC" "$exit_tx" 2>/dev/null)" || exit_blk=""
+deployment_json="$(deployment_file "" "")" || die "could not write the deployment file content"
+summary "### Notice Period deployment: contracts deployed"
+summary ""
+summary "Preliminary deployment file, printed before the wiring check, the funding and the smoke vault so that a later"
+summary "stop cannot lose the addresses. Commit the final file printed at the end of a green run, not this one."
+summary ""
+print_deployment_file "preliminary"
+json_printed=1
+
+same_address "$exit_c" "$predicted_exit" \
+  || die "NoticeExit landed at $exit_c, not at the computed $predicted_exit: the reactive contract watches another address"
+
+# Read back the wiring and every value (read-only calls). An empty or failed read stops the script.
+read_uint() { # rpc address signature [args...] -> first word of the answer
+  local v
+  v="$(cast call --rpc-url "$1" "$2" "$3" "${@:4}" 2>/dev/null | awk '{print $1}')" || die "$3 on $2 unknown (RPC error)"
+  [ -n "$v" ] || die "$3 on $2 unknown (empty answer)"
+  echo "$v"
+}
+expect_uint() { # label got expected
+  [ "$2" = "$3" ] || die "$1 is $2, expected $3"
+  echo "read back $1 = $2"
+}
+same_address "$(cast call --rpc-url "$LASNA_RPC" "$reactive" 'EXIT()(address)')" "$exit_c" || die "NoticeReactive.EXIT mismatch"
+same_address "$(cast call --rpc-url "$BASE_RPC" "$exit_c" 'REGISTRY()(address)')" "$maker" || die "NoticeExit.REGISTRY is not the maker"
+same_address "$(cast call --rpc-url "$BASE_RPC" "$maker" 'FACTORY()(address)')" "$MORPHO_FACTORY" || die "MorphoVaultMaker.FACTORY mismatch"
+same_address "$(cast call --rpc-url "$BASE_RPC" "$maker" 'ASSET()(address)')" "$token" || die "MorphoVaultMaker.ASSET mismatch"
+expect_uint "MorphoVaultMaker.TIMELOCK" "$(read_uint "$BASE_RPC" "$maker" 'TIMELOCK()(uint256)')" "$VAULT_TIMELOCK"
+expect_uint "NoticeExit.MAX_ARMS_PER_ADDRESS_PER_DAY" \
+  "$(read_uint "$BASE_RPC" "$exit_c" 'MAX_ARMS_PER_ADDRESS_PER_DAY()(uint256)')" "$ARMS_PER_ADDRESS_PER_DAY"
+expect_uint "NoticeExit.MAX_ARMS_PER_DAY" "$(read_uint "$BASE_RPC" "$exit_c" 'MAX_ARMS_PER_DAY()(uint256)')" "$ARMS_PER_DAY"
+expect_uint "NoticeExit.LIFETIME" "$(read_uint "$BASE_RPC" "$exit_c" 'LIFETIME()(uint256)')" "$LIFETIME"
+expect_uint "NoticeExit.MAX_TIMED_ARMS_PER_DAY" \
+  "$(read_uint "$BASE_RPC" "$exit_c" 'MAX_TIMED_ARMS_PER_DAY()(uint256)')" "$TIMED_ARMS_PER_DAY"
+expect_uint "NoticeReactive.ORIGIN_CHAIN_ID" "$(read_uint "$LASNA_RPC" "$reactive" 'ORIGIN_CHAIN_ID()(uint256)')" "$BASE_CHAIN_ID"
+expect_uint "NoticeReactive.LEAD" "$(read_uint "$LASNA_RPC" "$reactive" 'LEAD()(uint256)')" "$LEAD"
+expect_uint "NoticeReactive.MAX_WAIT" "$(read_uint "$LASNA_RPC" "$reactive" 'MAX_WAIT()(uint256)')" "$MAX_WAIT"
+expect_uint "NoticeReactive.CALLBACK_GAS" "$(read_uint "$LASNA_RPC" "$reactive" 'CALLBACK_GAS()(uint64)')" "$CALLBACK_GAS"
+expect_uint "NoticeReactive.MAX_ACTIVE" "$(read_uint "$LASNA_RPC" "$reactive" 'MAX_ACTIVE()(uint256)')" "$MAX_ACTIVE"
+expect_uint "NoticeReactive.MAX_REACTIONS" "$(read_uint "$LASNA_RPC" "$reactive" 'MAX_REACTIONS()(uint256)')" "$MAX_REACTIONS"
+expect_uint "NoticeReactive.MAX_TIMED" "$(read_uint "$LASNA_RPC" "$reactive" 'MAX_TIMED()(uint256)')" "$MAX_TIMED_EXPECTED"
+expect_uint "NoticeReactive.MIN_CALLBACK_GAS" \
+  "$(read_uint "$LASNA_RPC" "$reactive" 'MIN_CALLBACK_GAS()(uint64)')" "$MIN_CALLBACK_GAS_EXPECTED"
+
+# The printed file loads in its readers, and its constructor arguments match the creation inputs (read-only).
+check_deployment_file
+check_constructor_args
+
+# Wiring and file checked: fund both, then settle whatever debt they ran up while empty (a debt blocks delivery).
+send "$LASNA_RPC" "fund NoticeReactive" "$reactive" --value "$reactive_fund" >/dev/null
+send "$BASE_RPC" "fund NoticeExit" "$exit_c" --value "$exit_fund" >/dev/null
+send "$LASNA_RPC" "NoticeReactive.coverDebt" "$reactive" 'coverDebt()' >/dev/null
+send "$BASE_RPC" "NoticeExit.coverDebt" "$exit_c" 'coverDebt()' >/dev/null
+
+# Smoke: one vault through the maker, on Morpho's factory, and its shape.
+smoke_tx="$(send "$BASE_RPC" "smoke: MorphoVaultMaker.create" "$maker" 'create()')"
+smoke="$(cast call --rpc-url "$BASE_RPC" "$maker" 'lastVaultOf(address)(address)' "$DEPLOYER")" || die "smoke vault unknown"
+[ "$smoke" != "0x0000000000000000000000000000000000000000" ] || die "the maker reports no vault for the deployer"
+[ "$(cast call --rpc-url "$BASE_RPC" "$maker" 'isVault(address)(bool)' "$smoke")" = true ] \
+  || die "smoke vault $smoke is not listed by the maker"
+[ "$(cast call --rpc-url "$BASE_RPC" "$MORPHO_FACTORY" 'isVaultV2(address)(bool)' "$smoke")" = true ] \
+  || die "smoke vault $smoke is not listed by Morpho's factory"
+same_address "$(cast call --rpc-url "$BASE_RPC" "$smoke" 'curator()(address)')" "$DEPLOYER" || die "smoke vault curator is not the caller"
+same_address "$(cast call --rpc-url "$BASE_RPC" "$smoke" 'owner()(address)')" "$DEPLOYER" || die "smoke vault owner is not the caller"
+for f in 'addAdapter(address)' 'setIsAllocator(address,bool)' 'increaseAbsoluteCap(bytes,uint256)' \
+  'increaseRelativeCap(bytes,uint256)'; do
+  expect_uint "smoke vault timelock of $f" \
+    "$(read_uint "$BASE_RPC" "$smoke" 'timelock(bytes4)(uint256)' "$(cast sig "$f")")" "$VAULT_TIMELOCK"
+done
+for f in 'setReceiveSharesGate(address)' 'setSendSharesGate(address)' 'setReceiveAssetsGate(address)' \
+  'setSendAssetsGate(address)' 'setPerformanceFee(uint256)' 'setManagementFee(uint256)'; do
+  [ "$(cast call --rpc-url "$BASE_RPC" "$smoke" 'abdicated(bytes4)(bool)' "$(cast sig "$f")")" = true ] \
+    || die "smoke vault: $f is not abdicated"
+  echo "read back smoke: $f abdicated"
+done
+
+summary "### Notice Period deployment"
+summary ""
+summary_table
+summary ""
+summary "Loop inputs: token=$token factory=$maker exit=$exit_c reactive=$reactive"
+summary ""
+deployment_json="$(deployment_file "$smoke" "$smoke_tx")" || die "could not write the final deployment file content"
+summary "Deployment file: commit this content (the final one, with the smoke vault) to main as"
+summary "\`deployments/$deploy_name.json\` before any loop, verify or health run on this deployment (they read only that"
+summary "file), then stamp the page branch with \`python3 scripts/stamp.py deployments/$deploy_name.json\` (the path"
+summary "written out)."
+summary ""
+print_deployment_file "final"
+check_deployment_file
 
 # The float is staged: 1 lREACT at deployment, 8 more after the first loop on this pair, so health on this deployment
 # is red until that top-up. Said here so nobody reads a red health run as a broken deployment.
