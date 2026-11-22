@@ -337,6 +337,11 @@ async function prepare(tab, s, entry) {
     const text = norm(await tab.text());
     if (!s.soft.textAny.some((x) => text.includes(norm(x)))) entry.warnings.push(`none of ${JSON.stringify(s.soft.textAny)} is on the page; it may show a fallback (a time not shown, a check that failed): look at this shot in the contact sheet`);
   }
+  if (s.soft && s.soft.notText) {
+    const text = norm(await tab.text());
+    const seen = s.soft.notText.filter((x) => text.includes(norm(x)));
+    if (seen.length) entry.warnings.push(`${JSON.stringify(seen)} is on the page; the caption may no longer match it: look at this shot in the contact sheet`);
+  }
   if (s.explorer) {
     const text = norm(await tab.text());
     if (/loading\.\.\.|loading\u2026/.test(text)) entry.warnings.push('the page text still has "Loading..." somewhere; check the contact sheet');

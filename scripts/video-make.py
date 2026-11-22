@@ -99,7 +99,13 @@ def tts(engine, text, out, settings, edge_voice):
                "-w", str(out), text]
     last = ""
     for attempt in range(1, 4):
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        except subprocess.TimeoutExpired:
+            last = "no answer within 180 s"
+            print(f"{engine} attempt {attempt} failed: {last}")
+            time.sleep(3 * attempt)
+            continue
         if r.returncode == 0 and out.is_file() and out.stat().st_size > 1000:
             return
         last = (r.stderr or r.stdout).strip()[-400:]

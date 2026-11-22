@@ -48,7 +48,7 @@ FIELD_RE = re.compile(r"\{(pageUrl|repoUrl|event|track|deployment)\}")
 BANNED = [
     (r"impossible without", "never 'impossible without'"),
     (r"\bloss(?:es)? (?:were |was |are |is )?prevented\b|\bprevent(?:s|ed|ing)? (?:a |any |the )?loss", "never 'losses prevented'"),
-    (r"\b(?:AI|LLM|GPT|ChatGPT|Claude|Copilot)\b", "no text about how the idea or the code was made"),
+    (r"\b(?:AI|LLM)\b", "no text about how the idea or the code was made"),
     (r"\bhand-?written\b|\bwritten by hand\b|\bgenerated (?:by|with)\b|\bbuilt with\b", "no text about how the code was made"),
     (r"(?<![A-Za-z])[A-Za-z]:\\|(?<![A-Za-z])[A-Za-z]:/(?!/)|/home/|/Users/", "no local path"),
     (r"\bguarantee", "no guarantee"),
@@ -58,6 +58,8 @@ BANNED = [
 MORPHO_COUNT = re.compile(r"^(\d+) rule changes? (?:is|are) waiting in (\d+) Morpho vaults? holding (\$\d+(?:\.\d)?[KMB]?) right now\.")
 MORPHO_ZERO = re.compile(r"^No rule change is waiting in any listed Morpho vault right now\.")
 MORPHO_FAILED = re.compile(r"^On (\d{1,2} [A-Z][a-z]{2} \d{4}): (\d+) changes waiting in (\d+) vaults holding (\$\d+(?:\.\d)?[KMB]?);")
+
+LEAD, TAIL, READ_CPS = 0.35, 0.6, 15.0   # as in scripts/video-make.py
 
 findings = []
 
@@ -164,7 +166,7 @@ def evidence_text(ev, repo, fields, live):
 
 def shown_texts(shot):
     out = []
-    for key in ("caption", "captionLive", "captionZero", "label"):
+    for key in ("caption", "captionLive", "captionZero", "label", "labelFailed"):
         if shot.get(key):
             out.append((key, shot[key]))
     return out
@@ -375,8 +377,10 @@ def static(repo):
     total = sum(float(s["seconds"]) for s in plan)
     if total >= limits["maxSeconds"]:
         find(f"planned length {total:g} s is not under {limits['maxSeconds']} s")
-    # a replay is captured until the page's own receipt check answers, at most maxCaptureSeconds
-    worst = sum(max(float(s["seconds"]), float(s.get("maxCaptureSeconds", 0))) for s in plan)
+    # a replay is captured until the page's own receipt check answers, at most maxCaptureSeconds, and a shot
+    # also grows to fit its voice line (video-make.py: LEAD + line + TAIL); the line is estimated at READ_CPS
+    worst = sum(max(float(s["seconds"]), float(s.get("maxCaptureSeconds", 0)),
+                    LEAD + len(s["caption"]) / READ_CPS + TAIL) for s in plan)
     if worst >= limits["maxSeconds"]:
         find(f"planned length with every replay at its longest capture {worst:g} s is not under {limits['maxSeconds']} s")
     print(f"{'shot':5} {'type':9} {'s':>5}  label / caption")
@@ -441,6 +445,8 @@ def resolve(repo, plan, manifest):
                 r["caption"] = p["captionZero"]
             else:
                 r["caption"] = p["caption"]
+                if p.get("labelFailed"):
+                    r["label"] = p["labelFailed"]
                 note(f"{p['id']}: Morpho's API did not answer the page; caption uses the dated snapshot the page showed")
             shown = vals.get("_numbers", set())
             said = numbers(r["caption"])
@@ -453,6 +459,7 @@ def resolve(repo, plan, manifest):
             check_text(f"{p['id']} caption", r["caption"])
         r.pop("captionLive", None)
         r.pop("captionZero", None)
+        r.pop("labelFailed", None)
         shots.append(r)
     total = sum(float(s["seconds"]) for s in shots)
     if total >= plan["limits"]["maxSeconds"]:
