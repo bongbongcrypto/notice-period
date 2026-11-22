@@ -65,9 +65,17 @@ def one(matches, where):
 
 
 def sh_value(text, name):
-    found = re.findall(r"^" + re.escape(name) + r"=([0-9]+)(?:\s|$)", text, re.M)
+    """Every assignment of the name counts (any value, also export/readonly/declare/local), so a later
+    `NAME=$((NAME + 1))` is a second writing and fails; the single one must be a plain number."""
+    found = re.findall(r"^\s*(?:(?:export|readonly|local|declare(?:\s+-\w+)*)\s+)?" + re.escape(name) + r"=(\S*)",
+                       text, re.M)
     v = one(found, f"scripts/deploy-system.sh {name}=")
-    return None if v is None else int(v)
+    if v is None:
+        return None
+    if not re.fullmatch(r"[0-9]+", v):
+        find(f"scripts/deploy-system.sh {name}={v}: not a plain number")
+        return None
+    return int(v)
 
 
 def sol_value(text, kind, name, where):
