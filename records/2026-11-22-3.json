@@ -1,0 +1,20 @@
+{
+  "deployment": "2026-11-22",
+  "n": 3,
+  "loopRun": 45008666879,
+  "exit": "0xc3451Dc97fBF3ba019524E68939192BEC4b83Fca",
+  "reactive": "0xb27F7223B83D3596868EAc0299Ab5B132b0B8D32",
+  "token": "0xA73cD0eCA5bda9c98EFdEc8bbc7c32684d36A5D7",
+  "kind": "adapter",
+  "mode": 0,
+  "action": "cancel",
+  "depositorKey": "a",
+  "curatorKey": "a",
+  "depositor": "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4",
+  "curator": "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4",
+  "watchId": 2,
+  "cancelTx": "0xe4ff116db1fd22e3310211bb15e9668c27b6a62ee1a2b544bc839d9377b217ba",
+  "watchClosedTx": "0xd5185c93f13a20ae4d8922fef92a409d6f681bbe221b983da53db38aefa8a166",
+  "lasnaFrom": 8964590,
+  "derived": {}
+}

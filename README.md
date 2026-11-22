@@ -59,7 +59,45 @@ Reactive answered (Lasna's block time is 1 s earlier)
 and the deposit was back 1 s later
 ([`0x85724300…f549`](https://base-sepolia.blockscout.com/tx/0x85724300cdc2c5a21cf1f56c58133094f6f07e694644fa1d692368d296e1f549)),
 179 s before the change could run. That callback's transaction had a gas limit of 1,000,000 and used 174428.
-`python scripts/runs.py --check 2026-11-22` re-reads it from the chains' receipts.
+
+Runs 2 to 8 on these contracts followed the same day, each on a new vault made through `MorphoVaultMaker`. A run
+number here is the watch id, as on the page. The first key is the curator in every run; the second key is the
+depositor in runs 1, 5, 7 and 8. Seconds are differences of block times.
+
+| | Run 3, a shorter waiting period | Run 4, a new allocator | Run 5, a new adapter after an ignored cap increase | Run 6, "wait for the deadline" |
+|---|---|---|---|---|
+| Change scheduled (Base Sepolia) | [`0x4fa10231…16ce`](https://base-sepolia.blockscout.com/tx/0x4fa102311a96226837e5f07850028f40edc472d33d89a6b7d25f727e174616ce) 09:43:16 UTC | [`0xb2f3b820…affb`](https://base-sepolia.blockscout.com/tx/0xb2f3b82017938a457a5dd5957cef1e4e54c5a92c400fbba2f6853964a8fbaffb) 09:44:17 UTC | [`0x6e0edc92…a633`](https://base-sepolia.blockscout.com/tx/0x6e0edc92588549cdc8854ce32501f4602eb0654bcc384432a66841794497a633) 09:46:22 UTC | [`0x9b56fa04…2bfb`](https://base-sepolia.blockscout.com/tx/0x9b56fa046d73aaccb548b72993f443d6e248928c136f4b0d0c9e32cd10d52bfb) 09:47:33 UTC |
+| Reactive transaction (Lasna) | [`0x06f32120…cc82`](https://lasna.reactscan.net/tx/0x06f32120122d36b696c2d80d9ebaef67b36de0dad0e88cfbf00846465742cc82) +0 s (block time 1 s earlier) | [`0xf418f45b…9fea`](https://lasna.reactscan.net/tx/0xf418f45b402d158c4253c0fc01c581fc851664947a4833159acd6abb3f669fea) +0 s | [`0x0dd6304d…a4b1`](https://lasna.reactscan.net/tx/0x0dd6304d6a037393516f8cb1c7d4bd52e6d2c6ba008c8068be5b3dc274c3a4b1) +0 s (block time 1 s earlier) | [`0x14235447…f975`](https://lasna.reactscan.net/tx/0x14235447a26e0eb8da3bd05412d0055e9cf64797b6874e9344f342e70cf0f975) +63 s, on the timer |
+| Deposit back in the depositor's wallet (Base Sepolia) | [`0xd221d597…8e48`](https://base-sepolia.blockscout.com/tx/0xd221d597fa2de2284414b979375a4d1c0dfb3865f8c8251fa4e5e58fc0c68e48) +1 s | [`0xde051159…3521`](https://base-sepolia.blockscout.com/tx/0xde051159cc4782505f1834624cd1ff4c783c0e4d4348d535d0896bf625773521) +2 s | [`0xdea82586…2a93`](https://base-sepolia.blockscout.com/tx/0xdea82586747b2f21766e4e5831a5acd4b7a0247bea6c448d4234ae231f752a93) +1 s | [`0x5b28027a…a4eb`](https://base-sepolia.blockscout.com/tx/0x5b28027a2cf02ae7d5b0aca870acd092925e7596e3c30dea46bc05909120a4eb) +65 s |
+| Notice left when the deposit was back | 179 s of 180 | 178 s of 180 | 179 s of 180 | 115 s of 180 |
+
+- Run 2: a watch turned on and turned off again by its owner
+  ([`0xe4ff116d…17ba`](https://base-sepolia.blockscout.com/tx/0xe4ff116db1fd22e3310211bb15e9668c27b6a62ee1a2b544bc839d9377b217ba), 09:40:30 UTC).
+- Run 5: before the new adapter, the curator scheduled a cap increase, a kind that watch does not cover
+  ([`0x0a691b4e…58f6`](https://base-sepolia.blockscout.com/tx/0x0a691b4e3ab06c6bd92559359aa779d044601b7e60e7becd31ec8458183358f6), 09:45:28 UTC).
+  In Lasna blocks 8964872 to 8964915 our reactive contract logged nothing for the watch, and its stray and unknown
+  counters stayed at 0.
+- Run 7 is the one where the deposit must stay. On a "wait for the deadline" watch the curator scheduled a new
+  adapter at 09:49:34 UTC
+  ([`0x64cac9a2…4e43`](https://base-sepolia.blockscout.com/tx/0x64cac9a2abb471391fb2a19b74ca3b159b8b90a3570da191d9a1f301fc214e43))
+  and revoked it 22 s later
+  ([`0xe5379a15…dc92`](https://base-sepolia.blockscout.com/tx/0xe5379a158e5aaed53e7af9922e8b6ddf5188558bd7c10527df8fe0c3d279dc92));
+  Reactive recorded the revoke in the same second
+  ([`0x3f0a508f…903b`](https://lasna.reactscan.net/tx/0x3f0a508f5c14511c05a5e1454fd023915a58be59492790190b7a5268bca5903b)).
+  No exit was asked in Lasna blocks 8965083 to 8965300, which run 30 s past the time the change could have run
+  (09:52:34 UTC), and all the depositor's shares stayed in the vault until the depositor turned the watch off
+  ([`0xe860137f…a96e`](https://base-sepolia.blockscout.com/tx/0xe860137fb6983df4a09fac39d4342304be2ede400c959321c8c88284f0e6a96e)).
+- Run 8 is a watch left on. A "leave now" watch has no end date on these contracts; a change will be scheduled on
+  its vault later, to show a watch that waited days.
+- The burst test: on run 1's vault, after its watch had ended, the curator scheduled three new adapters in one
+  `multicall`
+  ([`0x6d92a52c…bb8f`](https://base-sepolia.blockscout.com/tx/0x6d92a52c571396ca88227c30a7300399307649653a33389b642b58fcb23cbb8f), 09:41:08 UTC).
+  In Lasna blocks 8964625 to 8964684 our reactive contract had no transaction and no stray event, and its float stayed
+  at 8.9037806 lREACT: once the last watch on a vault ends, that vault's changes are not delivered to us and cost
+  us nothing (SPEC.md section 8).
+
+`python scripts/runs.py --check 2026-11-22` re-reads these runs from the chains' receipts (the turn-off and the burst
+have nothing to re-derive).
 
 ## Contracts of the 18 Nov 2026 testnet deployment
 
@@ -73,7 +111,7 @@ and the deposit was back 1 s later
 Reactive's own contracts used here: the callback proxy on Base Sepolia `0x476F44b11F5C942c58f4c8E3d0300E5710743585`
 and the system contract on Lasna `0x8888888888888888888888888888888888888888`.
 
-## Runs on chain: seven exits and one change revoked
+## Runs on the 18 Nov 2026 contracts: seven exits and one change revoked
 
 All runs were sent by our own test accounts (`0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4`, and for runs 5, 6 and 8 the
 second key derived from it, `0x616FF5998E3e6AF794881Adf6Fe6cac62Cc29b19`), each on a demo vault of its own: runs 1 and 2
@@ -215,22 +253,25 @@ exhaustive search.
 
 ## Limits, said plainly
 
-- The demo vault and the demo dollar are ours and have no value. The vault copies the timelock and the events of
-  Morpho Vault V2; it is not Morpho's vault, and this project is not affiliated with Morpho.
-- A watch lasts one day in this deployment, "leave now" included: after that anyone may end it. The demo allows 10
-  watches a day for everyone, 2 per address and 8 at a time, because Reactive fees are paid from our float. A "wait
-  for the deadline" watch (the page does not offer it; our own runs use it) stops protecting shortly before its day
-  ends: a change scheduled in about its last 15 minutes can be left without an exit (a wait of up to 900 s minus the
-  120 s lead, plus the timer's queue), and the deposit stays in. Such a change can never run before the day ends
-  (SPEC.md section 11).
+- The demo dollar and `MorphoVaultMaker` are ours, and the dollar has no value. On the 22 Nov 2026 contracts each
+  vault is a real Morpho Vault V2 made by Morpho's own factory through our maker (a 180 s waiting period, no gate,
+  no fee); the curator in our runs is our own test account. The 18 Nov 2026 contracts used our own demo vault, which
+  copies the timelock and the events of Morpho Vault V2. This project is not affiliated with Morpho.
+- On the 22 Nov contracts a "leave now" watch has no end date: it ends when it fires or when its owner turns it off.
+  A "wait for the deadline" watch (the page does not offer it; our own runs use it) can be ended by anyone one day
+  after it was turned on, and a change scheduled in about its last 168 s can be left without an exit; such a change
+  can never run before that day ends (SPEC.md section 11). The demo allows 50 watches a day for everyone, 4 per
+  address, and 8 "wait for the deadline" watches at a time (4 new a day), because Reactive fees are paid from our
+  float. On the 18 Nov contracts every watch lasted one day, with 10 a day for everyone, 2 per address and 8 at a time.
 - A change with no waiting period leaves no time to exit.
-- Every kind has a recorded exit on testnet, sent by our own loop workflow: the three a watch covers by default in
-  runs 1, 3 and 4, and the opt-in cap increase in run 7. The page's curator buttons for a shorter waiting period, a new allocator and a cap increase encode the same calls
-  ([`docs/abi.js`](docs/abi.js)); they were clicked through against a simulated pair of chains
-  ([`docs/TESTING.md`](docs/TESTING.md)), and no visitor has run them on the live contracts yet.
-- The demo vault counts every demo dollar it holds, and demo dollars are free to mint. So someone can send demo
-  dollars to a visitor's fresh vault and skew its share price. The page refuses to deposit into such a vault; the
-  contract itself does not prevent it (SPEC.md section 11).
+- Every kind has a recorded exit on testnet, sent by our own loop workflow. On the 22 Nov contracts: the three kinds
+  a watch covers by default, in runs 1, 3, 4 and 5; on the 18 Nov contracts also the opt-in cap increase, in run 7.
+  The page's curator buttons encode the same calls ([`docs/abi.js`](docs/abi.js)); they were clicked through
+  against a simulated pair of chains ([`docs/TESTING.md`](docs/TESTING.md)), and no visitor has run them on the
+  live contracts yet.
+- The 18 Nov demo vault counts every demo dollar it holds, and demo dollars are free to mint. So someone can send
+  demo dollars to a visitor's fresh vault and skew its share price. The page refuses to deposit into such a vault;
+  that contract itself does not prevent it (SPEC.md section 11).
 - Everything else: [SPEC.md](SPEC.md) section 11.
 
 ## Built during the event

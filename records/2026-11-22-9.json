@@ -1,0 +1,29 @@
+{
+  "deployment": "2026-11-22",
+  "n": 9,
+  "loopRun": 45009364793,
+  "exit": "0xc3451Dc97fBF3ba019524E68939192BEC4b83Fca",
+  "reactive": "0xb27F7223B83D3596868EAc0299Ab5B132b0B8D32",
+  "token": "0xA73cD0eCA5bda9c98EFdEc8bbc7c32684d36A5D7",
+  "kind": "adapter",
+  "mode": 1,
+  "action": "revoke-stays",
+  "depositorKey": "b",
+  "curatorKey": "a",
+  "depositor": "0x616FF5998E3e6AF794881Adf6Fe6cac62Cc29b19",
+  "curator": "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4",
+  "vault": "0xeFc84af9451CBA81164471832b1eB837362dD27c",
+  "watchId": 7,
+  "armTx": "0x4a48c19115a6b5b612dc6a811f929192a01821dadbf47027d10e9a52eff23833",
+  "hash1": "0x64cac9a2abb471391fb2a19b74ca3b159b8b90a3570da191d9a1f301fc214e43",
+  "revokeTx": "0xe5379a158e5aaed53e7af9922e8b6ddf5188558bd7c10527df8fe0c3d279dc92",
+  "changeRevokedTx": "0x3f0a508f5c14511c05a5e1454fd023915a58be59492790190b7a5268bca5903b",
+  "cancelTx": "0xe860137fb6983df4a09fac39d4342304be2ede400c959321c8c88284f0e6a96e",
+  "watchClosedTx": "0x3614cbfcda464502b55dd37947863072259aefee2e8eddf0611aaa25f00574e5",
+  "lasnaFrom": 8965083,
+  "lasnaTo": 8965300,
+  "subTx": "0x139b630838edecef4b2ea3025ffe7e7ab8a1d0672708714d421143db2cbe12ea",
+  "derived": {
+    "absenceChecked": true
+  }
+}
