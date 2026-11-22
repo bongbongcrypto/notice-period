@@ -410,13 +410,21 @@ on Base Sepolia; balances read before and after each loop; reactive gas price 10
 - `expire` is open to anyone, the curator included, but only for a mode-1 watch. A mode-1 watch protects for
   `LIFETIME` (1 day) only: after that the curator can expire it and then schedule a change, and an expiry that
   lands while an exit callback is on its way makes that callback revert (`WatchNotActive`) and the depositor
-  stays in. The lease also ends the protection from a change the watch already stores: a curator who schedules
-  a change shortly before the lease ends and expires the watch when it ends makes Lasna close the watch and
-  forget the change without an exit (pinned by `test_expiry_at_lease_end_drops_a_stored_change`). So a mode-1
-  watch is sure to serve only changes scheduled at least `MAX_WAIT - LEAD` seconds (80 s as deployed by
-  `scripts/deploy-system.sh`, 780 s on the 11-18 pair) before its lease ends, plus the delivery time and the
-  timer's queue: it asks for one exit per tick, so a watch due with the other timer watches can wait up to
-  `MAX_TIMED` ticks (8 x about 10.7 s, about 86 s). A mode-0 watch has no expiry and ends only when it fires or its owner cancels it. On the 11-18
+  stays in. The lease also ends the protection from a change the watch already stores. Anyone, not only the curator,
+  who expires the watch when the lease ends makes Lasna close it and forget the change without an exit (pinned by
+  `test_expiry_at_lease_end_drops_a_stored_change`), or, if the exit was already asked for, makes its callback
+  revert; the deposit stays in, and the change can run when its waiting period ends. This happens only to a change
+  whose exit would reach Base Sepolia after `armedAt + LIFETIME`. The exit is asked for `LEAD` before the change can
+  run, plus at most `MAX_TIMED` ticks of the timer's queue (8 x about 10.7 s, about 86 s) and the trip to Base
+  Sepolia (1 to 2 s in the 11-18 runs), so such a change can never run before the lease ends: at the earliest about
+  32 s after it, or about 107 s when no other timer watch is due. Counted from its `Submit`, a mode-1 watch is
+  therefore sure to serve a change scheduled at least `MAX_WAIT - LEAD` before its lease ends (80 s with the values
+  of `scripts/deploy-system.sh`, 60 s on a maker vault at its 180 s waiting period, 780 s on the 11-18 pair), plus
+  that queue and the trips between the chains: about 168 s in the worst case with the `scripts/deploy-system.sh`
+  values, 0.2 % of the lease. A depositor who watches the chain still has the rest of the waiting period to leave by
+  hand, at least about 32 s here, against the full waiting period when the curator expires first and schedules
+  afterwards. A new watch does not help: it never sees a change scheduled before it was armed. A mode-0 watch has no
+  expiry and ends only when it fires or its owner cancels it. On the 11-18
   deployment every watch, mode 0 included, can still be expired after one day.
 - The newer contracts ask for a callback gas limit of 1,000,000 (the 11-18 pair: 600,000). About 809,700 of it
   reaches `exit` on Base Sepolia, against about 416,000 at 600,000 (section 12). A maker vault as made has no

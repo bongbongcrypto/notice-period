@@ -177,9 +177,12 @@ exhaustive search.
 
 - The demo vault and the demo dollar are ours and have no value. The vault copies the timelock and the events of
   Morpho Vault V2; it is not Morpho's vault, and this project is not affiliated with Morpho.
-- A watch lasts one day in this deployment, and the demo allows 10 watches a day for everyone, 2 per address and
-  8 at a time, because Reactive fees are paid from our float. A "wait for the deadline" watch stops protecting
-  when its day ends, even from a change it has already seen (SPEC.md section 11).
+- A watch lasts one day in this deployment, "leave now" included: after that anyone may end it. The demo allows 10
+  watches a day for everyone, 2 per address and 8 at a time, because Reactive fees are paid from our float. A "wait
+  for the deadline" watch (the page does not offer it; our own runs use it) stops protecting shortly before its day
+  ends: a change scheduled in about its last 15 minutes can be left without an exit (a wait of up to 900 s minus the
+  120 s lead, plus the timer's queue), and the deposit stays in. Such a change can never run before the day ends
+  (SPEC.md section 11).
 - A change with no waiting period leaves no time to exit.
 - Every kind has a recorded exit on testnet, sent by our own loop workflow: the three a watch covers by default in
   runs 1, 3 and 4, and the opt-in cap increase in run 7. The page's curator buttons for a shorter waiting period, a new allocator and a cap increase encode the same calls
