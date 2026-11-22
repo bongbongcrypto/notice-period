@@ -113,13 +113,15 @@ jobs:
             scripts/wait-log.py scripts/test-wait-log.py scripts/stamp.py scripts/test-stamp.py scripts/keccak.py \
             scripts/rpclib.py scripts/logs.py scripts/deployment.py scripts/bytecode_match.py \
             scripts/test-bytecode-match.py scripts/sourcify.py scripts/runs.py scripts/test-runs.py \
-            scripts/replay_mainnet.py scripts/check-workflows.py
+            scripts/replay_mainnet.py scripts/check-workflows.py scripts/check-values.py
 
       - name: Stamp check on a scratch copy (a hand edit inside a stamped block must fail)
         run: python3 scripts/test-stamp.py
 
-      - name: Workflow checks (inputs mapped, timeouts, environments, no outside actions)
-        run: python3 scripts/check-workflows.py
+      - name: Workflow checks (inputs mapped, timeouts, environments, no outside actions; deployed values match the tests)
+        run: |
+          python3 scripts/check-workflows.py
+          python3 scripts/check-values.py
 
       - name: Offline self-tests (Keccak, bytecode match, run records, deployment file)
         run: |
@@ -177,7 +179,8 @@ jobs:
           for url in "${FORK_RPC}" https://eth.drpc.org https://rpc.mevblocker.io https://eth-mainnet.public.blastapi.io; do
             [ -n "$url" ] || continue
             if [ "$url" = "${FORK_RPC}" ]; then echo "endpoint: repository variable FORK_RPC"; else echo "endpoint: $url"; fi
-            if ETH_RPC="$url" forge test --match-path 'fork/*' -vvv 2>&1 | tee "$out"; then
+            # One test at a time: four forks at once on one free endpoint invite rate limits (--threads, Foundry v1.9.0).
+            if ETH_RPC="$url" forge test --threads 1 --match-path 'fork/*' -vvv 2>&1 | tee "$out"; then
               # A skipped or missing test would also exit 0: the four must show as passed.
               for t in test_F2_realSubmit_redeemsHolder_at1000000 test_F2_realSubmit_notRedeemed_at600000 \
                 test_F2b_allocatorClearsLiquidityAdapter_endsRedeemFailed test_F2b_control_sameHolderRedeems_withLiquidityAdapter; do
@@ -196,4 +199,4 @@ jobs:
         continue-on-error: true
         run: |
           unset FOUNDRY_OFFLINE
-          forge test --isolate --match-path 'fork/*' -vvv
+          forge test --threads 1 --isolate --match-path 'fork/*' -vvv
