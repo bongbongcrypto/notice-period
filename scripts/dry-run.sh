@@ -121,7 +121,7 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then echo "Morpho factory bytecode in the 
 export DEPLOY_OUT="$logs/deployed.env"
 : > "$DEPLOY_OUT"
 REACTIVE_FUND=1 CALLBACK_FUND=0.002 bash scripts/deploy-hello.sh
-REACTIVE_FUND=5 EXIT_FUND=0.005 bash scripts/deploy-system.sh
+REACTIVE_FUND=5 EXIT_FUND=0.007 bash scripts/deploy-system.sh # exit fund: deploy-system.yml's default
 # shellcheck disable=SC1090
 source "$DEPLOY_OUT"
 export HELLO_ORIGIN HELLO_REACTIVE HELLO_CALLBACK NP_TOKEN NP_FACTORY NP_EXIT NP_REACTIVE
@@ -163,10 +163,44 @@ keeper_idle="$logs/keeper.idle"
 done) &
 pids="$pids $!"
 
+field() { # name key -> value from run-<name>.json
+  python3 -c 'import json, sys; v = json.load(open(sys.argv[1])).get(sys.argv[2], ""); print(v[-1] if isinstance(v, list) else v)' \
+    "$logs/run-$1.json" "$2"
+}
+# Gas of a run's exit on a maker vault, as the mock proxy forwarded it and the exit used it (dry run only: the real
+# proxy has no lastForwarded or lastUsed). Read at the block of the run's WatchEnded transaction, so a later delivery
+# (the background fireheld run, a hello pong) cannot be reported instead. A failed read is "unknown", never 0; not a
+# gate.
+exit_gas() { # name
+  local f="$logs/run-$1.json" h kind bn fwd="" used=""
+  [ -f "$f" ] || return 0
+  h="$(field "$1" hash3)" || h=""
+  kind="$(field "$1" factoryKind)" || kind=""
+  [ -n "$h" ] && [ "$kind" = maker ] || return 0
+  bn="$(cast receipt --rpc-url "$BASE_RPC" "$h" blockNumber 2>/dev/null)" || bn=""
+  if [ -n "$bn" ]; then
+    fwd="$(cast call --rpc-url "$BASE_RPC" --block "$bn" "$CALLBACK_PROXY" 'lastForwarded()(uint256)' 2>/dev/null \
+      | awk '{print $1}')" || fwd=""
+    used="$(cast call --rpc-url "$BASE_RPC" --block "$bn" "$CALLBACK_PROXY" 'lastUsed()(uint256)' 2>/dev/null \
+      | awk '{print $1}')" || used=""
+  fi
+  if [[ "$fwd" =~ ^[0-9]+$ ]] && [[ "$used" =~ ^[0-9]+$ ]]; then
+    echo "exit gas on a maker vault: forwarded $fwd, used $used"
+    if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+      echo "exit gas on a maker vault ($1): forwarded $fwd, used $used" >> "$GITHUB_STEP_SUMMARY"
+    fi
+  else
+    echo "exit gas on a maker vault: unknown (run $1, exit $h: the mock proxy could not be read at its block)"
+  fi
+  return 0
+}
+
 status=0
 bash scripts/loop-hello.sh || status=1
 [ "$status" = 0 ] && { LOOP_MODE=0 LOOP_RUN_JSON="$logs/run-mode0.json" bash scripts/loop-system.sh || status=1; }
+if [ "$status" = 0 ]; then exit_gas mode0; fi
 [ "$status" = 0 ] && { LOOP_MODE=1 LOOP_RUN_JSON="$logs/run-mode1.json" bash scripts/loop-system.sh || status=1; }
+if [ "$status" = 0 ]; then exit_gas mode1; fi
 
 # ---------------------------------------------------------------- every other action and kind of loop-system.sh
 # deploy-system.sh allows four arms per address and four timer arms per UTC day; the runs are still spread over key A
@@ -205,10 +239,7 @@ twin() { # name [VAR=value ...]: one loop-system.sh run; its run.json is $logs/r
   [ "$status" = 0 ] || return 0
   echo "---- twin: $name"
   env LOOP_RUN_JSON="$logs/run-$name.json" "$@" bash scripts/loop-system.sh || { echo "twin $name failed"; status=1; }
-}
-field() { # name key -> value from run-<name>.json
-  python3 -c 'import json, sys; v = json.load(open(sys.argv[1])).get(sys.argv[2], ""); print(v[-1] if isinstance(v, list) else v)' \
-    "$logs/run-$1.json" "$2"
+  if [ "$status" = 0 ]; then exit_gas "$name"; fi
 }
 B=(LOOP_DEPOSITOR=b LOOP_FUND_B=1 LOOP_B_GAS=1)
 # The mode 1 run must have waited: stored, then asked on the timer near the deadline (reason 2), not fled as too soon.
@@ -264,6 +295,7 @@ fi
 if [ -n "$fire_pid" ]; then
   if wait "$fire_pid"; then echo "fireheld: the held watch exited on the timer"; else echo "twin fireheld failed"; status=1; fi
   cat "$logs/fireheld.log"
+  if [ "$status" = 0 ]; then exit_gas fireheld; fi
 fi
 # Day 3: a top-up from key A, then the health job (key B only) green, then red with a forced debt.
 twin topup LOOP_ACTION=topup LOOP_TOPUP=1
