@@ -1,16 +1,17 @@
 """Writes the deployment's addresses and values into the places that show them, from one deployment file.
 
-    python3 scripts/stamp.py [--check] [--root DIR] [DEPLOYMENT_JSON]
+    python3 scripts/stamp.py [--check] [--root DIR] DEPLOYMENT_JSON
 
-DEPLOYMENT_JSON (default deployments/current.json) is the only hand-edited place for addresses. From it this script
-writes docs/data/deployment.js (window.NP_DEPLOYMENT) and every marked block of README.md and SPEC.md:
+DEPLOYMENT_JSON is the deployment's own file, deployments/<name>.json (the only hand-edited place for addresses),
+always given explicitly: there is no default (deployments/current.json is a template every reader refuses). From
+it this script writes docs/data/deployment.js (window.NP_DEPLOYMENT) and every marked block of README.md and SPEC.md:
 
     <!-- stamp:contracts -->   ...generated, never edited by hand...   <!-- /stamp:contracts -->
     <!-- stamp:values -->      ...                                     <!-- /stamp:values -->
 
 --check writes nothing and exits 1 if any of those places differs from what the deployment file gives (a hand edit
-inside a block, or a deployment file changed without a stamp). Exit 2: the deployment file is a template or malformed,
-or a marker is broken. Standard library only.
+inside a block, or a deployment file changed without a stamp). Exit 2: no DEPLOYMENT_JSON given, the deployment file is a
+template or malformed, or a marker is broken. Standard library only.
 """
 
 import argparse
@@ -44,7 +45,8 @@ def load(path):
     if not isinstance(doc, dict):
         raise StampError(f"{path}: not a JSON object")
     if doc.get("status") != "deployed":
-        raise StampError(f"{path} is not a filled deployment (status {doc.get('status')!r}); nothing to stamp")
+        raise StampError(f"{path} is not a filled deployment (status {doc.get('status')!r}); nothing to stamp: "
+                         "pass the deployment's own file, deployments/<name>.json")
     for side in ("origin", "reactive"):
         chain = doc.get(side)
         if (not isinstance(chain, dict) or not isinstance(chain.get("name"), str)
@@ -158,11 +160,12 @@ def run(root, deployment, check):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("deployment", nargs="?", default=None)
+    ap.add_argument("deployment", metavar="DEPLOYMENT_JSON",
+                    help="the deployment's own file, deployments/<name>.json (no default)")
     ap.add_argument("--root", default=str(Path(__file__).resolve().parent.parent))
     ap.add_argument("--check", action="store_true")
     a = ap.parse_args(argv)
-    deployment = a.deployment or str(Path(a.root) / "deployments" / "current.json")
+    deployment = a.deployment
     try:
         return run(a.root, deployment, a.check)
     except StampError as e:
