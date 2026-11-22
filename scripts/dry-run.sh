@@ -11,7 +11,7 @@
 # maker and the loops run against Morpho's real bytecode. Its sha256 must equal FACTORY_CODE_SHA256 below; a different
 # code stops the run. While the value is still TO-PIN, or when no endpoint answers (then the test stand-in
 # MockVaultV2Factory is used), the run prints REAL FACTORY BYTECODE NOT CHECKED and reports it as the step output
-# factory_bytecode (real | unpinned | mock), which the deploy checklist reads.
+# factory_bytecode (real | unpinned | mock), which ci.yml exposes as the dry-run job's output of that name.
 #
 # To pin: read the code from two endpoints yourself and compare, e.g.
 #   cast code --rpc-url https://sepolia.base.org 0xE3a2CEbca662d99D0F279aF13a6bb8c9825D2ea0 \

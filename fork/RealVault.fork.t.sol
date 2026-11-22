@@ -214,8 +214,8 @@ contract RealVaultForkTest is Network {
         assertEq(USDC_T.balanceOf(BIG_HOLDER), usdcBefore, "no USDC moved");
     }
 
-    /// @notice Control for F2b (not in the work order; delete if unwanted): the same holder, with the liquidity adapter
-    ///         left in place, is redeemed, so F2b's failure comes from the cleared adapter.
+    /// @notice Control for F2b: the same holder, with the liquidity adapter left in place, is redeemed, so F2b's
+    ///         failure comes from the cleared adapter.
     function test_F2b_control_sameHolderRedeems_withLiquidityAdapter() public {
         vm.skip(!_hasRpc());
         _fork();

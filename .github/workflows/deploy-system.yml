@@ -13,7 +13,7 @@ on:
         default: "1"
         required: true
       exit_fund:
-        description: "Base Sepolia ETH sent to NoticeExit for callback fees (0.007 pays about 1,180 exits that burn the whole 1,000,000 callback limit at 0.006 gwei)"
+        description: "Base Sepolia ETH sent to NoticeExit for callback fees (0.007 pays about 1,180 exits whose recipient burns all the gas it is given: 897,765 gas billed each at the 1,000,000 limit, 0.006 gwei; SPEC.md section 12)"
         default: "0.007"
         required: true
 

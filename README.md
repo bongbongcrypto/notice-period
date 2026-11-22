@@ -229,7 +229,10 @@ tests or scripts (pushes that change only the page or prose are skipped):
   tests that feed real logs read from Base and Lasna;
 - mutation check: `scripts/mutations.py` removes one refusal rule at a time and the named test must fail;
 - dry run: the same deploy and loop scripts the testnet workflows use, run against two local anvil chains with
-  the mock network contracts at the real addresses and a relay script playing the network.
+  the mock network contracts at the real addresses and a relay script playing the network;
+- fork (non-blocking, its result does not fail the run): `fork/RealVault.fork.t.sol` on Ethereum mainnet state at
+  block 26,406,895 from public archive endpoints, the real Vault V2 exit at 1,000,000 and 600,000 (SPEC.md
+  section 12). Not run yet at this writing.
 
 Toolchain: Foundry v1.9.0 and solc 0.8.30, both checked against sha256 digests; the sponsor library
 `reactive-lib-omni` and `forge-std` are fetched at pinned commits in CI and never committed. EVM target `cancun`.

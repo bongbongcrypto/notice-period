@@ -12,14 +12,16 @@ import { NoticeReactive } from "../../src/NoticeReactive.sol";
 import { INoticeExit } from "../../src/lib/INoticeExit.sol";
 import { NoticeKinds } from "../../src/lib/NoticeKinds.sol";
 
-/// @notice Deploys the full system in the deployment order of SPEC.md section 7, with test values, not the deployed
-///         ones: the caps here are small so each is reached in a few calls (deployed values: SPEC.md section 9).
+/// @notice Deploys the full system in the deployment order of SPEC.md section 7. TIMELOCK, LEAD, CB_GAS and LIFETIME
+///         are the deployed values (scripts/check-values.py holds them equal to scripts/deploy-system.sh); MAX_WAIT
+///         and the caps are small test values so each is reached in a few calls (deployed values: SPEC.md section 9,
+///         used together in test/DeployedValues.t.sol).
 abstract contract NoticeSetup is Network {
     uint256 internal constant TIMELOCK = 180;
     /// @dev Covers MAX_TIMED Cron10 ticks (8 x 10.7 s) plus the callback's trip: one exit is asked for per tick.
     uint256 internal constant LEAD = 120;
     uint256 internal constant MAX_WAIT = 900;
-    /// @dev The callback gas limit scripts/deploy-system.sh deploys (CALLBACK_GAS there; keep the two equal).
+    /// @dev The callback gas limit scripts/deploy-system.sh deploys (CALLBACK_GAS there; check-values.py compares).
     uint64 internal constant CB_GAS = 1_000_000;
     uint256 internal constant MAX_ACTIVE = 8;
     uint256 internal constant MAX_REACTIONS = 80;
