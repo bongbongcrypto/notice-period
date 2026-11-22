@@ -1,0 +1,97 @@
+{
+  "name": "2026-11-22",
+  "status": "deployed",
+  "note": "Made by the deploy-system workflow run deployRun from sourceCommit; scripts/deploy-system.sh printed this file. The smoke vault and every vault the maker makes are Morpho Vault V2 bytecode from Morpho's factory, so they are not in build; their check is isVaultV2 on that factory.",
+  "sourceCommit": "3f47b8c3449998bc955646f1c458aac4bbc29a51",
+  "commit": "3f47b8c3449998bc955646f1c458aac4bbc29a51",
+  "deployRun": 45007627595,
+  "registryKind": "maker",
+  "origin": {
+    "name": "Base Sepolia",
+    "chainId": 84532
+  },
+  "reactive": {
+    "name": "Reactive Lasna",
+    "chainId": 5318007
+  },
+  "contracts": {
+    "token": "0xA73cD0eCA5bda9c98EFdEc8bbc7c32684d36A5D7",
+    "maker": "0x373628f4D8edA26E5ced03a4ec76Fa38162f6cC5",
+    "morphoFactory": "0xE3a2CEbca662d99D0F279aF13a6bb8c9825D2ea0",
+    "exit": "0xc3451Dc97fBF3ba019524E68939192BEC4b83Fca",
+    "reactive": "0xb27F7223B83D3596868EAc0299Ab5B132b0B8D32",
+    "callbackProxy": "0x476F44b11F5C942c58f4c8E3d0300E5710743585"
+  },
+  "deployTxs": {
+    "token": "0x18d111b6cdcfad5f296564a861a6908fec2abbb166c9d83d4c699ec7efe241fc",
+    "maker": "0xd992fd83979a96fb63654c3185dc289ce228dee5bb55ab091809d48157452137",
+    "reactive": "0x0dbba8848725b02f16d5786c1c15a167676d33c903a50d3e68a39a2c3ce210a2",
+    "exit": "0xbab7446a141df7323096247306878218f825c83fa3b03713e79d1d6733eb3155"
+  },
+  "smokeVault": {
+    "address": "0xcB62521b048954261Ee83aA6a2E4990430BC5ec4",
+    "tx": "0x09bec92a9f1e1fe6ab3fbe8c1966216bcc52358de9f6ccdc7d41072510385795"
+  },
+  "build": [
+    {
+      "key": "token",
+      "chainId": 84532,
+      "address": "0xA73cD0eCA5bda9c98EFdEc8bbc7c32684d36A5D7",
+      "artifact": "src/demo/DemoToken.sol:DemoToken",
+      "constructorArgs": "0x",
+      "creationTx": "0x18d111b6cdcfad5f296564a861a6908fec2abbb166c9d83d4c699ec7efe241fc",
+      "creationBlock": 62089008
+    },
+    {
+      "key": "maker",
+      "chainId": 84532,
+      "address": "0x373628f4D8edA26E5ced03a4ec76Fa38162f6cC5",
+      "artifact": "src/morpho/MorphoVaultMaker.sol:MorphoVaultMaker",
+      "constructorArgs": "0x000000000000000000000000e3a2cebca662d99d0f279af13a6bb8c9825d2ea0000000000000000000000000a73cd0eca5bda9c98efdec8bbc7c32684d36a5d700000000000000000000000000000000000000000000000000000000000000b4",
+      "creationTx": "0xd992fd83979a96fb63654c3185dc289ce228dee5bb55ab091809d48157452137",
+      "creationBlock": 62089017
+    },
+    {
+      "key": "reactive",
+      "chainId": 5318007,
+      "address": "0xb27F7223B83D3596868EAc0299Ab5B132b0B8D32",
+      "artifact": "src/NoticeReactive.sol:NoticeReactive",
+      "constructorArgs": "0x0000000000000000000000000000000000000000000000000000000000014a34000000000000000000000000c3451dc97fbf3ba019524e68939192bec4b83fca04463f7c1651e6b9774d7f85c85bb94654e3c46ca79b0c16fb16d4183307b687000000000000000000000000000000000000000000000000000000000000007800000000000000000000000000000000000000000000000000000000000000c800000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000000003e80000000000000000000000000000000000000000000000000000000000000010",
+      "creationTx": "0x0dbba8848725b02f16d5786c1c15a167676d33c903a50d3e68a39a2c3ce210a2",
+      "creationBlock": 8963883
+    },
+    {
+      "key": "exit",
+      "chainId": 84532,
+      "address": "0xc3451Dc97fBF3ba019524E68939192BEC4b83Fca",
+      "artifact": "src/NoticeExit.sol:NoticeExit",
+      "constructorArgs": "0x000000000000000000000000476f44b11f5c942c58f4c8e3d0300e5710743585000000000000000000000000b27f7223b83d3596868eac0299ab5b132b0b8d32000000000000000000000000373628f4d8eda26e5ced03a4ec76fa38162f6cc50000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000003200000000000000000000000000000000000000000000000000000000000151800000000000000000000000000000000000000000000000000000000000000004",
+      "creationTx": "0xbab7446a141df7323096247306878218f825c83fa3b03713e79d1d6733eb3155",
+      "creationBlock": 62089046
+    }
+  ],
+  "operators": [
+    "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4",
+    "0x616FF5998E3e6AF794881Adf6Fe6cac62Cc29b19"
+  ],
+  "values": {
+    "VAULT_TIMELOCK": 180,
+    "LEAD": 120,
+    "MAX_WAIT": 200,
+    "CALLBACK_GAS": 1000000,
+    "MAX_ACTIVE": 1000,
+    "MAX_REACTIONS": 16,
+    "MAX_TIMED": 8,
+    "ARMS_PER_ADDRESS_PER_DAY": 4,
+    "ARMS_PER_DAY": 50,
+    "TIMED_ARMS_PER_DAY": 4,
+    "LIFETIME": 86400
+  },
+  "rules": {
+    "leaveNowExpires": false,
+    "timedCap": 8,
+    "timedArmsPerDay": 4,
+    "vaultSource": "maker"
+  },
+  "healthMinFloat": "4"
+}

@@ -17,7 +17,7 @@ on:
         default: system
       deployment:
         description: "system: name of deployments/<name>.json (vault maker or demo factory, token, exit, reactive)"
-        default: "2026-11-18"
+        default: "2026-11-22"
       hello_addresses:
         description: "hello only: HelloOrigin, HelloReactive, HelloCallback addresses, separated by spaces"
         default: ""

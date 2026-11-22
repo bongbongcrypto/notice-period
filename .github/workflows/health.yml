@@ -11,7 +11,7 @@ on:
     inputs:
       deployment:
         description: "name of deployments/<name>.json"
-        default: "2026-11-18"
+        default: "2026-11-22"
 
 permissions:
   contents: read
