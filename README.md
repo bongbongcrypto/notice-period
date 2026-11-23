@@ -60,9 +60,10 @@ and the deposit was back 1 s later
 ([`0x85724300…f549`](https://base-sepolia.blockscout.com/tx/0x85724300cdc2c5a21cf1f56c58133094f6f07e694644fa1d692368d296e1f549)),
 179 s before the change could run. That callback's transaction had a gas limit of 1,000,000 and used 174428.
 
-Runs 2 to 8 on these contracts followed the same day, each on a new vault made through `MorphoVaultMaker`. A run
+Runs 2 to 8 on these contracts followed the same day and runs 9 to 11 on 23 Nov 2026, each on a new vault made
+through `MorphoVaultMaker`. A run
 number here is the watch id, as on the page. The first key is the curator in every run; the second key is the
-depositor in runs 1, 5, 7 and 8. Seconds are differences of block times.
+depositor in runs 1, 5, 7, 8 and 10. Seconds are differences of block times.
 
 | | Run 3, a shorter waiting period | Run 4, a new allocator | Run 5, a new adapter after an ignored cap increase | Run 6, "wait for the deadline" |
 |---|---|---|---|---|
@@ -89,6 +90,13 @@ depositor in runs 1, 5, 7 and 8. Seconds are differences of block times.
   ([`0xe860137f…a96e`](https://base-sepolia.blockscout.com/tx/0xe860137fb6983df4a09fac39d4342304be2ede400c959321c8c88284f0e6a96e)).
 - Run 8 is a watch left on. A "leave now" watch has no end date on these contracts; a change will be scheduled on
   its vault later, to show a watch that waited days.
+- Runs 9 to 11, on 23 Nov 2026, cover the kinds the timer mode had not been run on, and the opt-in kind. Run 9,
+  "wait for the deadline" on a shorter waiting period: the deposit was back 63 s after the curator's transaction,
+  117 s before the change could run ([`0xb28dd039…e089`](https://base-sepolia.blockscout.com/tx/0xb28dd039c4677ebbf82ab16db773dbc0beb417bd355efc6e40db31dcb21ae089), [`0x3283ace2…546a`](https://lasna.reactscan.net/tx/0x3283ace2058d53ad2f8c00008a17e9ecb8fe3b52f01155f6a49fdc024fbb546a), [`0x87553a4a…078f`](https://base-sepolia.blockscout.com/tx/0x87553a4a5428ed035d68f8981e7f4945057eb2efc3848ab8fe025ad7c67b078f)).
+  Run 10, the same mode on a new allocator, with the second key as depositor: 70 s after, 110 s before
+  ([`0x23273662…527d`](https://base-sepolia.blockscout.com/tx/0x23273662123154ee91789ba32336500da3a19d87fa9b6be5d0b7dfb3d0a2527d), [`0x5c58356b…92a0`](https://lasna.reactscan.net/tx/0x5c58356b74abedcb3c1b4063b7c8b27f5241c913b45ca0d08b4118cbefb192a0), [`0xd5fb0d55…5aac`](https://base-sepolia.blockscout.com/tx/0xd5fb0d552aceccc3fd867c112cd279f2abbb1d5780e2b50d17885446f5f95aac)).
+  Run 11, a cap increase on a "leave now" watch that opted in: 1 s after, 179 s before
+  ([`0xa6a05292…d4f2`](https://base-sepolia.blockscout.com/tx/0xa6a052929d70b601b4545a2e9a69d1e71fd4e3f74c0b88eb381d7085c9d1d4f2), [`0x5e04016f…34cb`](https://lasna.reactscan.net/tx/0x5e04016fd5c3605adc92e24fa88d3ee5315bc56247db96ea5d0d2fc9d7a134cb), [`0x67d48fde…37a5`](https://base-sepolia.blockscout.com/tx/0x67d48fdeb74b26619f44f839e067b57d73d8f7aa3c9bcfb30665fdece41a37a5)).
 - The burst test: on run 1's vault, after its watch had ended, the curator scheduled three new adapters in one
   `multicall`
   ([`0x6d92a52c…bb8f`](https://base-sepolia.blockscout.com/tx/0x6d92a52c571396ca88227c30a7300399307649653a33389b642b58fcb23cbb8f), 09:41:08 UTC).
