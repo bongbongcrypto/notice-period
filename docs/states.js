@@ -12,6 +12,9 @@
   var WITHDRAW_NOW = { a: 'withdraw', label: 'Withdraw my deposit now' };
   var WITHDRAW_IF = { a: 'withdraw', label: 'Withdraw my deposit now', when: 'hasDeposit' };
   var STILL_IN = { t: 'Your 100 demo dollars are still in your vault. You can take them out now.', when: 'hasDeposit' };
+  /* While a confirmed transaction has no receipt for a long time (the "tx-slow" notice): read the chain again and go
+     on from what is there. A transaction sped up or cancelled in the wallet gets a new hash this page cannot follow. */
+  var CHECK_CHAIN = [{ a: 'back', label: 'Check the chain again', when: 'slowTx' }];
   /* The vault source of this deployment (config.js): a Morpho Vault V2 made through our maker, or our demo vault. */
   var V2 = NP.config.deployment.vaultSource === 'maker';
   /* How long a watch that can expire lasts, in words (the deployment's LIFETIME). */
@@ -176,6 +179,11 @@
       body: ['It was made more than about 3 hours ago, too long ago for this page to list its scheduled changes, so a watch on it could miss one. Take the deposit out and start with a fresh vault.'],
       actions: [{ a: 'withdraw-restart', label: 'Withdraw my 100 demo dollars', primary: true }]
     },
+    'vault-set-aside': {
+      step: 1, kind: 'stop', h: 'Your deposit is in a vault this page will not watch again',
+      body: ['Reactive Lasna refused or closed the last watch on this vault, and a new watch on it could go the same way. Take the 100 demo dollars out; the next run then makes a fresh vault.'],
+      actions: [{ a: 'withdraw-restart', label: 'Withdraw my 100 demo dollars', primary: true }]
+    },
     'step-deposit': {
       step: 1, kind: 'plain', h: 'Step 1. Deposit',
       body: [V2 ? 'One button, {n} wallet confirmations. A Morpho Vault V2 is made for you by Morpho’s own factory, through our maker contract, so you are also its curator.' :
@@ -186,13 +194,13 @@
     'depositing': {
       step: 1, kind: 'wait', h: 'Confirm in your wallet ({i} of {n})',
       body: [], lines: true,
-      actions: []
+      actions: CHECK_CHAIN
     },
     'confirm-rejected': {
       step: null, kind: 'stop', h: 'You rejected confirmation {i} of {n}',
-      body: ['Nothing was lost. The steps already done stay done.'],
+      body: ['Nothing was lost. The steps already done stay done. Continue asks for the same confirmation again; Back reads the chain and shows the step you are at, with all its choices.'],
       lines: true,
-      actions: [{ a: 'continue', label: 'Continue', primary: true }]
+      actions: [{ a: 'continue', label: 'Continue', primary: true }, { a: 'back', label: 'Back' }]
     },
     'would-fail': {
       step: null, kind: 'stop', h: 'This step would fail right now',
@@ -233,7 +241,7 @@
     'arming': {
       step: 2, kind: 'wait', h: 'Confirm in your wallet ({i} of {n})',
       body: [], lines: true,
-      actions: []
+      actions: CHECK_CHAIN
     },
     'armed-subscribing': {
       step: 2, kind: 'wait', h: 'Watch #{id} is on. Reactive is subscribing to your vault.',
@@ -276,7 +284,7 @@
     'scheduling': {
       step: 3, kind: 'wait', h: 'Confirm in your wallet (1 of 1)',
       body: ['You are scheduling the change as the vault’s curator.'],
-      actions: []
+      actions: CHECK_CHAIN
     },
     'scheduled': {
       step: 4, kind: 'wait', h: 'Change scheduled. Hands off now.',
@@ -346,14 +354,15 @@
     'watch-off': {
       step: null, kind: 'done', h: 'The watch is off',
       body: [{ t: 'Reactive drops its subscription when it sees the cancellation. Allowance left to the exit contract: {z}.', when: 'subscribedOff' },
-        { t: 'The watch is off on Base Sepolia. Reactive never subscribed to it. Allowance left to the exit contract: {z}.', when: 'refused' }],
+        { t: 'The watch is off on Base Sepolia. Reactive never subscribed to it. Allowance left to the exit contract: {z}.', when: 'refused' },
+        { t: 'No watch is on for this address and vault. Allowance left to the exit contract: {z}.', when: 'plainOff' }],
       actions: [{ a: 'remove-allowance', label: 'Remove the allowance', primary: true, when: 'hasAllowance' },
         { a: 'withdraw', label: 'Withdraw my deposit', when: 'hasDeposit' }, { a: 'again', label: 'Run again' }]
     },
     'recovering': {
       step: null, kind: 'wait', h: 'Confirm in your wallet ({i} of {n})',
       body: [], lines: true,
-      actions: []
+      actions: CHECK_CHAIN
     },
     'page-error': {
       step: null, kind: 'stop', h: 'This page hit a problem',
@@ -393,6 +402,12 @@
       actions: [{ a: 'open-exit', label: 'Open the exit contract on the explorer', href: 'exit', primary: true },
         { a: 'see-runs', label: 'See recent runs', href: '#runs' }]
     },
+    'run-no-return': {
+      step: null, kind: 'stop', h: 'Run #{id} ended without a return',
+      body: ['Its exit ran on Base Sepolia, but no deposit came back. {why}', 'So there is no returned deposit to replay. The transactions of this run are in the list of recent runs.'],
+      actions: [{ a: 'see-runs', label: 'See recent runs', href: '#runs', primary: true },
+        { a: 'open-exit', label: 'Open the exit contract on the explorer', href: 'exit' }]
+    },
     'reading-run': {
       step: null, kind: 'wait', h: 'Reading run #{id}',
       body: ['Looking up its three transactions on both chains.'],
@@ -412,7 +427,7 @@
     'rpc-hiccup': { h: 'A read failed',
       body: 'A public endpoint did not answer. The page keeps trying every second. Your run does not depend on this page: it goes on by itself.' },
     'tx-slow': { h: 'Still waiting for Base Sepolia',
-      body: 'This usually takes under 5 seconds. Your wallet may show the transaction as pending; you can speed it up there.' }
+      body: 'This usually takes under 5 seconds. Your wallet may show the transaction as pending. If you speed it up or cancel it there, it gets a new hash that this page does not follow: press “Check the chain again” then.' }
   };
 
   NP.copy = {
@@ -463,6 +478,8 @@
     checkOk: 'Checked against both chains just now.',
     checkFail: 'Could not re-check right now; this is the recorded copy from {date}.',
     checking: 'Reading the three receipts from both chains…',
+    txSlowWait: 'Waiting for the receipt of the transaction you confirmed.',
+    triedLogs: 'the one public endpoint that can search that far',
     watchStillOn: 'The watch is still on.',
     watchNone: 'No watch is on.',
     kindsNone: 'Pick at least one kind of change.',

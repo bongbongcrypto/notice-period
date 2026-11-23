@@ -607,6 +607,7 @@
     state: state, tickStrip: tickStrip, setHeadline: setHeadline, setPendingLine: setPendingLine, setKindsWarn: setKindsWarn,
     enableActions: enableActions, announce: announce, ctaOrder: ctaOrder,
     onAction: function (f) { handler = f; },
-    STATUS: STATUS
+    STATUS: STATUS,
+    OUTCOME: OUTCOME
   };
 }());

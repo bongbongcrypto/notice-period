@@ -15,8 +15,9 @@
   var S = { epoch: 0, id: 'idle', ctx: {}, me: null, kinds: 7, mode: 0, step: null, started: false, last: null, shared: {}, run: {},
     lines: null, flowState: null, pos: null, timelock: 180, processedHash: null, replayIndex: 0, linked: null,
     /* vaults this page session has seen: the block and the transaction each was created in, the scheduled changes read
-       so far, the share decimals, and the vaults not to reuse (Reactive refused a watch on them) */
-    made: {}, madeTx: {}, seen: {}, decimals: {}, avoid: {} };
+       so far, the share decimals, the vaults not to reuse (Reactive refused or closed a watch on them), and the
+       watches Reactive refused, by id (the chain stops saying so once such a watch is turned off) */
+    made: {}, madeTx: {}, seen: {}, decimals: {}, avoid: {}, refusedIds: {} };
   var data = { runs: [], next: null, ready: null, baseTs: null, float: null, liveOk: null };
   var framed = false;
   try { framed = window.top !== window.self; } catch (e) { framed = true; }
@@ -55,13 +56,16 @@
 
   function stop(id, ctx) { var e = new Error(id); e.flow = id; e.ctx = ctx || {}; return e; }
   function rpcFail(e) { return !!(e && (e.rpcDown || e.rpcError)); }
-  function rpcCtx(chain) {
+  /* tried: how many endpoints a failed log read asked (rpc.js getLogs asks only those that take the range in few
+     requests). A long search on Base Sepolia goes to one of the two, and the screen says so. */
+  function rpcCtx(chain, tried) {
     var n = cfg.chains[chain].endpoints.length;
+    if (tried === 1 && n > 1) return { chain: cfg.chains[chain].name, tried: copy.triedLogs };
     return { chain: cfg.chains[chain].name, tried: n === 1 ? 'its one public endpoint' : 'both public endpoints' };
   }
   function alive(my) { if (my !== S.epoch) { var e = new Error('cancelled'); e.cancelled = true; throw e; } }
   /* A log read that failed says nothing about the vault's age: the page asks to try again, it never calls the vault old. */
-  function unread() { return stop('rpc-down', rpcCtx('base')); }
+  function unread(pos) { return stop('rpc-down', rpcCtx('base', pos && pos.logsTried)); }
 
   function go(id, extra) {
     var def = NP.states[id];
@@ -80,7 +84,7 @@
     return Promise.resolve().then(function () { return fn(my); }).catch(function (e) {
       if (my !== S.epoch || (e && e.cancelled)) return;
       if (e && e.flow) return go(e.flow, e.ctx);
-      if (e && e.rpcDown) return go('rpc-down', rpcCtx(e.chain));
+      if (e && e.rpcDown) return go('rpc-down', rpcCtx(e.chain, e.logRead ? e.tried : undefined));
       console.error('[notice-period]', e);
       if (e && e.wallet) return go('wallet-error', { message: e.message });
       go('page-error', { message: String((e && e.message) || 'Unexpected error').slice(0, 200) });
@@ -210,7 +214,7 @@
       watchId: 0, base: null, lasna: null, armedAt: 0, fresh: false, created: null, createdTs: null, submits: [] };
     S.timelock = Number(BigInt(first[2])) || 180;
     var vault = dec.addr(first[0]);
-    if (same(vault, ZERO)) return pos;
+    if (same(vault, ZERO)) return sharePosition(pos, me);
     pos.vault = vault;
     var key = vault.toLowerCase();
     var calls = [
@@ -280,6 +284,7 @@
     } catch (e) {
       if (!rpcFail(e)) throw e;
       pos.logsFailed = true;
+      pos.logsTried = e.logRead ? e.tried : undefined;
       if (pos.fresh && S.seen[key]) pos.submits = S.seen[key].list.slice(); /* what was read before; may be incomplete */
     }
     if (pos.watchId) {
@@ -297,6 +302,12 @@
       pos.armedAt = Number(BigInt(w[0][1]));
       pos.lasna = w[1];
     }
+    return sharePosition(pos, me);
+  }
+
+  /* What the screens show of a position. Set on every read, also for an address that never made a vault: after a
+     switch of account nothing of the earlier address stays (its deposit, its watch, its watch number). */
+  function sharePosition(pos, me) {
     S.pos = pos;
     S.shared.address = me;
     S.shared.shares = shareUnits(pos.shares);
@@ -308,6 +319,7 @@
     /* Reactive Lasna refused this watch (status 4): the exit contract records it as on until its owner turns it off */
     S.shared.refused = !!(S.shared.hasWatch && pos.lasna && pos.lasna.status === 4);
     if (S.shared.hasWatch) { S.shared.id = pos.watchId; S.kinds = pos.base.kinds; }
+    else if (!pos.vault) S.shared.id = undefined;
     return pos;
   }
 
@@ -380,7 +392,9 @@
       alive(my);
       if (!rec && !slow && (now() - began) / 1000 > T.receiptSlow) {
         slow = true;
-        go(S.flowState, Object.assign({}, S.ctx, { notice: 'tx-slow', tx: hash }));
+        /* A speed-up or a cancel in the wallet replaces the transaction under another hash, which this loop
+           cannot see: the notice offers "Check the chain again" (states.js CHECK_CHAIN), which re-reads the chain. */
+        go(S.flowState, Object.assign({}, S.ctx, { notice: 'tx-slow', tx: hash, slowTx: true, waitText: copy.txSlowWait }));
       }
     }
     if (rec.status !== '0x1') {
@@ -440,9 +454,10 @@
     var need = gasNeed(!(active || pos.shares > 0n) && !planDeposit(pos).reuse);
     if (pos.eth < need) throw stop('no-gas', gasCtx(need));
     /* Reactive refused this watch: say so now, with the way to turn it off, instead of offering to continue. */
-    if (S.shared.refused) { refusedVault(pos.vault); throw stop('watch-refused', refusedCtx(copy.refusedGone)); }
+    if (S.shared.refused) { refusedVault(pos.vault, pos.watchId); throw stop('watch-refused', refusedCtx(copy.refusedGone)); }
     if (active || pos.shares > 0n) {
-      if (!active && !pos.fresh) throw pos.logsFailed ? unread() : stop('old-vault');
+      if (!active && setAside(pos)) throw stop('vault-set-aside');
+      if (!active && !pos.fresh) throw pos.logsFailed ? unread(pos) : stop('old-vault');
       var ts = active ? pos.armedAt : null;
       if (!ts && pos.created) ts = await rpc.blockTs('base', rpc.hex(pos.created));
       alive(my);
@@ -454,8 +469,14 @@
   }
 
   /* A watch Reactive refused stays on in the exit contract until its owner turns it off. A vault with three watches
-     already (code 4) would refuse the next one too, so after a refusal this session starts a fresh vault. */
-  function refusedVault(vault) { if (vault) S.avoid[vault.toLowerCase()] = true; }
+     already (code 4) would refuse the next one too, so after a refusal this session starts a fresh vault: the vault
+     is set aside (never reused empty, never armed again), and the refused watch is remembered by its id. */
+  function refusedVault(vault, watchId) {
+    if (vault) S.avoid[vault.toLowerCase()] = true;
+    if (watchId) S.refusedIds[watchId] = true;
+  }
+  /* A deposit still in a vault that was set aside: the only way on is to take it out (state vault-set-aside). */
+  function setAside(pos) { return !!(pos.vault && pos.shares > 0n && S.avoid[pos.vault.toLowerCase()]); }
   function refusedReason(code) {
     if (code === 3) return copy.refused3;
     if (code === 4) return copy.refused4;
@@ -494,13 +515,13 @@
       S.run = { watchId: pos.watchId, baseFrom: pos.created || Math.max(0, pos.head.number - 2000),
         lasnaFrom: Math.max(0, lh.number - cfg.chains.lasna.endpoints[0].maxRange + 1), attempt: 1 };
       S.run.lasnaFromSubmit = S.run.lasnaFrom;
-      if (ls === 4) { refusedVault(pos.vault); throw stop('watch-refused', refusedCtx(copy.refusedGone)); }
+      if (ls === 4) { refusedVault(pos.vault, pos.watchId); throw stop('watch-refused', refusedCtx(copy.refusedGone)); }
       if (ls === 0) { go('armed-subscribing'); return watchSubscription(my); }
       var pending = watchedPending(pos);
       if (!pending && pos.logsFailed) {
         /* The vault's scheduled changes could not be read. A run this session is already following goes on;
            otherwise the page asks to try again instead of guessing that nothing is pending. */
-        if (!keep) throw unread();
+        if (!keep) throw unread(pos);
         S.run = keep;
         S.run.shift = 0;
         showWait();
@@ -542,7 +563,8 @@
       if (ended) return finish(my, ended);
     }
     if (pos.shares > 0n) {
-      if (!pos.fresh) throw pos.logsFailed ? unread() : stop('old-vault');
+      if (setAside(pos)) throw stop('vault-set-aside');
+      if (!pos.fresh) throw pos.logsFailed ? unread(pos) : stop('old-vault');
       return showDeposited(pos);
     }
     return showStepDeposit(my, pos);
@@ -589,7 +611,7 @@
     var pos = await readPosition();
     alive(my);
     if (S.shared.hasWatch || (pos.shares > 0n && pos.fresh)) return continueFrom(my);
-    if (pos.shares > 0n && pos.logsFailed) throw unread();
+    if (pos.shares > 0n && pos.logsFailed) throw unread(pos);
     var plan = planDeposit(pos);
     var need = gasNeed(!plan.reuse);
     if (pos.eth < need) throw stop('no-gas', gasCtx(need));
@@ -662,7 +684,8 @@
     var pos = await readPosition();
     alive(my);
     if (S.shared.hasWatch || pos.shares === 0n) return continueFrom(my);
-    if (!pos.fresh) throw pos.logsFailed ? unread() : stop('old-vault');
+    if (setAside(pos)) throw stop('vault-set-aside');
+    if (!pos.fresh) throw pos.logsFailed ? unread(pos) : stop('old-vault');
     if (!cfg.flags.unprovenKinds) S.kinds |= 1;
     if (!S.kinds) return showDeposited(pos);
     var blk = await capsBlock(S.mode);
@@ -710,7 +733,7 @@
         var log = logs[0];
         if (log.topics[0] === EV['WatchRefused(uint256,uint8)']) {
           var code = dec.num(log.data, 0);
-          refusedVault(S.pos && S.pos.vault);
+          refusedVault(S.pos && S.pos.vault, S.shared.id);
           S.shared.refused = true;
           throw stop('watch-refused', refusedCtx(refusedReason(code)));
         }
@@ -1004,7 +1027,8 @@
 
   /* ---------- recovery: nothing may trap funds or block a new run ---------- */
 
-  function recoverFlow(kinds, then) {
+  /* prev: the live values of the "watch-off" screen this step was started from, if it was. */
+  function recoverFlow(kinds, then, prev) {
     return async function (my) {
       var pos = await readPosition();
       alive(my);
@@ -1013,10 +1037,15 @@
         if (k === 'cancel') return S.shared.hasWatch;
         return pos.exitAllow > 0n;
       });
+      /* Asked to withdraw, and no shares are left: nothing is sent, so nothing was "withdrawn by hand". The exit may
+         have landed after this page stopped looking for it; the chain says what happened (continueFrom finds the
+         watch's end and shows the result). */
+      if (!todo.length && kinds.length === 1 && kinds[0] === 'withdraw') return continueFrom(my);
       var labels = { withdraw: 'Withdraw your deposit', cancel: 'Turn the watch off', allowance: 'Remove the allowance' };
       var before = pos.token;
-      /* a watch Reactive Lasna refused was never subscribed: the "off" screen says so */
-      var wasRefused = !!S.shared.refused;
+      /* a watch Reactive Lasna refused was never subscribed: the "off" screen says so. The live flag is gone once
+         the watch is off (or when Reactive Lasna does not answer), so the session's own note of the refusal counts too. */
+      var wasRefused = !!S.shared.refused || !!(pos.watchId && S.refusedIds[pos.watchId]);
       if (todo.length) {
         S.lines = todo.map(function (k) { return { label: labels[k], status: 'todo', kind: k }; });
         S.flowState = 'recovering';
@@ -1038,7 +1067,11 @@
       if (kinds[0] === 'withdraw' && kinds.length === 1) {
         return go('withdrawn-by-hand', { assets: units(after.token - before), watchLine: S.shared.hasWatch ? copy.watchStillOn : copy.watchNone });
       }
-      return go('watch-off', { refused: wasRefused, subscribedOff: !wasRefused });
+      /* The sentence about Reactive's side belongs to a cancellation sent just now. A later step from the "off" screen
+         (removing the allowance) keeps the sentence that screen had; with no cancellation at all, neither is said. */
+      if (todo.indexOf('cancel') >= 0) return go('watch-off', { refused: wasRefused, subscribedOff: !wasRefused, plainOff: false });
+      if (prev) return go('watch-off', { refused: !!prev.refused, subscribedOff: !!prev.subscribedOff, plainOff: !!prev.plainOff });
+      return go('watch-off', { refused: false, subscribedOff: false, plainOff: true });
     };
   }
 
@@ -1098,12 +1131,15 @@
       return b.id - a.id;
     });
   }
+  /* A run with its three transactions whose exit returned the deposit: the only kind the replay and the first screen
+     draw (their words are "deposit back"). */
+  function returnedRun(r) { return !!(r && r.r1 && r.r2 && r.r3 && r.r3.outcome === 0); }
   function latestNow(list) {
     return list.filter(function (r) { return r.r3 && r.r3.outcome === 0 && r.mode === 0; }).sort(function (a, b) { return b.r1.ts - a.r1.ts; })[0] || null;
   }
   /* A page opened with #run=N shows that run on its first screen, so the address and the screen agree without a scroll. */
   function showHero(list, state, retry) {
-    var linked = S.linked === null ? null : list.filter(function (r) { return r.id === S.linked && r.r1 && r.r2 && r.r3; })[0];
+    var linked = S.linked === null ? null : list.filter(function (r) { return r.id === S.linked && returnedRun(r); })[0];
     view.latest(linked || latestNow(list), state, retry, !!linked);
   }
 
@@ -1245,14 +1281,14 @@
 
   /* ---------- replay and #run=N ---------- */
 
-  function playable() { return data.runs.filter(function (r) { return r.r1 && r.r2 && r.r3; }); }
+  function playable() { return data.runs.filter(returnedRun); }
 
   function replayFlow(pick) {
     return async function (my) {
       await Promise.race([data.ready, rpc.sleep(1500)]);
       alive(my);
       var list = playable();
-      if (!list.length) list = NP.recorded.runs.slice();
+      if (!list.length) list = NP.recorded.runs.filter(returnedRun);
       var run = typeof pick === 'number' ? list.filter(function (r) { return r.id === pick; })[0] : null;
       if (pick === 'next') run = list[(S.replayIndex + 1) % list.length];
       if (!run) run = latestNow(list) || list[0];
@@ -1311,17 +1347,23 @@
       S.step = null;
       go('reading-run', { id: n });
       var find = function () {
-        return playable().concat(NP.recorded.runs).filter(function (r) { return r.id === n && r.r1 && r.r2 && r.r3; })[0];
+        return playable().concat(NP.recorded.runs).filter(function (r) { return r.id === n && returnedRun(r); })[0];
+      };
+      /* a run whose exit ran and returned nothing (nothing to redeem, or the vault refused): listed, never replayed */
+      var noReturn = function () {
+        return data.runs.concat(NP.recorded.runs).filter(function (r) { return r.id === n && r.r1 && r.r3 && r.r3.outcome !== 0; })[0];
       };
       /* The recorded copy is already in the page: a slow endpoint does not hold the replay back. */
       await Promise.race([data.ready, rpc.sleep(1500)]);
       alive(my);
       var run = find();
-      if (!run) { await data.ready; alive(my); run = find(); }
+      if (!run && !noReturn()) { await data.ready; alive(my); run = find(); }
       if (run) {
         S.replayIndex = Math.max(0, playable().map(function (r) { return r.id; }).indexOf(n));
         return replay(my, run);
       }
+      var ended = noReturn();
+      if (ended) throw stop('run-no-return', { id: n, why: (view.OUTCOME[ended.r3.outcome] || 'Not returned') + '.' });
       if (data.next === null) data.next = Number(BigInt(await rpc.ethCall('base', C.exit, enc.noArg('nextWatchId()'))));
       alive(my);
       if (n < 1 || n >= data.next) {
@@ -1384,6 +1426,12 @@
       case 'replay': return runFlow(replayFlow(), false);
       case 'replay-next': return runFlow(replayFlow('next'), false);
       case 'retry': return runFlow(S.last || preflight);
+      /* read the chain again and show the step it is at, with all its choices: after a rejected confirmation, or
+         while a confirmed transaction has no receipt (it may have been replaced in the wallet) */
+      case 'back':
+        /* from a step started on the result screen (its leftover allowance): back to that result, not to step 1 */
+        if (S.returnedCtx && S.returnedFlow && S.last === S.returnedFlow) { S.epoch += 1; return go('returned', S.returnedCtx); }
+        return runFlow(continueFrom);
       case 'continue': return runFlow(S.id === 'resume' ? continueFrom : (S.last || preflight), S.id !== 'resume' ? undefined : false);
       case 'switch':
         return runFlow(async function (my) {
@@ -1418,8 +1466,12 @@
       case 'cancel': return runFlow(recoverFlow(['cancel']));
       case 'cancel-withdraw': return runFlow(recoverFlow(['cancel', 'withdraw']));
       case 'remove-allowance':
-        if (S.id === 'returned') S.returnedCtx = S.ctx;
-        return runFlow(recoverFlow(['allowance'], S.id === 'returned' ? 'returned' : null));
+        if (S.id === 'returned') {
+          S.returnedCtx = S.ctx;
+          S.returnedFlow = recoverFlow(['allowance'], 'returned');
+          return runFlow(S.returnedFlow);
+        }
+        return runFlow(recoverFlow(['allowance'], null, S.id === 'watch-off' ? S.ctx : null));
       case 'again':
       case 'restart':
         S.me = wallet.account() || S.me;
@@ -1481,6 +1533,10 @@
       if (!S.me || same(next, S.me)) return;
       if (!S.started) {
         S.me = next;
+        /* nothing of the earlier address stays: its deposit, its watch and its run are not the new address's */
+        S.shared = {};
+        S.run = {};
+        S.kinds = 7;
         if (next && ['no-gas', 'checking', 'runs-used-up', 'address-used-up', 'resume', 'old-vault'].indexOf(S.id) >= 0) runFlow(preflight);
         return;
       }

@@ -122,12 +122,14 @@
 
   /* eth_getLogs over [from, to]. Each endpoint is asked in the windows it accepts: the first one whole if it can,
      the next one only when the first does not answer or answers with an error. An endpoint that would need more
-     than 12 windows for the range is not asked at all. */
+     than 12 windows for the range is not asked at all. When none answers, the error says how many were asked
+     (tried) and that it was a log read (logRead), so the page does not claim more endpoints than it tried. */
   function getLogs(chain, filter, from, to) {
     from = Math.max(0, from);
     var span = to - from + 1;
     var eps = cfg.chains[chain].endpoints.filter(function (ep) { return Math.ceil(span / ep.maxRange) <= 12; });
-    if (!eps.length) return Promise.reject(RpcDown(chain, 0));
+    function down() { var e = RpcDown(chain, eps.length); e.logRead = true; return e; }
+    if (!eps.length) return Promise.reject(down());
     var k = 0;
     function windows(ep) {
       var out = [];
@@ -148,7 +150,7 @@
       return step();
     }
     function next() {
-      if (k >= eps.length) return Promise.reject(RpcDown(chain, eps.length));
+      if (k >= eps.length) return Promise.reject(down());
       var ep = eps[k++];
       return windows(ep).catch(function (err) {
         if (err && (err.rpcDown || err.rpcError)) return next();
