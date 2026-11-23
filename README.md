@@ -8,6 +8,11 @@ side) and Reactive Lasna (the reactive contract). No server, no key that can sen
 happens only because the vault emitted its own `Submit` event, the network delivered the callback, and the redeem
 pays the depositor and nobody else.
 
+Live page: <https://bongbongcrypto.github.io/notice-period/>. It replays any recorded run from the chains' own
+receipts, and it walks a visitor with a test wallet through a run of their own.
+
+![The first screen of the page on 23 Nov 2026: the latest recorded run, with its three transactions](media/first-screen.png)
+
 The rule book is [SPEC.md](SPEC.md). The page is in [`docs/`](docs): plain HTML, CSS and JavaScript, no build step and
 no third-party script. Open `docs/index.html`, or serve the folder (`python -m http.server 8000 --bind 127.0.0.1`
 inside `docs/`).
@@ -69,6 +74,8 @@ times.
 So far on these contracts: twelve watches, all our own tests. Nine ended in an exit (six "leave now",
 three "wait for the deadline"), two were turned off by their owners (run 2, and run 7 after its change was
 revoked) and one is still on (run 8).
+
+![The page's table of recent runs on 23 Nov 2026](media/recent-runs.png)
 
 | | Run 3, a shorter waiting period | Run 4, a new allocator | Run 5, a new adapter after an ignored cap increase | Run 6, "wait for the deadline" |
 |---|---|---|---|---|
@@ -335,6 +342,7 @@ Choices worth knowing:
 | `scripts/` | CI toolchain setup, the mutation check, deploy and loop scripts, the local dry run, run records and their checker, bytecode match, the mainnet replay |
 | `deployments/`, `records/`, `status/` | Addresses of each deployment, one file per recorded run, results of the mainnet replay and of the bytecode match (`verify.yml`) |
 | `docs/` | The page: a guided run with a browser wallet, a replay of the recorded runs, live reads from both chains. Testing notes in `docs/TESTING.md` |
+| `media/` | Two screenshots of the hosted page, shown in this file |
 
 ## Checks
 
