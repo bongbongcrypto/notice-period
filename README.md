@@ -191,8 +191,9 @@ and the deposit was back 1 s later
 ## Check every claim in ten minutes
 
 1. **The three records belong together.** Open the three links of a run. In run 1 Reactive's transaction names
-   the Base Sepolia transaction as its origin. In run 2 the origin is the timer tick, and the Base Sepolia hash is a
-   topic of the `ExitRequested` log. In both, the withdrawal's `WatchEnded` log carries the same hash.
+   the Base Sepolia transaction as its origin (on both deployments). In a "wait for the deadline" run (run 6 of
+   22 Nov, run 2 of 18 Nov) the origin is the timer tick, and the Base Sepolia hash is a topic of the
+   `ExitRequested` log. In both, the withdrawal's `WatchEnded` log carries the same hash.
 2. **The deposit went to its owner.** In the withdrawal the demo dollars move from the vault to the depositor.
    In [`src/NoticeExit.sol`](src/NoticeExit.sol) the receiver is read from the watch in storage (`_end`), never
    from the callback's arguments.
@@ -206,13 +207,20 @@ and the deposit was back 1 s later
 6. **Re-derive it yourself.** With Python 3 and nothing else installed:
    - `python scripts/runs.py --check` reads every receipt of the recorded runs ([`records/`](records)) from public
      endpoints and stops unless the three hashes carry the same origin, the exit landed before the change could
-     run, and the tokens went from the vault to the watch owner in the amount `WatchEnded` reports;
+     run, and the tokens went from the vault to the watch owner in the amount `WatchEnded` reports (add
+     `2026-11-22` or `2026-11-18` to check one deployment);
    - `python scripts/replay_mainnet.py` repeats the replay below.
 
-7. **The code on chain is this source.** All four contracts and the two vaults of runs 1 and 2 are verified with an
+7. **The code on chain is this source.** The four contracts of 22 Nov match their source exactly on Sourcify
+   ([`NoticeExit`](https://repo.sourcify.dev/84532/0xc3451Dc97fBF3ba019524E68939192BEC4b83Fca),
+   [`NoticeReactive` on Lasna](https://repo.sourcify.dev/5318007/0xb27F7223B83D3596868EAc0299Ab5B132b0B8D32)); their
+   bytecode comparison is in [`status/bytecode-2026-11-22.json`](status/bytecode-2026-11-22.json) (four of four,
+   `verify` run [45008039542](https://github.com/bongbongcrypto/notice-period/actions/runs/45008039542)).
+   On the 18 Nov deployment all four contracts and the two vaults of runs 1 and 2 are verified with an
    exact match on Sourcify ([`NoticeExit`](https://repo.sourcify.dev/84532/0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8),
-   [`NoticeReactive` on Lasna](https://repo.sourcify.dev/5318007/0x00E4996c7255B919B619902E1Ac4b254D3c3f014)), and
-   Blockscout shows the Base Sepolia ones as verified (follow the addresses above). The `verify` workflow
+   [`NoticeReactive` on Lasna](https://repo.sourcify.dev/5318007/0x00E4996c7255B919B619902E1Ac4b254D3c3f014)).
+   Blockscout shows the Base Sepolia contracts of both deployments as verified (follow the addresses above). For
+   18 Nov the `verify` workflow
    (run [44993160761](https://github.com/bongbongcrypto/notice-period/actions/runs/44993160761)) built the
    deployment's source commit, compared it with the code on chain first without any third party
    (`scripts/bytecode_match.py`, result in [`status/bytecode-2026-11-18.json`](status/bytecode-2026-11-18.json): six of
@@ -236,12 +244,12 @@ as the callback proxy would. Nothing was sent; the result is in
 
 ## What each Reactive feature does here
 
-| Feature | What it does here | What breaks without it | Where |
+| Feature | What it does here | Without it | Where |
 |---|---|---|---|
-| Event subscription with topic filters | The trigger: the vault's address, the `Submit` topic and the selector of each kind the depositor chose | A server that polls the chain and holds a hot key. With a wildcard filter, any stranger's contract could bill ours into debt and switch the exit off | `NoticeReactive._onArmed`, `_filter` |
-| Subscribe and unsubscribe at runtime | One topic filter per kind of change the depositor chose on the vault (three for the default watch; a cap increase adds two), subscribed when the watch is turned on. Watches on the same vault share filters by count, so the last one to end unsubscribes | One hard-coded vault, and fees for watches nobody holds | `NoticeReactive._filter` (reference-counted) |
+| Event subscription with topic filters | The trigger: the vault's address, the `Submit` topic and the selector of each kind the depositor chose | A bot that watches the chain and holds a key to send the exit. Without the vault-address filter, a stranger's contract could emit matching events, bill ours into debt and switch the exit off | `NoticeReactive._onArmed`, `_filter` |
+| Subscribe and unsubscribe at runtime | One topic filter per kind of change the depositor chose on the vault (three for the default watch; a cap increase adds two), subscribed when the watch is turned on. Watches on the same vault share filters by count, so the last one to end unsubscribes | Filters fixed in advance, and fees for filters no watch uses | `NoticeReactive._filter` (reference-counted) |
 | A timer that runs only while a change is waiting | The second mode: store the change, ask for the exit `LEAD` seconds before it can run, stay if the curator revokes | Only "leave now". Left on all the time, the timer would spend the float while idle | `NoticeReactive._cronFilter`, `_onTick` |
-| Callback through the callback proxy | The redeem on the vault's chain | Nothing moves the deposit. With a weaker check anyone could force an exit; the funds would still go only to their owner | `NoticeReactive._fire`, `NoticeExit.exit` |
+| Callback through the callback proxy | The redeem on the vault's chain | Nothing moves the deposit. Without the caller check anyone could force an exit; the deposit would still go only to its owner | `NoticeReactive._fire`, `NoticeExit.exit` |
 | Blocks about one second apart | In run 1 of the 22 Nov 2026 contracts Reactive's transaction landed within a second of the vault's event, and the deposit was back 1 s later | The exit would still beat a waiting period of days. It counts when the notice is short, as in the 3-minute demo | the run table above |
 
 ## Prior art, and why an exit
@@ -256,8 +264,8 @@ as the callback proxy would. Nothing was sent; the result is in
 - Reactive's own demos cover stop orders and liquidation protection, which trigger on price. This one triggers on a
   governance event and acts for the depositor, not for the protocol.
 
-None of these withdraws for a depositor. Whether another tool does was searched for and not found; it was not an
-exhaustive search.
+None of these withdraws for a depositor. We found no tool that exits for one depositor when a vault change is
+scheduled; the search was not exhaustive.
 
 ## Limits, said plainly
 
@@ -309,6 +317,7 @@ Choices worth knowing:
 | `src/NoticeExit.sol` | Base Sepolia. Keeps the watches, redeems a depositor's shares to that depositor on the network's callback |
 | `src/NoticeReactive.sol` | Lasna. Subscribes to the watched vaults' `Submit` (and `Revoke` in mode 1) and to the CRON tick while a change waits; asks for the exit |
 | `src/demo/` | Our own demo token and ERC-4626 demo vault with a Morpho Vault V2 style timelock (`Submit`, `Revoke`, `Accept`). Test only, not Morpho's vault |
+| `src/morpho/` | `MorphoVaultMaker`: asks Morpho's `VaultV2Factory` for a Vault V2 and hands it to the caller (the 22 Nov deployment) |
 | `src/hello/` | The smallest full loop: an event on Base Sepolia, a reactive transaction on Lasna, a callback on Base Sepolia |
 | `test/` | Unit, attack, fuzz, invariant and real-log fixture tests, with a mock system contract and callback proxy |
 | `scripts/` | CI toolchain setup, the mutation check, deploy and loop scripts, the local dry run, run records and their checker, bytecode match, the mainnet replay |
