@@ -1,5 +1,6 @@
 /* The guided run: a state machine driven by chain reads and wallet answers, never by a guess.
-   The step is recomputed from the chain (lastVaultOf, balances, activeWatchOf, watchOf), so a reload resumes.
+   The step is recomputed from the chain (lastVaultOf, balances, activeWatchOf, watchOf), so a reload resumes a run
+   that is not finished; one whose exit landed while the tab was closed is in Recent runs, not shown as the result.
    The page keeps nothing in browser storage. */
 (function () {
   'use strict';

@@ -133,6 +133,13 @@ jobs:
           node --check scripts/test-page-walk.mjs
           node scripts/test-page-walk.mjs
 
+      - name: Page chain reads (docs/rpc.js against endpoints the test plays, no network)
+        run: |
+          # docs/ pushes alone skip this workflow (paths-ignore): a change to docs/rpc.js is run here by workflow_dispatch
+          node --check docs/rpc.js
+          node --check scripts/test-rpc.mjs
+          node scripts/test-rpc.mjs
+
       - name: Offline self-tests (Keccak, bytecode match, run records, deployment file)
         run: |
           python3 -c 'import sys; sys.path.insert(0, "scripts"); import keccak; keccak.self_test(); print("keccak self-test passed")'

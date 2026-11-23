@@ -389,8 +389,10 @@ on Base Sepolia; balances read before and after each loop; reactive gas price 10
   before its first deposit and skew the share price: with 50 sent first, a deposit of 100 mints 1 share that
   redeems for 75; with 100 or more sent first, the deposit reverts with `ZeroShares`. The address of the next
   vault can be computed in advance (plain `CREATE` from the factory). This is the demo vault's weakness, not the
-  exit contract's: `NoticeExit` redeems whatever the shares are worth, to the owner. The page refuses to deposit
-  into a vault that already holds demo dollars and makes a new one; the contracts as deployed do not prevent it.
+  exit contract's: `NoticeExit` redeems whatever the shares are worth, to the owner. The page prices a deposit of
+  100 with the vault's own `previewDeposit` and `previewRedeem` before depositing and refuses a vault that would pay
+  back less than 99 of it (and checks the shares' worth again after the deposit), then makes a new one; a gift small
+  enough to keep that price passes. The contracts as deployed do not prevent it.
   A fix (assets tracked in storage, or a vault address salted with the creator) needs a new deployment.
 - The demo pays for watches from an operator float; user-paid watches are later scope.
 - One origin chain (Base Sepolia) in this version.
@@ -458,7 +460,8 @@ fails a test), and a mock callback proxy writes the requesting contract's addres
 as the network does. Real logs (a Morpho V2 `Submit` from Base, a Cron10 tick from Lasna) are decoded in
 fixture tests.
 
-Checks in CI on every push: unit and attack tests (each refusal test next to a sibling call that succeeds), fuzz
+Checks in CI on every push that changes code (pushes of the page in `docs/` or of prose alone skip it, and it can
+be run by hand): unit and attack tests (each refusal test next to a sibling call that succeeds), fuzz
 tests, an invariant run with random visitor, curator, clock and attacker actions (the exit contract never
 holds tokens or shares, tokens go only to their depositor, no visitor's wallet plus shares is ever worth more
 than they put in (rounding aside), both chains agree on each watch's status, the CRON

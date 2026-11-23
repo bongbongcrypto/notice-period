@@ -330,7 +330,8 @@ Choices worth knowing:
 
 - No library on the page: ABI encoding, wallet access (EIP-6963 and EIP-1193) and RPC reads are written here, so
   the page loads nothing from anywhere else and its Content-Security-Policy can say so.
-- The page keeps nothing in browser storage. Its step is recomputed from the chain, so a reload resumes.
+- The page keeps nothing in browser storage. Its step is recomputed from the chain, so a reload resumes a run that
+  is not finished. A run whose deposit came back while the tab was closed shows in Recent runs, not as the result.
 - The toolchain is pinned by checksum and the libraries by commit; deployments run only by hand in CI, with the
   testnet key in an environment secret and nowhere else.
 

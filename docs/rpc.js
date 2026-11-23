@@ -1,5 +1,6 @@
 /* Reads from the two public test chains through the page's own endpoints, never through the wallet.
-   Each endpoint is tried twice before the next one; when all fail the error says which chain. */
+   Each endpoint is tried twice before the next one; when all fail the error says which chain.
+   scripts/test-rpc.mjs runs this file against endpoints it plays itself (CI). */
 (function () {
   'use strict';
   var NP = window.NP = window.NP || {};
@@ -54,6 +55,20 @@
     return (wait ? sleep(wait) : Promise.resolve()).then(function () { return NP.rpc.post(url, body); });
   }
 
+  /* An error the endpoint sent in place of an answer (a rate limit, an overload, a node behind the others) says nothing
+     about the chain: the request is treated as failed and the next endpoint is asked. The chain's own refusal, a revert
+     or a failed execution, is an answer: it goes back to the caller and is never retried. For a batch, one refused item
+     sends the whole batch to the next endpoint. */
+  var CHAIN_ANSWER = /revert|out of gas|invalid opcode|vm exception|invalid jump|stack (underflow|overflow)/i;
+  function refusal(json) {
+    var list = Array.isArray(json) ? json : [json];
+    for (var k = 0; k < list.length; k++) {
+      var er = list[k] && list[k].error;
+      if (er && er.code !== 3 && !CHAIN_ANSWER.test(String(er.message || ''))) return er;
+    }
+    return null;
+  }
+
   function attempt(chain, body, pick) {
     var eps = cfg.chains[chain].endpoints.filter(pick || function () { return true; });
     var i = 0;
@@ -64,10 +79,16 @@
       i += 1;
       tries += 1;
       return paced(ep.url, body).then(function (json) {
+        var er = refusal(json);
+        if (er) {
+          var e = new Error('Refused: ' + (er.message || er.code));
+          e.refused = true;
+          throw e;
+        }
         return { json: json, endpoint: ep };
       }).catch(function (err) {
         if (err && err.rpcError) throw err;
-        var backoff = err && err.http === 429 ? 2000 : 250;
+        var backoff = err && err.http === 429 ? 2000 : err && err.refused ? 1000 : 250;
         return sleep(backoff).then(function () { return next(err); });
       });
     }
