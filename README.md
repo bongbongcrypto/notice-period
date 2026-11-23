@@ -264,9 +264,9 @@ exhaustive search.
   address, and 8 "wait for the deadline" watches at a time (4 new a day), because Reactive fees are paid from our
   float. On the 18 Nov contracts every watch lasted one day, with 10 a day for everyone, 2 per address and 8 at a time.
 - A watch is served only while our float on Reactive Lasna is above zero; the page shows the float and any debt
-  live. On one vault only the first three watches are served: a fourth is refused on Reactive Lasna and stays on
-  in the exit contract's record until its owner turns it off. If the vault refuses the redeem, the watch ends
-  without a retry. A version for real use would have each depositor fund their own watch; that is not built.
+  live. One vault holds at most three watches at a time: a fourth is refused on Reactive Lasna and stays on in
+  the exit contract's record until its owner turns it off, and a place frees when one of the three ends. If the
+  vault refuses the redeem, the watch ends without a retry. A version for real use would have each depositor fund their own watch; that is not built.
 - A change with no waiting period leaves no time to exit.
 - Every kind has a recorded exit on testnet, sent by our own loop workflow. On the 22 Nov contracts: the three kinds
   a watch covers by default, in runs 1, 3, 4 and 5; on the 18 Nov contracts also the opt-in cap increase, in run 7.

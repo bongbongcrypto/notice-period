@@ -211,7 +211,7 @@ with tempfile.TemporaryDirectory() as tmp:
     expect("maker shape: a leave-now watch does not expire, a timer watch can be ended after the lifetime",
            int("watch does not expire" not in html6 or "can be ended by anyone one day after" not in html6), 0)
     expect("maker shape: the float and the three-per-vault limit stand next to it",
-           int("only the first three watches are served" not in html6 or "only while our float" not in html6), 0)
+           int("at most three watches at a time" not in html6 or "only while our float" not in html6), 0)
     expect("maker shape: waiting period and caps from the values",
            int("waits 180 seconds" not in html6 or "4 per address, 50 for everyone" not in html6
                or "8 at a time and 4 new a day" not in html6), 0)

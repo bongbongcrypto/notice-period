@@ -199,9 +199,10 @@ def render_demolimits(doc):
         # the limits that stand next to "does not expire" (NoticeReactive MAX_WATCHES_PER_VAULT = 3, REFUSE_VAULT_FULL;
         # NoticeExit ends a watch whose redeem the vault refuses, without a retry)
         items.append("A watch is served only while our float on Reactive Lasna is above zero; the page shows the float "
-                     "and any debt live. On one vault only the first three watches are served: a fourth is refused on "
-                     "Reactive Lasna and stays on in the exit contract&rsquo;s record until its owner turns it off. If the "
-                     "vault refuses the redeem, the watch ends without a retry. A version for real use would have each "
+                     "and any debt live. One vault holds at most three watches at a time: a fourth is refused on "
+                     "Reactive Lasna and stays on in the exit contract&rsquo;s record until its owner turns it off, and a "
+                     "place frees when one of the three ends. If the vault refuses the redeem, the watch ends without a "
+                     "retry. A version for real use would have each "
                      "depositor fund their own watch; that is not built.")
         caps = (f"Watches turned on per UTC day: {v['ARMS_PER_ADDRESS_PER_DAY']} per address, {v['ARMS_PER_DAY']} for "
                 "everyone.")
