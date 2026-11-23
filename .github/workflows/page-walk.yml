@@ -7,12 +7,15 @@ name: page-walk
 # receipt from the public endpoints and checks them itself.
 # The wallet signs with key A (the testnet key) or key B (derived from it and masked by scripts/chain.sh), and only
 # the calls listed in the script's header: to the demo dollar, the vault maker and the exit contract of the deployment
-# file below, and to the walk's own vault (made by this walk, or the key's last vault from the maker). Only the hosted
-# page can be walked. Manual only, inside the "testnet" environment (main branch only: a deployment-branch rule of that
-# environment on GitHub, not of this file), never at the same time as another job that sends with the key
-# (concurrency group testnet-key).
-# Key B is never funded here (a loop dispatch with depositor b tops it up). A walk arms one watch, which counts against
-# the deployment's daily arms per address (4 on the 22 Nov pair, reset at 00:00 UTC).
+# file below, and to the walk's one vault (made by this walk, or until then the key's last vault from the maker). Only
+# the hosted page can be walked: the address may hold no "." or ".." path segment, and the walk fails when the browser
+# leaves that path. Chrome runs with its sandbox; if it will not start with it, the walk fails (the page is never run
+# unsandboxed next to the key). Manual only, inside the "testnet" environment (main branch only: a deployment-branch
+# rule of that environment on GitHub, not of this file), never at the same time as another job that sends with the
+# key (concurrency group testnet-key).
+# Key B is never funded here (a loop dispatch with depositor b tops it up). A walk makes one vault at most and signs
+# one deposit, one arm and one submit (the signer refuses a second of each); the arm counts against the deployment's
+# daily arms per address (4 on the 22 Nov pair, reset at 00:00 UTC).
 # The result is printed between the lines NP-WALK-JSON-BEGIN and NP-WALK-JSON-END and written to the job summary. The
 # screenshots stay on the runner: the one upload action scripts/check-workflows.py allows may not run in a job that
 # reads a secret. On a failure the last screenshot is printed in base64 between NP-WALK-SHOT-BEGIN and -END.
@@ -51,7 +54,7 @@ concurrency:
 jobs:
   walk:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 37
     environment: testnet
     env:
       BASE_RPC: https://sepolia.base.org
@@ -77,8 +80,10 @@ jobs:
       - name: Check the inputs
         run: |
           set -euo pipefail
-          # the key signs only for the hosted page (scripts/page-walk.mjs LIVE_URL checks the same)
+          # the key signs only for the hosted page (scripts/page-walk.mjs isLiveUrl checks the same)
           [[ "$WALK_URL" =~ ^https://bongbongcrypto\.github\.io/notice-period/[A-Za-z0-9._~/-]*$ ]] || { echo "url must be the hosted page, https://bongbongcrypto.github.io/notice-period/..."; exit 1; }
+          # no "." or ".." path segment: a browser resolves those to another path of the same host
+          case "$WALK_URL/" in */./* | */../*) echo "url must not hold a . or .. path segment"; exit 1 ;; esac
           case "$WALK_KEY_NAME" in a | b) ;; *) echo "key must be a or b"; exit 1 ;; esac
           case "$WALK_KIND" in adapter | allocator | timelock | cap) ;; *) echo "kind must be adapter, allocator, timelock or cap"; exit 1 ;; esac
           case "$WALK_MODE" in 0 | 1) ;; *) echo "mode must be 0 or 1"; exit 1 ;; esac
@@ -129,8 +134,8 @@ jobs:
           fi
           echo "This job never funds the walk key (key B is topped up by a loop dispatch with depositor b)."
           check_balance_of "$BASE_RPC" "Base Sepolia, walk key $WALK_KEY_NAME" "$WALK_ADDRESS" "$(to_wei 0.0005)"
-          # Node gets only the walk key, by environment; it removes it from its own environment before it starts
-          # Chrome or cast.
+          # Node gets only the walk key, by environment; it removes it from process.env before it starts Chrome or
+          # cast (its own initial environment keeps it for the length of the job; cast gets it as an argument).
           unset DEPLOY_KEY KEY_B
           export WALK_KEY WALK_ADDRESS
           "$NODE_BIN" scripts/page-walk.mjs --url "$WALK_URL" --deployment "$WALK_DEPLOYMENT" --key "$WALK_KEY_NAME" \

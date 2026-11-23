@@ -126,7 +126,8 @@ jobs:
       - name: Page walk signer rules (no key, no browser, no network)
         run: |
           node --version
-          # the runner's own node; the test needs only ES modules, top-level await and BigInt (no fetch, no WebSocket)
+          # the runner's own node; the test needs only ES modules, top-level await and BigInt. It answers the signer's
+          # chain reads itself (fetch is replaced by a function of the test), so nothing leaves the runner.
           node -e 'if (Number(process.versions.node.split(".")[0]) < 18) { console.error("Node 18 or later is needed"); process.exit(1); }'
           node --check scripts/page-walk.mjs
           node --check scripts/test-page-walk.mjs

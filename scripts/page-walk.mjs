@@ -25,48 +25,103 @@
 
    What the signer signs. All of these must hold, or the request is refused with 4001 and the walk fails:
      - from is the walk address; the chain is 84532; value is zero or absent; there is a target and call data;
-       gas, if the page names it, is at most 8,000,000; at most 12 transactions in one walk;
+       gas, if the page names it, is not negative and at most 8,000,000; at most 12 transactions in one walk;
      - the target is the demo dollar, the vault maker or the exit contract of deployments/NAME.json in this checkout
-       (never addresses read from the page), or the walk's own vault: the vault in the VaultCreated log of a create()
-       this walk signed, or the maker's lastVaultOf(walk address) read once at the start (an earlier visit's vault,
-       for the resume and old-vault paths); in both cases the maker's isVault(vault) must answer true by our own
-       eth_call. A vault someone else made, the deployment's smoke vault included, is never a target;
+       (never addresses read from the page), or the walk's one vault. That is the vault in the VaultCreated log of the
+       create() this walk signed, taken from its receipt as every endpoint gives it (status 1, from the walk address to
+       the maker) and only when the maker's lastVaultOf(walk address) is that same vault on every endpoint; if that
+       cannot be established the walk fails with no vault at all. Until then it is the maker's lastVaultOf(walk
+       address), read once at the start (an earlier visit's vault, for the resume and old-vault paths). A walk has one
+       vault at a time: once create() is signed, the earlier vault is no target any more. The maker's isVault(vault)
+       must answer true by our own eth_call. A vault someone else made, the deployment's smoke vault included, is
+       never a target;
      - the call is one of these, with these arguments, and the call data is exactly the standard ABI encoding of them:
          demo dollar   mint(address,uint256) to the walk address; approve(address,uint256) for the walk's vault
          vault maker   create()
-         walk's vault  deposit(uint256,address) or mint(uint256,address) for the walk address;
+         walk's vault  deposit(uint256,address) for the walk address;
                        approve(address,uint256) for the exit contract;
-                       submit(bytes) of a change of the chosen kind only, and only while the vault's curator() is the
-                       walk address;
-                       redeem(uint256,address,address) or withdraw(uint256,address,address) from and to the walk address
+                       submit(bytes), only while the vault's curator() is the walk address, of the one call the page
+                       builds for the chosen kind, itself in exact standard encoding:
+                         adapter    addAdapter(address), the address holding no code
+                         allocator  setIsAllocator(address,true), the address holding no code
+                         timelock   decreaseTimelock(bytes4,uint256) of addAdapter, setIsAllocator, increaseAbsoluteCap
+                                    or increaseRelativeCap, to at least 1 second and less than the maker's TIMELOCK()
+                         cap        increaseAbsoluteCap(bytes,uint256), a 32-byte id, a cap of 1 unit to 1,000,000
+                                    demo dollars
+                       redeem(uint256,address,address) from and to the walk address
          exit contract arm(address,uint8,uint8,uint256) on the walk's vault with exactly the chosen kinds and mode;
-                       cancel(uint256)
-   Signing mirrors scripts/chain.sh send_as: cast send with the function signature and the decoded arguments, then
-   the receipt must say success, and the transaction as mined must carry exactly the call data the page asked for.
-   The key is read once from the WALK_KEY environment variable and removed from the environment before Chrome or cast
-   starts; cast gets it as an argument of a process started without a shell, and no command line is printed. Every
-   cast message is scrubbed of the key before it is shown. In Actions the workflow masks key B (scripts/chain.sh
+                       cancel(uint256) of the walk address's own active watch on the walk's vault
+     - the order is the page's own: create(), the vault deposit, arm and submit are each signed once at most; redeem
+       and cancel (the page's "withdraw and start over" on an earlier visit's vault) only before any of those four;
+       submit only after the arm; create() not after the walk's deposit; after the arm nothing but that one submit.
+   Every chain read behind a yes (lastVaultOf, isVault, curator(), the watch of a cancel, no code at an address,
+   TIMELOCK(), the receipt of the walk's create(), each send as mined) is asked of every Base Sepolia endpoint the walk
+   knows, and all must give the same answer; an endpoint that does not answer, or two that differ, is a no.
+   Signing mirrors scripts/chain.sh send_as: cast send with the function signature and the decoded arguments, for
+   chain 84532 whatever the endpoint says (--chain), then the receipt must say success, and the transaction cast
+   printed, as every endpoint gives it, must carry exactly the call data the page asked for, from the walk address, on
+   chain 84532, at the nonce cast was given. Until that holds the printed hash is not taken as the send (the record
+   says hashConfirmed false and the walk fails; after a create() the walk has no vault). Before each send
+   the walk address's next nonce is read from the sending endpoint, waited for (15 s at most) until it is past the
+   nonce of the walk's last mined send, and cast is given (--nonce) the highest of it and the 'latest' count of every
+   Base Sepolia endpoint (the highest, not one answer all agree on: an endpoint may be a block behind); a nonce or a
+   count that cannot be read, from any one of them, refuses the send and fails the walk.
+   The intent (call, target, nonce) is printed before cast starts, and with --out a running result
+   (result "running") is written before and after each send. When cast does not report a mined transaction (it exits
+   with an error, or does not finish in 240 s), the request still goes into the record, with status "unknown", that
+   nonce and any transaction hash cast printed; the walk fails, and at the end the nonce is read again: a nonce that
+   moved shows the broadcast, one that did not move leaves it unknown (a queued or dropped broadcast is not ruled out).
+   A hash cast printed is taken as that request only when every endpoint gives it as that call from the walk address
+   at that nonce.
+   Limits: these checks assume at least one Base Sepolia endpoint answers honestly, since the same lie from all of them
+   cannot be told apart. The key is on cast's command line and in this process's environment for the length of the
+   job, which is why the page never runs in an unsandboxed browser next to it. An honest walk can still end red in
+   these ways, left as they are: in the states 'deposited' and 'armed' the driver presses once per visit, so a page
+   that draws the same state again without starting the step leaves the walk to time out; an endpoint that does not
+   answer the chain id question at start-up ends the run before a result file exists (nothing is signed by then);
+   and a page that reaches 'deposited' with a deposit made before this walk can have the walk sign an arm and a
+   submit and then fail on its own end check (red, never ok). Two more come from failing closed: a Base Sepolia
+   endpoint that gives no transaction count for the 15 s before a send refuses that send, and one that sees blocks
+   more than about 30 s late fails the read-back of the first send. An endpoint that is only slower or a few blocks
+   behind costs waiting, about its lag per send.
+   The key is read once from the WALK_KEY environment variable and removed from process.env (so from the environment
+   Chrome and cast are started with; the process's own initial environment keeps it, as said above); cast gets it as
+   an argument of a process started without a shell, and no command line is printed. Every
+   cast error message (cast's stderr, and the transaction hashes taken from what cast printed) and the status cast
+   printed are scrubbed of the key before they are shown or searched; of cast's other output only a hash and a block
+   number that read as such are used. In Actions the workflow masks key B (scripts/chain.sh
    derive_key_b); key A is the TESTNET_KEY secret, masked by GitHub.
 
    The walk. Open the page, check that its states and buttons are the ones driven here and that its contracts are
    those of the deployment, connect, deposit (make the vault, get demo dollars, approve, deposit), set the watch to the
    chosen kinds and mode and turn it on, act as the curator and schedule the change, and wait for the page's end
    state "returned" (the deposit came back). The page is driven by its state id (#state[data-state]) and its buttons
-   ([data-a]), not by visible text. Then the page is not trusted: the three transactions it shows are read by receipt
-   from the public endpoints, and the walk checks status 1, that the Submit is the one it signed, the links by watch
-   id and by the Submit hash (ExitRequested on Lasna, WatchEnded on Base Sepolia), the token transfer from the vault
-   to the walk address equal to the redeemed assets, the seconds from block times, that the exit landed before the
-   change could run, and that the shares and the watch are gone.
+   ([data-a]), not by visible text; what is read from the page is kept only as plain strings. Then the page is not
+   trusted: the three transactions it shows are read by receipt from the public endpoints, and the walk checks status
+   1, that the Submit is the one it signed, the links by watch id and by the Submit hash (ExitRequested on Lasna,
+   WatchEnded on Base Sepolia, each found by the watch id), the token transfer from the vault to the walk address equal
+   to the redeemed assets, the seconds from block times, that the exit landed before the change could run, that the
+   shares and the watch are gone, that the walk signed exactly one deposit, one arm and one submit, all on the one
+   vault, and that the exit returned what that deposit moved into the vault (its own Transfer log), less at most one
+   unit of rounding. The Base Sepolia receipts, block times and balances of this check are read from every Base
+   Sepolia endpoint and must be the same on all (status, block, sender, target and logs; the balances at one block
+   number); Reactive Lasna has one public endpoint.
    Failure: any error state of the page, any console error, uncaught exception or policy violation, any refused
-   request, or no end state within the timeout (default 480 s). On failure the state id and the visible text are
-   printed and a screenshot is taken. A browser-level error about one of the page's public endpoints (failed to load,
-   rate-limited, blocked by its CORS answer) is recorded, not failed: the page is built to retry those. A policy
-   violation, or one of the page's own files failing to load, does fail the walk. Once the walk has failed or the page
-   has reached its end state nothing more is signed: a later request is refused and fails the walk, and a transaction
-   cast is still sending is waited for and recorded before the receipts are checked and the result is decided.
-   A live walk opens only the hosted page (https://bongbongcrypto.github.io/notice-period/...). If the browser will not
-   start with its sandbox, it is started again without it; a live walk then prints a workflow warning and records
-   browserSandbox false in its result.
+   request, no end state within the timeout (default 480 s; every page call and loop of the driver stops at it, except
+   the wait for the balances before the change, which is not cut short, but nothing is pressed after it once the
+   timeout has passed), a
+   watch step with more than 8 kind boxes, a box bit other than 1, 2, 4 or 8 or one bit twice, or no balances before
+   the change at a block not below the arm's (read before the change is scheduled). On failure the state id and the
+   visible text are printed and a screenshot is taken. A browser-level error about one of the page's public endpoints
+   (failed to load, rate-limited, blocked by its CORS answer) is recorded, not failed: the page is built to retry
+   those. A policy violation, or one of the page's own files failing to load, does fail the walk. Once the walk has
+   failed or the page has reached its end state nothing more is signed: a later request is refused and fails the
+   walk, and a transaction cast is still sending is waited for and recorded before the receipts are checked and the
+   result is decided.
+   A live walk opens only the hosted page (https://bongbongcrypto.github.io/notice-period/..., no "." or ".." path
+   segment), and fails when the browser leaves that path. The browser runs with its sandbox. If it will not start
+   with it, a live walk fails: the processes around the browser hold the key, so the page is never run unsandboxed
+   there. A dry walk, which has no key, starts the browser again without the sandbox and records browserSandbox false.
 
    Output: OUT/result.json, OUT/summary.md, OUT/*.jpg screenshots, and the result JSON on stdout between the lines
    NP-WALK-JSON-BEGIN and NP-WALK-JSON-END. On failure the last screenshot is also printed in base64 on one line
@@ -111,6 +166,25 @@ const KIND_SIGS = {
   allocator: ['setIsAllocator(address,bool)'],
   cap: ['increaseAbsoluteCap(bytes,uint256)', 'increaseRelativeCap(bytes,uint256)'],
 };
+/* What the signer lets the curator's submit carry, per kind: the one call the page builds (docs/run.js changeFor).
+   KIND_SIGS above is the wider list the receipt check accepts for a kind (a recorded run may hold either cap call). */
+const SUBMIT_SIG = {
+  adapter: 'addAdapter(address)',
+  timelock: 'decreaseTimelock(bytes4,uint256)',
+  allocator: 'setIsAllocator(address,bool)',
+  cap: 'increaseAbsoluteCap(bytes,uint256)',
+};
+/* The curator actions whose waiting period the page's "shorter waiting period" change names. */
+const TIMELOCK_TARGETS = ['addAdapter(address)', 'setIsAllocator(address,bool)', 'increaseAbsoluteCap(bytes,uint256)',
+  'increaseRelativeCap(bytes,uint256)'];
+/* The demo cap the page schedules is 1,000,000 demo dollars (docs/config.js amounts.capIncrease): nothing above it. */
+const MAX_CAP = 10n ** 12n;
+const SIG_CREATE = 'create()';
+const SIG_DEPOSIT = 'deposit(uint256,address)';
+const SIG_ARM = 'arm(address,uint8,uint8,uint256)';
+const SIG_SUBMIT = 'submit(bytes)';
+/* Signed once at most in a walk. */
+const ONCE = [SIG_CREATE, SIG_DEPOSIT, SIG_ARM, SIG_SUBMIT];
 const READ = new Set(['eth_blockNumber', 'eth_call', 'eth_estimateGas', 'eth_gasPrice', 'eth_maxPriorityFeePerGas',
   'eth_feeHistory', 'eth_getBalance', 'eth_getCode', 'eth_getTransactionCount', 'eth_getTransactionByHash',
   'eth_getTransactionReceipt', 'eth_getBlockByNumber', 'eth_getBlockByHash', 'eth_getLogs', 'eth_getStorageAt']);
@@ -128,6 +202,21 @@ const OUTSIDE_HOSTS = ['sepolia.base.org', 'base-sepolia-rpc.publicnode.com', 'l
 const LIVE_ORIGIN = 'https://bongbongcrypto.github.io';
 const LIVE_PATH = '/notice-period/';
 const LIVE_URL = /^https:\/\/bongbongcrypto\.github\.io\/notice-period\/[A-Za-z0-9._~\/-]*$/;
+/* An address under the hosted page's path, as a browser reads it. */
+function underLive(u) {
+  let p;
+  try { p = new URL(u); } catch (e) { return false; }
+  return p.origin === LIVE_ORIGIN && p.pathname.startsWith(LIVE_PATH);
+}
+/* The address a live walk may be given: the pattern above, no "." or ".." path segment (a browser resolves those to
+   another path of the same host), and nothing a browser would rewrite. */
+function isLiveUrl(u) {
+  if (typeof u !== 'string' || !LIVE_URL.test(u)) return false;
+  if (u.split('/').some((seg) => seg === '.' || seg === '..')) return false;
+  let p;
+  try { p = new URL(u); } catch (e) { return false; }
+  return p.href === u && underLive(u);
+}
 const BINDING = 'npWalkWalletRequest';
 const VIEW = { width: 1280, height: 900 };
 
@@ -312,7 +401,7 @@ function parseArgs(argv) {
   if (!o.verifyRecord) {
     if (!o.url || !/^https?:\/\/[A-Za-z0-9.:[\]-]+(\/[^\s]*)?$/.test(o.url)) die('--url must be an http(s) address');
     /* a live walk, with the key, opens only the hosted page; a dry walk may open a local copy */
-    if (!o.dry && !LIVE_URL.test(o.url)) die(`a live walk opens only the hosted page (${LIVE_ORIGIN}${LIVE_PATH})`);
+    if (!o.dry && !isLiveUrl(o.url)) die(`a live walk opens only the hosted page (${LIVE_ORIGIN}${LIVE_PATH}, no "." or ".." path segment)`);
     if (!o.browser) die('--browser is required (path of Chrome or Edge)');
   }
   return o;
@@ -363,13 +452,13 @@ async function rpcAny(urls, method, params) {
   return last;
 }
 
-/* Retries until fn returns a value other than null/undefined, or the time is up. */
+/* Retries until fn returns a value other than null/undefined, or the time is up (asked once when ms is 0). */
 async function until(fn, ms, every = 1500) {
   const end = Date.now() + ms;
   for (;;) {
     const v = await fn();
     if (v !== null && v !== undefined) return v;
-    if (Date.now() > end) return null;
+    if (Date.now() >= end) return null;
     await sleep(every);
   }
 }
@@ -389,23 +478,102 @@ async function blockTs(urls, number) {
   return b ? Number(BigInt(b.timestamp)) : null;
 }
 
-async function call(urls, to, data) {
-  const r = await rpcAny(urls, 'eth_call', [{ to, data }, 'latest']);
-  if (!r || r.error || typeof r.result !== 'string') return null;
-  return r.result;
+/* ---------- reads that every Base Sepolia endpoint must answer alike ---------- */
+
+/* Every Base Sepolia endpoint the walk knows (the sending one and the two public ones), each once. */
+const BASE_ALL = [BASE_SEND, ...BASE_READ].filter((u, i, all) => all.findIndex((x) => x.replace(/\/+$/, '') === u.replace(/\/+$/, '')) === i);
+/* How long a read behind a yes waits for the endpoints to agree (one of them can be a block behind), and how often
+   it asks. policyFor() shortens both for the signer test. */
+let READ_WAIT = 12000;
+let READ_EVERY = 2000;
+/* The longer waits of a live walk, in ms: a receipt alike on every endpoint, the next nonce past the last mined send,
+   a mined transaction read back, the balances before the change at a block not below the arm's, one balance at a
+   pinned block. The signer test sets them all to 0 (asked once). */
+const WAIT = { receipt: 60000, nonce: 15000, readBack: 30000, baseline: 60000, balance: 6000 };
+
+/* One answer, asked of every endpoint. { value } only when all answered without an error and what pick() takes from
+   their results is the same; { error } otherwise. An endpoint that does not answer is never outvoted or skipped. */
+async function agreed(method, params, pick = (x) => x) {
+  const answers = await Promise.all(BASE_ALL.map((u) => rpc(u, method, params)));
+  const seen = [];
+  for (const r of answers) {
+    if (!r || r.error) return { error: `an endpoint did not answer ${method}` };
+    let v;
+    try { v = pick(r.result); } catch (e) { return { error: `an answer to ${method} could not be read` }; }
+    seen.push(JSON.stringify(v === undefined ? null : v));
+  }
+  if (seen.some((x) => x !== seen[0])) return { error: `the endpoints disagree on ${method}` };
+  return { value: JSON.parse(seen[0]) };
 }
 
-async function uintOf(urls, to, data) {
-  const v = await call(urls, to, data);
-  return v && v.length >= 66 ? BigInt(v.slice(0, 66)) : null;
+/* agreed(), asked again until ok(value) holds or the time is up; null then. */
+async function agreedUntil(method, params, pick, ok, ms = READ_WAIT, every = READ_EVERY) {
+  return until(async () => {
+    const a = await agreed(method, params, pick);
+    return !a.error && ok(a.value) ? a.value : null;
+  }, ms, every);
 }
+
+/* eth_call whose 32-byte answer is the same on every endpoint and passes ok(), as a number; null when that does not
+   come in time. */
+async function uintAgreed(to, data, { block = 'latest', ms = READ_WAIT, ok = () => true } = {}) {
+  const v = await agreedUntil('eth_call', [{ to, data }, block], (x) => (typeof x === 'string' && /^0x[0-9a-fA-F]{64,}$/.test(x) ? lower(x.slice(0, 66)) : null),
+    (x) => x !== null && ok(BigInt(x)), ms);
+  return v === null ? null : BigInt(v);
+}
+
+/* The parts of a receipt the checks use, in one spelling, so two endpoints can be compared (each adds fields of its own). */
+function receiptView(r) {
+  if (!r || typeof r !== 'object') return null;
+  return { status: lower(r.status), blockHash: lower(r.blockHash), blockNumber: lower(r.blockNumber), transactionHash: lower(r.transactionHash),
+    from: lower(r.from), to: lower(r.to),
+    logs: (Array.isArray(r.logs) ? r.logs : []).map((l) => ({ address: lower(l.address), topics: (Array.isArray(l.topics) ? l.topics : []).map(lower), data: lower(l.data) })) };
+}
+
+/* The parts of a transaction the read-back uses, in one spelling (numbers as plain hex), so two endpoints can be
+   compared. null for no transaction. */
+function txView(t) {
+  if (!t || typeof t !== 'object') return null;
+  const num = (x) => { try { return x === undefined || x === null ? null : '0x' + BigInt(x).toString(16); } catch (e) { return null; } };
+  return { hash: lower(t.hash), input: lower(t.input), to: lower(t.to), from: lower(t.from), value: num(t.value), chainId: num(t.chainId), nonce: num(t.nonce) };
+}
+
+/* A Base Sepolia transaction that every endpoint gives alike; null when they do not within the time (ms 0: asked once). */
+async function txAgreed(hash, ms = WAIT.readBack) {
+  return agreedUntil('eth_getTransactionByHash', [hash], txView, (v) => v !== null, ms, 1500);
+}
+
+/* A Base Sepolia receipt that every endpoint gives alike; null when they do not within the time. */
+async function receiptAgreed(hash, ms = WAIT.receipt) {
+  return agreedUntil('eth_getTransactionReceipt', [hash], receiptView, (v) => v !== null, ms, 1500);
+}
+
+/* The time of a Base Sepolia block, the same on every endpoint, and only if it is the block with that hash. */
+async function blockTsAgreed(number, blockHash) {
+  const b = await agreedUntil('eth_getBlockByNumber', [number, false], (x) => (x ? { hash: lower(x.hash), timestamp: lower(x.timestamp) } : null),
+    (v) => v !== null, 30000, 1500);
+  if (!b || !same(b.hash, blockHash)) return null;
+  return Number(BigInt(b.timestamp));
+}
+
+/* A block number every endpoint has reached (the lowest of their heads), not below atLeast: balances are read at it,
+   so every endpoint is asked about the same state. null when the heads cannot be read or stay below atLeast. */
+async function pinnedBlock(atLeast = 0, ms = 20000) {
+  return until(async () => {
+    const heads = await Promise.all(BASE_ALL.map((u) => rpc(u, 'eth_blockNumber', [])));
+    if (heads.some((h) => !h || h.error || !/^0x[0-9a-fA-F]+$/.test(h.result || ''))) return null;
+    const n = Math.min(...heads.map((h) => Number(BigInt(h.result))));
+    return n >= atLeast ? n : null;
+  }, ms, 1000);
+}
+const blockHex = (n) => '0x' + BigInt(n).toString(16);
 
 /* ---------- the walk's record ---------- */
 
 const W = {
   result: 'running', dry: false, failure: null, states: [], stateLog: [], requests: {}, refused: [], unsupported: [],
   sent: [], dryRequests: [], consoleErrors: [], warnings: [], networkErrors: [], screenshots: [], checks: [],
-  connected: false, notes: [],
+  connected: false, notes: [], inFlight: null,
 };
 function fail(reason) {
   if (!W.failure) {
@@ -428,14 +596,16 @@ function childEnv() {
   return env;
 }
 
-function scrub(text) {
+/* The text with the key taken out, whole. */
+function redact(text) {
   let t = String(text || '');
   if (KEY) {
-    const bare = strip0x(KEY);
-    t = t.replace(new RegExp(bare, 'gi'), '***');
+    const bare = strip0x(KEY).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (bare) t = t.replace(new RegExp(bare, 'gi'), '***');
   }
-  return t.slice(-1500);
+  return t;
 }
+function scrub(text) { return redact(text).slice(-1500); }
 
 function runCast(argv, timeoutMs) {
   return new Promise((done) => {
@@ -446,7 +616,8 @@ function runCast(argv, timeoutMs) {
     const finish = (code, note) => {
       if (finished) return;
       finished = true;
-      done({ code, out, err: scrub(note || err) });
+      /* a note of ours (cast could not start, or was stopped) goes in front of what cast itself said, which is kept */
+      done({ code, out, err: scrub(note ? `${note}${err ? `: ${err}` : ''}` : err) });
     };
     try {
       child = spawn(CAST, argv, { env: childEnv(), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: false });
@@ -470,7 +641,19 @@ function lastJson(text) {
   return null;
 }
 
-/* The calls the signer allows, per target class. check() returns true, or a reason to refuse. */
+/* Transaction hashes in what cast printed, the ones it names as such first. The key is taken out before the search:
+   it has the same shape as a hash. */
+function hashesIn(text) {
+  const t = redact(text);
+  const named = [...t.matchAll(/"transactionHash"\s*:\s*"(0x[0-9a-fA-F]{64})"/g)].map((m) => lower(m[1]));
+  const any = [...t.matchAll(/0x[0-9a-fA-F]{64}(?![0-9a-fA-F])/g)].map((m) => lower(m[0]));
+  return [...new Set([...named, ...any])].slice(0, 6);
+}
+
+/* The calls the signer allows, per target class. check() returns true, or a reason to refuse.
+   recovery: part of the page's "withdraw and start over" on an earlier visit's vault, signed only before the walk's
+   own run. ownWatch: the argument that must be the walk address's active watch on the walk's vault. change: the
+   bytes argument is a curator change, held to changeAllowed(). */
 function callTable(ctx) {
   const toMe = (a) => same(a, ctx.me);
   return {
@@ -478,71 +661,133 @@ function callTable(ctx) {
       'mint(address,uint256)': { label: 'get demo dollars', check: (a) => toMe(a[0]) || 'mints to another address' },
       'approve(address,uint256)': { label: 'let the vault take the demo dollars', vaultArg: 0 },
     },
-    maker: { 'create()': { label: 'make a vault' } },
+    maker: { [SIG_CREATE]: { label: 'make a vault' } },
     vault: {
-      'deposit(uint256,address)': { label: 'deposit', check: (a) => toMe(a[1]) || 'the shares would go to another address' },
-      'mint(uint256,address)': { label: 'deposit (by shares)', check: (a) => toMe(a[1]) || 'the shares would go to another address' },
+      [SIG_DEPOSIT]: { label: 'deposit', check: (a) => toMe(a[1]) || 'the shares would go to another address' },
       'approve(address,uint256)': { label: 'allow the exit contract to redeem the shares', check: (a) => same(a[0], DEP.exit) || 'approves a spender other than the exit contract' },
-      'submit(bytes)': { label: 'schedule the change as the curator', curator: true,
-        check: (a) => ctx.kindSels.includes(lower(a[0]).slice(0, 10)) || `schedules ${lower(a[0]).slice(0, 10)}, not a ${ctx.kind} change` },
-      'redeem(uint256,address,address)': { label: 'withdraw', check: (a) => (toMe(a[1]) && toMe(a[2])) || 'redeems to or from another address' },
-      'withdraw(uint256,address,address)': { label: 'withdraw', check: (a) => (toMe(a[1]) && toMe(a[2])) || 'withdraws to or from another address' },
+      [SIG_SUBMIT]: { label: 'schedule the change as the curator', curator: true, change: 0 },
+      'redeem(uint256,address,address)': { label: 'withdraw', recovery: true, check: (a) => (toMe(a[1]) && toMe(a[2])) || 'redeems to or from another address' },
     },
     exit: {
-      'arm(address,uint8,uint8,uint256)': { label: 'turn the watch on', vaultArg: 0,
+      [SIG_ARM]: { label: 'turn the watch on', vaultArg: 0,
         check: (a) => (Number(a[1]) === ctx.watchKinds && Number(a[2]) === ctx.mode) ||
           `arms kinds ${a[1]} mode ${a[2]}; this walk asked for kinds ${ctx.watchKinds} mode ${ctx.mode}` },
-      'cancel(uint256)': { label: 'turn the watch off' },
+      'cancel(uint256)': { label: 'turn the watch off', recovery: true, ownWatch: 0 },
     },
   };
 }
 
-/* The vaults this walk may sign on: the one its own create() made, and the walk address's last vault from the maker
-   (read once at the start). Listed by the maker is necessary, not enough: the maker makes a vault for anyone. */
-const OWN = new Set();
-function addOwn(addr) { if (/^0x[0-9a-fA-F]{40}$/.test(addr || '') && !same(addr, ZERO_ADDR)) OWN.add(lower(addr)); }
-const isOwn = (addr) => OWN.has(lower(addr));
+/* The one vault this walk may sign on: the vault its own create() made, and until then the walk address's last vault
+   from the maker (read once at the start, the same on every endpoint). Listed by the maker is necessary, not enough:
+   the maker makes a vault for anyone. */
+let OWN = null;
+function setOwn(addr) { OWN = /^0x[0-9a-fA-F]{40}$/.test(addr || '') && !same(addr, ZERO_ADDR) ? lower(addr) : null; }
+const isOwn = (addr) => OWN !== null && lower(addr) === OWN;
 
-/* The vault's curator() is the walk address (asked of the sending endpoint first, like isVault). */
+/* The vault's curator() is the walk address: one well-formed address word (exactly 32 bytes, the upper 12 zero), the
+   same on every endpoint, and that address the walk address. Anything else is a no. */
 async function curatorIsMe(vault) {
-  const yes = await until(async () => {
-    for (const u of [BASE_SEND, ...BASE_READ]) {
-      const v = await call([u], vault, sel('curator()'));
-      if (v && v.length >= 66) return same(topicAddr(v.slice(0, 66)), ME) ? true : false;
-    }
-    return null;
-  }, 12000, 2000);
-  return yes === true;
+  const v = await agreedUntil('eth_call', [{ to: vault, data: sel('curator()') }, 'latest'],
+    (x) => (typeof x === 'string' && /^0x0{24}[0-9a-fA-F]{40}$/.test(x) ? lower(x) : null),
+    (x) => x !== null && same(topicAddr(x), ME));
+  return v !== null;
+}
+
+/* The vault the walk's own create() made, only as every endpoint gives it: the create's receipt alike from all, with
+   status 1, its hash, sent by the walk address to the maker, exactly one VaultCreated log of the maker for the walk
+   address with a well-formed vault topic; and the maker's lastVaultOf(walk address) that same vault on every
+   endpoint. { vault } or { why }. The logs cast printed are never used for this; the hash is the one cast printed,
+   asked for only once every endpoint has given it as this walk's create() at the nonce cast was given. */
+async function createdVault(hash) {
+  const rc = await receiptAgreed(hash);
+  if (!rc) return { why: 'its receipt was not given alike by every endpoint' };
+  if (rc.status !== '0x1' || !same(rc.transactionHash, hash) || !same(rc.from, ME) || !same(rc.to, DEP.maker)) {
+    return { why: `its receipt says status ${rc.status}, hash ${rc.transactionHash}, ${rc.from} -> ${rc.to}` };
+  }
+  const tCreated = topic('VaultCreated(address,address)');
+  const addrTopic = (t) => /^0x0{24}[0-9a-f]{40}$/.test(t || '');
+  const made = rc.logs.filter((l) => same(l.address, DEP.maker) && l.topics[0] === tCreated && addrTopic(l.topics[2]) && same(topicAddr(l.topics[2]), ME));
+  if (made.length !== 1) return { why: `its receipt holds ${made.length} VaultCreated logs of the maker for the walk address` };
+  if (!addrTopic(made[0].topics[1]) || same(topicAddr(made[0].topics[1]), ZERO_ADDR)) return { why: 'the VaultCreated log names no vault address' };
+  const vault = topicAddr(made[0].topics[1]);
+  const last = await uintAgreed(DEP.maker, sel('lastVaultOf(address)') + addrWord(ME), { ms: READ_WAIT * 2, ok: (n) => n === BigInt(vault) });
+  if (last === null) return { why: `the maker's lastVaultOf(walk address) was not ${vault} on every endpoint` };
+  return { vault };
 }
 
 const vaultCache = new Map();
 async function isVault(addr) {
   const a = lower(addr);
   if (vaultCache.get(a) === true) return true;
-  /* a vault made a moment ago can read as unknown on a lagging endpoint: ask the sending endpoint first, retry a while */
-  const yes = await until(async () => {
-    for (const u of [BASE_SEND, ...BASE_READ]) {
-      const v = await call([u], DEP.maker, sel('isVault(address)') + addrWord(a));
-      if (v && BigInt(v.slice(0, 66)) === 1n) return true;
-    }
-    return null;
-  }, 12000, 2000);
-  if (yes) vaultCache.set(a, true);
-  return !!yes;
+  /* a vault made a moment ago can read as unknown on a lagging endpoint: asked again for a while. Yes only when
+     every endpoint says yes. */
+  const yes = await uintAgreed(DEP.maker, sel('isVault(address)') + addrWord(a), { ok: (n) => n === 1n });
+  if (yes === 1n) vaultCache.set(a, true);
+  return yes === 1n;
 }
+
+/* No code at the address, on every endpoint. */
+async function noCode(addr) {
+  const v = await agreedUntil('eth_getCode', [addr, 'latest'], (x) => (typeof x === 'string' ? lower(x) : null), (x) => x !== null);
+  return v === '0x';
+}
+
+/* The waiting period the maker gives its vaults, in seconds (the page shortens to less than this); null if unread. */
+let makerTimelock = null;
+async function timelockOfMaker() {
+  if (makerTimelock === null) makerTimelock = await uintAgreed(DEP.maker, sel('TIMELOCK()'));
+  return makerTimelock;
+}
+
+/* The change inside submit(bytes): the one call the page builds for the chosen kind (docs/run.js changeFor), in exact
+   standard encoding, with its arguments held to what that call needs. Returns true, or a reason to refuse. */
+async function changeAllowed(inner, ctx) {
+  const sig = SUBMIT_SIG[ctx.kind];
+  const hex = strip0x(inner);
+  if (hex.length < 8 || `0x${hex.slice(0, 8)}` !== sel(sig)) return `schedules 0x${hex.slice(0, 8)}, not the ${ctx.kind} change ${sig}`;
+  const types = typesOf(sig);
+  let a;
+  try { a = decodeArgs(types, hex.slice(8)); } catch (e) { return `${sig}: ${e.message}`; }
+  if (encodeArgs(types, a) !== hex.slice(8)) return `${sig}: the change is not the standard encoding of its arguments`;
+  if (ctx.kind === 'adapter' || ctx.kind === 'allocator') {
+    if (ctx.kind === 'allocator' && a[1] !== true) return `${sig}: takes an allocator away; the page only adds one`;
+    if (!(await noCode(a[0]))) return `${sig}: ${a[0]} holds code, or was not read as empty on every endpoint`;
+    return true;
+  }
+  if (ctx.kind === 'timelock') {
+    if (!TIMELOCK_TARGETS.map(sel).includes(a[0])) return `${sig}: ${a[0]} is not one of the four watched curator actions`;
+    const limit = await timelockOfMaker();
+    if (limit === null) return `${sig}: the maker's TIMELOCK() was not read alike on every endpoint`;
+    if (a[1] < 1n || a[1] >= limit) return `${sig}: a waiting period of ${a[1]} s; the page asks for 1 to ${limit - 1n}`;
+    return true;
+  }
+  if (strip0x(a[0]).length !== 64) return `${sig}: the id is ${strip0x(a[0]).length / 2} bytes, not 32`;
+  if (a[1] < 1n || a[1] > MAX_CAP) return `${sig}: a cap of ${a[1]}; the page asks for at most ${MAX_CAP}`;
+  return true;
+}
+
+const signed = (sig) => W.sent.some((s) => s.sig === sig);
 
 /* Returns { ok: true, cls, sig, args, label } or { ok: false, why }. */
 async function policy(tx) {
   if (!tx || typeof tx !== 'object') return { ok: false, why: 'no transaction object' };
   if (!same(tx.from, ME)) return { ok: false, why: `from ${tx.from} is not the walk address` };
   if (tx.chainId !== undefined && lower(tx.chainId) !== BASE_HEX && Number(tx.chainId) !== BASE_ID) return { ok: false, why: `chain ${tx.chainId} is not Base Sepolia` };
-  if (tx.value !== undefined && tx.value !== null && BigInt(tx.value) !== 0n) return { ok: false, why: 'the transaction carries value' };
+  if (tx.value !== undefined && tx.value !== null) {
+    let value;
+    try { value = BigInt(tx.value); } catch (e) { return { ok: false, why: 'the value is not a number' }; }
+    if (value !== 0n) return { ok: false, why: 'the transaction carries value' };
+  }
   if (!/^0x[0-9a-fA-F]{40}$/.test(tx.to || '')) return { ok: false, why: 'no target address (contract creation is never signed)' };
   const data = tx.data || tx.input;
   if (!/^0x([0-9a-fA-F]{2}){4,}$/.test(data || '')) return { ok: false, why: 'no call data' };
-  if (tx.gas !== undefined && BigInt(tx.gas) > MAX_GAS) return { ok: false, why: `gas ${BigInt(tx.gas)} is above ${MAX_GAS}` };
+  let gas = null;
+  if (tx.gas !== undefined && tx.gas !== null) {
+    try { gas = BigInt(tx.gas); } catch (e) { return { ok: false, why: 'the gas limit is not a number' }; }
+    if (gas < 0n || gas > MAX_GAS) return { ok: false, why: `gas ${gas} is not between 0 and ${MAX_GAS}` };
+  }
   if (W.sent.length + W.dryRequests.length >= MAX_SENDS) return { ok: false, why: `more than ${MAX_SENDS} transactions in one walk` };
-  const ctx = { me: ME, kind: OPT.kind, mode: OPT.mode, watchKinds: WATCH_KINDS[OPT.kind], kindSels: KIND_SIGS[OPT.kind].map(sel) };
+  const ctx = { me: ME, kind: OPT.kind, mode: OPT.mode, watchKinds: WATCH_KINDS[OPT.kind] };
   const table = callTable(ctx);
   let cls = null;
   if (same(tx.to, DEP.token)) cls = 'token';
@@ -558,6 +803,12 @@ async function policy(tx) {
   try { args = decodeArgs(types, strip0x(data).slice(8)); } catch (e) { return { ok: false, why: `${sig}: ${e.message}` }; }
   if (encodeArgs(types, args) !== strip0x(data).slice(8)) return { ok: false, why: `${sig}: the call data is not the standard encoding of its arguments` };
   const rule = table[cls][sig];
+  /* one of each, in the page's own order (a send cast did not report counts as signed) */
+  if (ONCE.includes(sig) && signed(sig)) return { ok: false, why: `a second ${sig} in one walk` };
+  if (rule.recovery && ONCE.some(signed)) return { ok: false, why: `${sig} after the walk's own run began (the page withdraws an earlier visit's deposit before it)` };
+  if (sig === SIG_SUBMIT && !signed(SIG_ARM)) return { ok: false, why: `${sig} before the watch is on` };
+  if (sig !== SIG_SUBMIT && signed(SIG_ARM)) return { ok: false, why: `${sig} after the watch was turned on (only the curator's one submit follows)` };
+  if (sig === SIG_CREATE && signed(SIG_DEPOSIT)) return { ok: false, why: 'create() after the walk\'s deposit' };
   if (rule.vaultArg !== undefined && !(isOwn(args[rule.vaultArg]) && (await isVault(args[rule.vaultArg])))) {
     return { ok: false, why: `${sig}: ${args[rule.vaultArg]} is not this walk's own listed vault` };
   }
@@ -565,8 +816,19 @@ async function policy(tx) {
     const r = rule.check(args);
     if (r !== true) return { ok: false, why: `${sig}: ${r}` };
   }
+  if (rule.ownWatch !== undefined) {
+    /* only the walk address's own active watch on the walk's vault: the one the page's "withdraw and start over" ends */
+    const id = OWN === null ? null : await uintAgreed(DEP.exit, sel('activeWatchOf(address,address)') + addrWord(ME) + addrWord(OWN));
+    if (id === null || id === 0n || id !== args[rule.ownWatch]) {
+      return { ok: false, why: `${sig}: watch ${args[rule.ownWatch]} is not the walk address's active watch on its own vault` };
+    }
+  }
+  if (rule.change !== undefined) {
+    const r = await changeAllowed(args[rule.change], ctx);
+    if (r !== true) return { ok: false, why: `${sig}: ${r}` };
+  }
   if (rule.curator && !(await curatorIsMe(tx.to))) return { ok: false, why: `${sig}: the walk address is not the curator of ${tx.to}` };
-  return { ok: true, cls, sig, types, args, label: rule.label, data: lower(data), to: lower(tx.to), gas: tx.gas === undefined ? null : BigInt(tx.gas) };
+  return { ok: true, cls, sig, types, args, label: rule.label, data: lower(data), to: lower(tx.to), gas };
 }
 
 const refuse = (code, message) => ({ ok: false, error: { code, message } });
@@ -575,6 +837,73 @@ function refuseStopped(what) {
   W.refused.push({ at: secs(), method: 'eth_sendTransaction', why: W.failure ? 'the walk had already failed' : 'the walk had ended' });
   if (!W.failure) fail(`the page asked to sign ${what} after the walk ended`);
   return refuse(4001, 'Refused: the walk has stopped');
+}
+
+/* The walk address's transaction count as the sending endpoint gives it ('pending': the next nonce, transactions not
+   yet mined included); null when it could not be read. */
+async function nonceOf(tag) {
+  const r = await rpc(BASE_SEND, 'eth_getTransactionCount', [ME, tag]);
+  try { return r.error ? null : Number(BigInt(r.result)); } catch (e) { return null; }
+}
+
+/* The walk address's 'latest' transaction count from every Base Sepolia endpoint, the highest of them (they may be a
+   block apart); null when any of them gives no readable count. */
+async function latestEverywhere() {
+  const answers = await Promise.all(BASE_ALL.map((u) => rpc(u, 'eth_getTransactionCount', [ME, 'latest'])));
+  const counts = answers.map((r) => { try { return r.error ? null : Number(BigInt(r.result)); } catch (e) { return null; } });
+  return counts.every((n) => Number.isSafeInteger(n) && n >= 0) ? Math.max(...counts) : null;
+}
+
+/* The nonce the next send takes: the sending endpoint's pending count, once it is at least one more than the nonce of
+   the last send this walk recorded as mined (a lagging endpoint would hand out a used one), and every endpoint's
+   'latest' count has been read, asked again for 15 s at most; then the highest of that pending count and those counts
+   (a sending endpoint alone could name the nonce of an earlier transaction of the walk address). { nonce } or { why }. */
+async function nextNonce() {
+  const used = W.sent.filter((s) => s.hash && Number.isInteger(s.nonce)).map((s) => s.nonce + 1);
+  const floor = used.length ? Math.max(...used) : 0;
+  let last = null;
+  let top = null;
+  const n = await until(async () => {
+    [last, top] = await Promise.all([nonceOf('pending'), latestEverywhere()]);
+    return last !== null && last >= floor && top !== null ? Math.max(last, top) : null;
+  }, WAIT.nonce, 1500);
+  if (n !== null) return { nonce: n };
+  return { why: last === null ? 'the next nonce of the walk address could not be read'
+    : last < floor ? `the next nonce read is ${last}, not past ${floor - 1}, the nonce of this walk's last mined send`
+      : 'the transaction count of the walk address could not be read from every Base Sepolia endpoint' };
+}
+
+/* Why the transaction as mined is not the one asked for, or null when it is: the page's call data, target and
+   sender, no value, on Base Sepolia, at the nonce cast was given, and (hash given) under that hash. */
+function minedDiffers(mined, p, nonce, hash = null) {
+  if (!mined || typeof mined !== 'object') return 'could not be read back';
+  if (hash !== null && !same(mined.hash, hash)) return `as mined is given under another hash (${oneLine(mined.hash).slice(0, 66)})`;
+  const num = (x) => { try { return x === undefined || x === null ? null : BigInt(x); } catch (e) { return null; } };
+  if (lower(mined.input) !== p.data || !same(mined.to, p.to) || !same(mined.from, ME) || num(mined.value) !== 0n) return 'as mined differs from the page\'s request';
+  if (num(mined.chainId) !== BigInt(BASE_ID)) return `as mined is not a Base Sepolia transaction (chain id ${oneLine(mined.chainId)})`;
+  if (num(mined.nonce) !== BigInt(nonce)) return `as mined has nonce ${oneLine(mined.nonce)}, not ${nonce}, the one cast was given`;
+  return null;
+}
+
+/* What the nonce after the walk says of a send cast did not report (signed at nonce, the account's count now top). */
+function broadcastOf(nonce, top) {
+  if (nonce === null || nonce === undefined || top === null || top < 0) return 'not known: the nonce could not be read';
+  return top > nonce ? 'yes: the nonce moved past the one given to cast'
+    : 'inconclusive: the nonce did not move: not mined so far, a queued or dropped broadcast cannot be ruled out';
+}
+
+/* The cast runner. Only the signer test replaces it (signerFor), with a function that starts nothing. */
+let castRunner = (argv, timeoutMs) => runCast(argv, timeoutMs);
+
+/* With an out directory: the record so far, written as the result with result "running" (a job stopped from outside
+   still leaves it, and the job summary shows it). The intent of a send in flight is in it; the key never is. */
+function writeRunning() {
+  if (!OPT || !OPT.out || OPT.dry) return;
+  try {
+    const res = bareResult(W.failure, 'running');
+    writeFileSync(join(OPT.out, 'result.json'), JSON.stringify(res, null, 2) + '\n');
+    writeFileSync(join(OPT.out, 'summary.md'), summaryMd(res));
+  } catch (e) { /* the final result is written at the end */ }
 }
 
 async function sendTransaction(tx) {
@@ -594,39 +923,104 @@ async function sendTransaction(tx) {
     fail(`refused a transaction: ${p.why}`);
     return refuse(4001, 'Refused by the walk signer');
   }
-  const argv = ['send', '--json', '--rpc-url', BASE_SEND, '--private-key', KEY, p.to, p.sig, ...p.types.map((t, i) => castArg(t, p.args[i]))];
+  /* the nonce this send takes, read first and given to cast: if cast does not report back, the record still says
+     what to look for */
+  const nn = await nextNonce();
+  /* checked again after the last wait: from here to the start of cast nothing is awaited */
+  if (W.failure || W.stopped) return refuseStopped(p.sig);
+  if (nn.why) {
+    W.refused.push({ at: secs(), method: 'eth_sendTransaction', why: nn.why });
+    fail(`refused ${p.sig}: ${nn.why}`);
+    return refuse(4001, 'Refused by the walk signer');
+  }
+  const nonce = nn.nonce;
+  /* --chain: cast signs for Base Sepolia whatever chain the endpoint claims to be at that moment */
+  const argv = ['send', '--json', '--rpc-url', BASE_SEND, '--chain', String(BASE_ID), '--private-key', KEY, '--nonce', String(nonce),
+    p.to, p.sig, ...p.types.map((t, i) => castArg(t, p.args[i]))];
   if (p.gas) argv.push('--gas-limit', p.gas.toString());
-  log(`signing ${p.label}: ${p.sig} on ${p.to}`);
-  const r = await runCast(argv, 240000);
+  const args = p.args.map((a) => lower(String(a)));
+  log(`signing ${p.label}: ${p.sig} to ${p.to} nonce ${nonce}`);
+  W.inFlight = { at: secs(), label: p.label, sig: p.sig, to: p.to, args, nonce };
+  writeRunning();
+  const r = await castRunner(argv, 240000);
+  W.inFlight = null;
   const rec = r.code === 0 ? lastJson(r.out) : null;
   const hash = rec && /^0x[0-9a-fA-F]{64}$/.test(rec.transactionHash || '') ? lower(rec.transactionHash) : null;
+  const entry = { at: secs(), label: p.label, sig: p.sig, to: p.to, args, nonce };
   if (!hash) {
-    fail(`cast send failed for ${p.sig} (exit ${r.code}): ${r.err.trim().split('\n').slice(-3).join(' | ')}`);
+    /* cast reported no mined transaction. It may have broadcast one all the same (its receipt wait failed, or it was
+       stopped at the time limit): the request goes into the record as unknown, with the nonce and any hash cast
+       printed, and closeSends() reads the nonce again at the end. */
+    Object.assign(entry, { hash: null, status: 'unknown', castExit: r.code });
+    const printed = hashesIn(`${r.out}\n${r.err}`);
+    if (printed.length) entry.hashesPrinted = printed;
+    Object.defineProperty(entry, 'data', { value: p.data, enumerable: false });
+    W.sent.push(entry);
+    fail(`cast send reported no mined transaction for ${p.sig} (exit ${r.code}); recorded as unknown, nonce ${nonce}: ${r.err.trim().split('\n').slice(-3).join(' | ')}`);
+    writeRunning();
     return refuse(-32603, 'The transaction could not be sent');
   }
-  const status = String(rec.status);
-  const entry = { at: secs(), label: p.label, sig: p.sig, to: p.to, args: p.args.map((a) => lower(String(a))), hash, status,
-    block: rec.blockNumber ? Number(BigInt(rec.blockNumber)) : null };
+  const status = redact(String(rec.status)).slice(0, 16);
+  Object.assign(entry, { hash, status, block: rec.blockNumber ? Number(BigInt(rec.blockNumber)) : null });
   W.sent.push(entry);
+  writeRunning();
   if (!['1', '0x1', 'true'].includes(lower(status))) fail(`${p.sig} was mined and failed (status ${status}, ${hash})`);
-  /* the transaction as mined must carry exactly what the page asked for */
-  const mined = await until(async () => {
-    const t = await rpcAny([BASE_SEND, ...BASE_READ], 'eth_getTransactionByHash', [hash]);
-    return t && t.result ? t.result : null;
-  }, 30000);
-  if (!mined) fail(`${hash} could not be read back`);
-  else if (lower(mined.input) !== p.data || !same(mined.to, p.to) || !same(mined.from, ME) || BigInt(mined.value) !== 0n) {
-    fail(`${hash} as mined differs from the page's request`);
-  }
+  /* the transaction cast printed, as every endpoint gives it, must carry exactly what the page asked for, from the
+     walk address, on Base Sepolia, at the nonce cast was given: the sending endpoint alone could hand cast the hash
+     of another transaction (an earlier create() of the walk address has the same call data). Until it does, the
+     hash is not taken as this send. */
+  const mined = await txAgreed(hash);
+  const differs = mined === null ? 'could not be read back alike from every endpoint' : minedDiffers(mined, p, nonce, hash);
+  entry.hashConfirmed = !differs;
+  if (differs) fail(`${hash} ${differs}`);
   entry.logs = (rec.logs || []).map((l) => ({ address: lower(l.address), topics: (l.topics || []).map(lower), data: lower(l.data) }));
-  /* the vault this walk's own create() made becomes a target; nothing the page says can add one */
-  if (p.cls === 'maker' && p.sig === 'create()') {
-    const tCreated = topic('VaultCreated(address,address)');
-    const made = entry.logs.find((l) => same(l.address, DEP.maker) && l.topics[0] === tCreated && same(topicAddr(l.topics[2] || ''), ME));
-    if (made) addOwn(topicAddr(made.topics[1]));
+  /* from here the vault this walk's own create() made is its one vault: the earlier visit's vault is no target any
+     more, and nothing the page says can add one. The vault is taken from the receipt as every endpoint gives it and
+     must be the maker's lastVaultOf(walk address) on every endpoint; until that is established there is none, and
+     it is not sought at all for a hash that is not this create() as every endpoint gives it. */
+  if (p.cls === 'maker' && p.sig === SIG_CREATE) {
+    setOwn(null);
+    const made = differs ? { why: 'its hash is not this create() on every endpoint' } : await createdVault(hash);
+    setOwn(made.vault || null);
+    if (!made.vault) fail(`${hash}: the vault of this create() could not be established (${made.why}); the walk has no vault of its own`);
   }
+  writeRunning();
   log(`sent ${p.label}: ${hash} status ${status}`);
   return { ok: true, result: hash };
+}
+
+/* After the walk: the walk address's nonce again, and what became of a send cast did not report. Returns the nonce
+   record for the result. A nonce that moved further than the record holds sends fails the walk. */
+async function closeSends() {
+  if (OPT.dry || W.nonceStart === undefined) return null;
+  const latest = await nonceOf('latest');
+  const pending = await nonceOf('pending');
+  const top = [latest, pending].filter((n) => n !== null).reduce((a, b) => Math.max(a, b), -1);
+  for (const s of W.sent.filter((x) => x.status === 'unknown')) {
+    s.nonceAfter = top < 0 ? null : top;
+    s.broadcast = broadcastOf(s.nonce, top);
+    /* a printed hash is this request only when every endpoint gives it as this call from the walk address at the
+       nonce cast was given (asked once); no agreement leaves the word the nonce gave, and the hash is listed as not
+       confirmed (an endpoint did not answer, or the endpoints differ, for example one knows a pending transaction) */
+    for (const h of s.hashesPrinted || []) {
+      const t = await agreed('eth_getTransactionByHash', [h], txView);
+      if (t.error) {
+        s.hashesUnconfirmed = [...(s.hashesUnconfirmed || []), h];
+        continue;
+      }
+      if (minedDiffers(t.value, { data: s.data, to: s.to }, s.nonce, h)) continue;
+      const rc = await agreed('eth_getTransactionReceipt', [h], receiptView);
+      s.hash = h;
+      s.receiptStatus = rc.error ? 'not known: the endpoints did not give one receipt' : rc.value ? rc.value.status : 'no receipt yet';
+      s.broadcast = 'yes: the transaction cast printed is this request on every endpoint';
+      break;
+    }
+    log(`send not reported by cast: ${s.sig} nonce ${s.nonce}, broadcast ${s.broadcast}${s.hash ? `, ${s.hash}` : ''}`);
+  }
+  if (W.nonceStart !== null && latest !== null && latest - W.nonceStart > W.sent.length) {
+    fail(`the walk address sent ${latest - W.nonceStart} transactions during the walk; the record holds ${W.sent.length}`);
+  }
+  return { atStart: W.nonceStart, atEnd: latest, pendingAtEnd: pending, recorded: W.sent.length };
 }
 
 async function walletRequest(method, params) {
@@ -808,8 +1202,16 @@ let SID = null;
 let ORIGIN = '';
 const tab = (method, params = {}, timeoutMs = 60000) => CDP.send(method, params, SID, timeoutMs);
 
+/* While the page is driven (drive, and the dry check after it): the walk's own time limit. The driver's loops stop at
+   it (the wait for the balances before the change runs to its own end, and nothing is pressed after it), and its page
+   calls wait at most 5 s past it, so the walk's timeout fires well before the job's. Infinity otherwise (the wallet's
+   replies and the screenshots never use it). */
+let DEADLINE = Infinity;
+const overDeadline = () => Date.now() > DEADLINE;
+const pageWait = () => Math.max(2000, Math.min(60000, DEADLINE - Date.now() + 5000));
+
 async function evalPage(expression) {
-  const r = await tab('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+  const r = await tab('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, pageWait());
   if (r.exceptionDetails) throw new Error(`page evaluation failed: ${(r.exceptionDetails.exception && r.exceptionDetails.exception.description) || r.exceptionDetails.text}`);
   return r.result ? r.result.value : undefined;
 }
@@ -862,6 +1264,14 @@ function onEvent(m) {
       fail(`browser error (${e.source}): ${item.text} ${item.url}`.trim());
       return;
     }
+    case 'Page.frameNavigated': {
+      /* a live walk serves its wallet to the hosted page only: the main frame may not go anywhere else */
+      const f = p.frame || {};
+      if (!f.parentId && OPT && !OPT.dry && f.url && f.url !== 'about:blank' && !underLive(f.url)) {
+        fail(`the browser left the hosted page for ${oneLine(f.url).slice(0, 200)}`);
+      }
+      return;
+    }
     case 'Page.javascriptDialogOpening':
       tab('Page.handleJavaScriptDialog', { accept: false }).catch(() => {});
       fail(`the page opened a dialog: ${String(p.message || '').slice(0, 200)}`);
@@ -892,6 +1302,16 @@ const SNAP = `(() => {
   return { state: box.getAttribute('data-state'), cls: box.className, head: h ? h.textContent : '', text: (box.innerText || '').slice(0, 1500), acts: acts };
 })()`;
 
+/* The snapshot as plain strings and booleans, whatever the page put there: its values are used in text after the walk,
+   and an object that cannot be turned into a string must not stop the result from being written. */
+function cleanSnap(s) {
+  const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
+  if (!s || typeof s !== 'object' || typeof s.state !== 'string' || !s.state) return null;
+  const acts = (Array.isArray(s.acts) ? s.acts : []).filter((x) => x && typeof x === 'object' && typeof x.a === 'string')
+    .slice(0, 40).map((x) => ({ a: x.a.slice(0, 60), off: x.off === true }));
+  return { state: s.state.slice(0, 60), cls: str(s.cls, 200), head: str(s.head, 300), text: str(s.text, 1500), acts };
+}
+
 async function clickSel(selector) {
   const r = await evalPage(`(() => {
     const el = document.querySelector(${JSON.stringify(selector)});
@@ -906,9 +1326,9 @@ async function clickSel(selector) {
   })()`);
   if (!r || !r.found || r.disabled) return false;
   if (r.w > 0 && r.hitOk) {
-    await tab('Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.x, y: r.y });
-    await tab('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x, y: r.y, button: 'left', clickCount: 1 });
-    await tab('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+    await tab('Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.x, y: r.y }, pageWait());
+    await tab('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x, y: r.y, button: 'left', clickCount: 1 }, pageWait());
+    await tab('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', clickCount: 1 }, pageWait());
   } else {
     await evalPage(`document.querySelector(${JSON.stringify(selector)}).click()`);
     W.notes.push(`clicked ${selector} by script (not hit-testable at its centre)`);
@@ -925,27 +1345,53 @@ async function findFirst(selectors) {
   return null;
 }
 
+/* Why the kind boxes the page shows cannot be the watch step's, or null: at most 8 (the page reads one more at most),
+   each of bit 1, 2, 4 or 8, no bit twice. */
+function boxProblem(list) {
+  if (!Array.isArray(list)) return 'the kind boxes could not be read';
+  if (list.length > 8) return 'the watch step shows more than 8 kind boxes';
+  const seen = new Set();
+  for (const b of list) {
+    const bit = b && typeof b === 'object' ? b.bit : undefined;
+    if (![1, 2, 4, 8].includes(bit)) return `a kind box has bit ${oneLine(bit).slice(0, 20)}, not 1, 2, 4 or 8`;
+    if (seen.has(bit)) return `two kind boxes have bit ${bit}`;
+    seen.add(bit);
+  }
+  return null;
+}
+
 async function configureWatch() {
   const want = WATCH_KINDS[OPT.kind];
+  const late = () => { fail(`no end state within ${OPT.timeout} s (while setting the kind boxes)`); return false; };
   const modeSel = await findFirst(MODE_SELECTORS(OPT.mode));
   if (OPT.mode === 1 && !modeSel) { fail('the page offers no control for "leave if still pending" (mode 1); this walk cannot choose it'); return false; }
   if (modeSel) {
     const on = await evalPage(`(() => { const e = document.querySelector(${JSON.stringify(modeSel)}); return e.type === 'radio' || e.type === 'checkbox' ? e.checked : e.getAttribute('aria-pressed') === 'true'; })()`);
     if (!on && !(await clickSel(modeSel))) { fail(`could not choose mode ${OPT.mode}`); return false; }
   }
-  const boxes = async () => evalPage(`Array.prototype.map.call(document.querySelectorAll('#state input[data-bit]'), (b) => ({ bit: Number(b.getAttribute('data-bit')), checked: b.checked, disabled: b.disabled }))`);
+  /* nine at most are read: more than 8 fails the walk whatever the page holds */
+  const boxes = async () => {
+    const l = await evalPage(`Array.prototype.slice.call(document.querySelectorAll('#state input[data-bit]'), 0, 9).map((b) => ({ bit: Number(b.getAttribute('data-bit')), checked: b.checked === true, disabled: b.disabled === true }))`);
+    const why = boxProblem(l);
+    if (why) { fail(`the watch step cannot be set: ${why}`); return null; }
+    return l;
+  };
   let list = await boxes();
+  if (!list) return false;
   if (!list.length) { fail('the watch step shows no kind boxes (input[data-bit])'); return false; }
   /* tick first, untick after: with no kind ticked the page disables "Turn the watch on" */
   for (const pass of [true, false]) {
     for (const b of list) {
+      if (overDeadline()) return late();
       const on = (want & b.bit) !== 0;
       if (on !== pass || b.checked === on) continue;
       if (b.disabled) { fail(`the page locks the box of kind ${b.bit}; this walk needs kinds ${want}`); return false; }
       await clickSel(`#state input[data-bit="${b.bit}"]`);
       await sleep(150);
     }
+    if (overDeadline()) return late();
     list = await boxes();
+    if (!list) return false;
   }
   const got = list.reduce((acc, b) => acc | (b.checked ? b.bit : 0), 0);
   if (got !== want) { fail(`the kind boxes read ${got} after setting them, not ${want}`); return false; }
@@ -978,17 +1424,31 @@ async function dryUiCheck() {
   return out;
 }
 
-async function tokenBalance(addr) { return uintOf(BASE_READ, DEP.token, sel('balanceOf(address)') + addrWord(addr)); }
+/* Balances the checks compare: read at one block number that every endpoint has reached, the same answer from all. */
+async function balancesAt(vault, atLeast = 0, ms = 20000) {
+  const n = await pinnedBlock(atLeast, ms);
+  if (n === null) return { block: null, token: null, shares: null, watch: null };
+  const at = { block: blockHex(n), ms: WAIT.balance };
+  const token = await uintAgreed(DEP.token, sel('balanceOf(address)') + addrWord(ME), at);
+  const shares = vault ? await uintAgreed(vault, sel('balanceOf(address)') + addrWord(ME), at) : null;
+  const watch = vault ? await uintAgreed(DEP.exit, sel('activeWatchOf(address,address)') + addrWord(ME) + addrWord(vault), at) : null;
+  return { block: n, token, shares, watch };
+}
 
-async function walkVault() {
-  const made = W.sent.find((s) => s.sig === 'create()' && s.logs);
-  if (made) {
-    const t = topic('VaultCreated(address,address)');
-    const l = made.logs.find((x) => same(x.address, DEP.maker) && x.topics[0] === t && same(topicAddr(x.topics[2]), ME));
-    if (l) return topicAddr(l.topics[1]);
+/* The balances before the change: read at a block not below the block of this walk's arm (its receipt alike from
+   every endpoint), so they hold the walk's own deposit and arm; asked again for 60 s at most. { block, token, shares,
+   watch, armBlock } or { why }: the walk then stops before the change is scheduled. */
+async function armBaseline(vault) {
+  const armSent = W.sent.filter((x) => x.sig === SIG_ARM && x.hash)[0];
+  if (!armSent) return { why: 'this walk has no mined arm in its record' };
+  const rc = await receiptAgreed(armSent.hash);
+  if (!rc || rc.status !== '0x1' || !/^0x[0-9a-f]+$/.test(rc.blockNumber)) return { why: `the arm ${armSent.hash} has no successful receipt alike on every endpoint` };
+  const armBlock = Number(BigInt(rc.blockNumber));
+  const b = await balancesAt(vault, armBlock, WAIT.baseline);
+  if (b.block === null || b.block < armBlock || b.token === null || b.shares === null) {
+    return { why: `no balances alike on every endpoint at a block not below the arm's block ${armBlock} (block ${b.block}, demo dollars ${b.token}, shares ${b.shares})` };
   }
-  const v = await call(BASE_READ, DEP.maker, sel('lastVaultOf(address)') + addrWord(ME));
-  return v ? '0x' + v.slice(26, 66) : null;
+  return { ...b, armBlock };
 }
 
 /* The page's checks of its own: the states, buttons and contracts this walk relies on. */
@@ -1030,11 +1490,12 @@ const FAIL_STATES = new Set(['no-wallet', 'no-wallet-phone', 'unsupported-wallet
   'wallet-error', 'tx-failed', 'vault-tampered', 'deposit-short', 'watch-refused', 'unwatched-wait', 'ignored', 'missed',
   'reactive-timeout', 'callback-slow', 'nothing-to-redeem', 'redeem-failed', 'withdrawn-by-hand', 'watch-off',
   'page-error', 'account-changed', 'framed', 'run-not-yet', 'run-too-old', 'reading-run', 'replay', 'watch-closed',
-  'run-still-on', 'run-no-exit']);
+  'run-still-on', 'run-no-exit', 'run-no-return', 'vault-set-aside']);
 
 /* Returns 'returned', 'dry-ok', or null on failure. */
 async function drive() {
   const deadline = Date.now() + OPT.timeout * 1000;
+  DEADLINE = deadline;
   let last = null;
   let enteredAt = Date.now();
   let acted = false;
@@ -1048,8 +1509,8 @@ async function drive() {
     if (W.failure) return null;
     if (Date.now() > deadline) { fail(`no end state within ${OPT.timeout} s (last state ${last})`); return null; }
     let s;
-    try { s = await evalPage(SNAP); } catch (e) { await sleep(500); continue; }
-    if (!s || !s.state) { await sleep(400); continue; }
+    try { s = cleanSnap(await evalPage(SNAP)); } catch (e) { await sleep(500); continue; }
+    if (!s) { await sleep(400); continue; }
     if (s.state !== last) {
       W.states.push({ id: s.state, at: secs(), head: s.head });
       log(`state ${s.state}${s.head ? `: ${s.head}` : ''}`);
@@ -1101,9 +1562,15 @@ async function drive() {
         if (!acted) {
           acted = true; actedAt = Date.now();
           if (!enabled(`schedule-${bit}`)) { fail(`the curator step offers no enabled "schedule-${bit}" (buttons: ${(s.acts || []).map((x) => x.a).join(', ')})`); return null; }
-          W.vault = await walkVault();
-          W.tokenBefore = await tokenBalance(ME);
-          W.sharesBefore = W.vault ? await uintOf(BASE_READ, W.vault, sel('balanceOf(address)') + addrWord(ME)) : null;
+          W.vault = OWN;
+          /* the baseline is read at or after the arm's block, or the walk stops here, before the change is scheduled */
+          const before = await armBaseline(W.vault);
+          if (before.why) { fail(`no balances before the change: ${before.why}`); return null; }
+          /* the wait for the balances is not cut short, but nothing is pressed after it once the deadline passed */
+          if (overDeadline()) { fail(`no end state within ${OPT.timeout} s (while reading the balances before the change)`); return null; }
+          W.tokenBefore = before.token;
+          W.sharesBefore = before.shares;
+          W.beforeBlock = before.block;
           log(`press schedule-${bit}`);
           await clickSel(`#state [data-a="schedule-${bit}"]`);
         }
@@ -1151,7 +1618,9 @@ async function ledgerHashes() {
       const q = (c) => { const a = document.querySelector('#state tr.' + c + ' a.hash'); if (!a) return null; const m = /\\/tx\\/(0x[0-9a-fA-F]{64})/.exec(a.getAttribute('href') || ''); return m ? m[1].toLowerCase() : null; };
       return { h1: q('rec-sched'), h2: q('rec-react'), h3: q('rec-back') };
     })()`).catch(() => null);
-    return h && h.h1 && h.h2 && h.h3 ? h : null;
+    /* only three well-formed hashes count, whatever else the page returns */
+    const ok = (x) => typeof x === 'string' && /^0x[0-9a-f]{64}$/.test(x);
+    return h && ok(h.h1) && ok(h.h2) && ok(h.h3) ? { h1: h.h1, h2: h.h2, h3: h.h3 } : null;
   }, 90000, 2000);
 }
 
@@ -1161,9 +1630,12 @@ async function verifyRun(v) {
   const checks = [];
   const out = { checks };
   const check = (name, ok, detail) => { checks.push({ name, ok: !!ok, detail: detail === undefined ? '' : String(detail) }); return !!ok; };
-  const [r1, r3] = [await receipt(BASE_READ, v.h1), await receipt(BASE_READ, v.h3)];
+  /* Base Sepolia: the same receipt from every endpoint. Reactive Lasna has one public endpoint. */
+  const [r1, r3] = [await receiptAgreed(v.h1), await receiptAgreed(v.h3)];
   const r2 = await receipt([LASNA_RPC], v.h2);
-  if (!check('three receipts read', r1 && r2 && r3, `${!!r1} ${!!r2} ${!!r3}`)) return out;
+  if (!check('three receipts read (the two on Base Sepolia alike from every endpoint)', r1 && r2 && r3, `${!!r1} ${!!r2} ${!!r3}`)) return out;
+  out.block3 = Number(BigInt(r3.blockNumber));
+  const watchIs = (t) => { try { return BigInt(t) === BigInt(v.watchId); } catch (e) { return false; } };
   if (v.submitHash) check('the Submit the page shows is the one this walk signed', same(v.h1, v.submitHash), v.submitHash);
   check('1. Submit: status 1', r1.status === '0x1', r1.status);
   check('1. Submit: sent by the curator to the vault', same(r1.from, v.curator) && same(r1.to, v.vault), `${r1.from} -> ${r1.to}`);
@@ -1178,17 +1650,16 @@ async function verifyRun(v) {
   }
   check('2. Reactive: status 1', r2.status === '0x1', r2.status);
   const tExit = topic('ExitRequested(uint256,uint256,uint8,bytes32)');
-  const ex = (r2.logs || []).find((l) => same(l.address, DEP.reactive) && lower(l.topics[0]) === tExit);
-  if (check('2. Reactive: ExitRequested of NoticeReactive', ex)) {
-    check('2. Reactive: names the watch', BigInt(ex.topics[1]) === BigInt(v.watchId), BigInt(ex.topics[1]));
+  /* one Submit fires every watch on the vault in one reactive transaction: this watch's log is found by its id */
+  const ex = (r2.logs || []).find((l) => same(l.address, DEP.reactive) && lower(l.topics[0]) === tExit && watchIs(l.topics[1]));
+  if (check('2. Reactive: ExitRequested of NoticeReactive for the watch', ex, `watch ${v.watchId}`)) {
     check('2. Reactive: names the Submit as its origin', same(ex.topics[2], v.h1), ex.topics[2]);
     out.exitReason = Number(dataWord(ex.data, 0));
   }
   check('3. Exit: status 1', r3.status === '0x1', r3.status);
   const tEnded = topic('WatchEnded(uint256,uint256,uint8,uint8,uint256,uint256)');
-  const end = (r3.logs || []).find((l) => same(l.address, DEP.exit) && lower(l.topics[0]) === tEnded);
-  if (check('3. Exit: WatchEnded of NoticeExit', end)) {
-    check('3. Exit: names the watch', BigInt(end.topics[1]) === BigInt(v.watchId), BigInt(end.topics[1]));
+  const end = (r3.logs || []).find((l) => same(l.address, DEP.exit) && lower(l.topics[0]) === tEnded && watchIs(l.topics[1]));
+  if (check('3. Exit: WatchEnded of NoticeExit for the watch', end, `watch ${v.watchId}`)) {
     check('3. Exit: names the Submit as its origin', same(end.topics[2], v.h1), end.topics[2]);
     const outcome = Number(dataWord(end.data, 0));
     out.outcome = outcome;
@@ -1204,10 +1675,10 @@ async function verifyRun(v) {
       check('3. Exit: the amount moved equals the redeemed assets', dataWord(tr.data, 0) === dataWord(end.data, 3), dataWord(tr.data, 0));
     }
   }
-  const t1 = await blockTs(BASE_READ, r1.blockNumber);
+  const t1 = await blockTsAgreed(r1.blockNumber, r1.blockHash);
   const t2 = await blockTs([LASNA_RPC], r2.blockNumber);
-  const t3 = await blockTs(BASE_READ, r3.blockNumber);
-  if (check('block times read', t1 !== null && t2 !== null && t3 !== null)) {
+  const t3 = await blockTsAgreed(r3.blockNumber, r3.blockHash);
+  if (check('block times read (Base Sepolia: the blocks of the receipts, alike from every endpoint)', t1 !== null && t2 !== null && t3 !== null)) {
     out.t1 = t1; out.t2 = t2; out.t3 = t3;
     out.seconds = t3 - t1;
     out.reactiveAfter = t2 - t1;
@@ -1221,8 +1692,8 @@ async function verifyRun(v) {
 }
 
 async function armFacts(armTx, owner) {
-  const r = await receipt(BASE_READ, armTx);
-  if (!r) return null;
+  const r = await receiptAgreed(armTx);
+  if (!r || r.status !== '0x1') return null;
   const t = topic('WatchArmed(uint256,address,address,uint8,uint8,uint256)');
   const l = (r.logs || []).find((x) => same(x.address, DEP.exit) && lower(x.topics[0]) === t && same(topicAddr(x.topics[2]), owner));
   if (!l) return null;
@@ -1318,7 +1789,7 @@ async function walkMode() {
   mkdirSync(OPT.out, { recursive: true });
 
   /* chains */
-  for (const [u, want] of [[BASE_READ[0], BASE_ID], [BASE_SEND, BASE_ID], [LASNA_RPC, LASNA_ID]]) {
+  for (const [u, want] of [...BASE_ALL.map((x) => [x, BASE_ID]), [LASNA_RPC, LASNA_ID]]) {
     const r = await rpc(u, 'eth_chainId', []);
     if (r.error || Number(BigInt(r.result)) !== want) die(`endpoint for chain ${want} answers ${r.error ? r.error.message : Number(BigInt(r.result))}`);
   }
@@ -1341,12 +1812,16 @@ async function walkMode() {
   }
   /* the maker answers isVault for its own smoke vault, so the signer's vault rule can say yes at all */
   if (DEP.smokeVault && !(await isVault(DEP.smokeVault))) die('the maker does not list its smoke vault (isVault false or unreadable)');
-  /* the walk address's own earlier vault (the page resumes or empties it), read once, before the page says anything */
-  const last = await call(BASE_READ, DEP.maker, sel('lastVaultOf(address)') + addrWord(ME));
-  if (last && last.length >= 66) {
-    const v = topicAddr(last.slice(0, 66));
-    if (!same(v, ZERO_ADDR)) { addOwn(v); log(`the walk address's last vault from the maker: ${v}`); }
+  /* the walk address's own earlier vault (the page resumes or empties it), read once, before the page says anything,
+     and only as every endpoint gives it */
+  const last = await uintAgreed(DEP.maker, sel('lastVaultOf(address)') + addrWord(ME), { ms: 20000 });
+  if (last === null || last >> 160n !== 0n) die('the Base Sepolia endpoints did not give one lastVaultOf for the walk address');
+  if (last !== 0n) {
+    setOwn('0x' + last.toString(16).padStart(40, '0'));
+    log(`the walk address's last vault from the maker: ${OWN}`);
   }
+  /* the next nonce before the walk: at the end the nonce is read again and compared with the record of sends */
+  if (!OPT.dry) W.nonceStart = await nonceOf('pending');
   const bal = await rpcAny(BASE_READ, 'eth_getBalance', [ME, 'latest']);
   const eth = bal && bal.result ? BigInt(bal.result) : null;
   log(`walk address ${ME}${OPT.dry ? ' (dry: nothing is signed)' : ''}; Base Sepolia balance ${eth === null ? 'unknown' : (Number(eth) / 1e18).toFixed(6)} ETH`);
@@ -1356,13 +1831,16 @@ async function walkMode() {
   let shot = null;
   let chrome = await launchChrome(OPT.browser, false);
   res.browserSandbox = true;
-  if (chrome.error) {
+  if (chrome.error && OPT.dry) {
+    /* a dry walk holds no key: it may run the page without the browser's sandbox, and says so */
     W.notes.push(`browser with its sandbox: ${chrome.error}; started again without it`);
-    /* the processes around the browser hold the key in a live walk: running the page unsandboxed is said out loud */
-    if (!OPT.dry) console.log(`::warning::the browser did not start with its sandbox (${oneLine(chrome.error).slice(0, 200)}); the live walk runs it with --no-sandbox`);
     res.browserSandbox = false;
     try { rmSync(chrome.profile, { recursive: true, force: true }); } catch (e) { /* busy */ }
     chrome = await launchChrome(OPT.browser, true);
+  } else if (chrome.error) {
+    /* a live walk never does: the processes around the browser hold the key */
+    res.browserSandbox = null;
+    chrome.error = `the browser did not start with its sandbox, and a live walk does not run the page without it: ${chrome.error}`;
   }
   if (chrome.error) {
     fail(chrome.error);
@@ -1389,9 +1867,15 @@ async function walkMode() {
       }, 45000, 500);
       if (!ready) fail('the page did not draw its guided run within 45 s');
       else {
-        res.walletSeen = await evalPage(`!!(window.ethereum && window.ethereum.isPageWalk)`);
+        res.walletSeen = (await evalPage(`!!(window.ethereum && window.ethereum.isPageWalk)`)) === true;
+        if (!OPT.dry) {
+          /* where the browser itself says the tab is (not the page's own word): still under the hosted page */
+          const nav = await tab('Page.getNavigationHistory');
+          const at = nav && Array.isArray(nav.entries) && nav.entries[nav.currentIndex] ? String(nav.entries[nav.currentIndex].url || '') : '';
+          if (!underLive(at)) fail(`the browser is at ${oneLine(at).slice(0, 200)}, not under the hosted page`);
+        }
         await screenshot('loaded');
-        if (await checkPage()) {
+        if (!W.failure && (await checkPage())) {
           const end = await drive();
           /* The walk has ended, whatever the outcome: nothing more is signed (a later request fails the walk), and a
              transaction cast is still sending is in the record before the receipts are checked. */
@@ -1402,6 +1886,8 @@ async function walkMode() {
             res.dryUi = await dryUiCheck();
             if (!W.failure) res.result = 'ok';
           }
+          /* the page is no longer driven: its later reads have their own limits */
+          DEADLINE = Infinity;
           if (end === 'returned') {
             await screenshot('returned', true);
             res.returnedText = W.last && W.last.text;
@@ -1409,51 +1895,61 @@ async function walkMode() {
             res.page = hashes;
             if (!hashes) fail('the page did not show all three transactions within 90 s of "returned"');
             else {
-              const armSent = W.sent.filter((x) => x.sig === 'arm(address,uint8,uint8,uint256)').slice(-1)[0];
-              const submitSent = W.sent.filter((x) => x.sig === 'submit(bytes)').slice(-1)[0];
+              const armSent = W.sent.filter((x) => x.sig === SIG_ARM && x.hash)[0];
+              const submitSent = W.sent.filter((x) => x.sig === SIG_SUBMIT && x.hash)[0];
               const arm = armSent ? await armFacts(armSent.hash, ME) : null;
               if (!arm) fail('no WatchArmed in the arm transaction this walk signed');
               else if (!submitSent) fail('this walk signed no submit');
               else {
-                W.vault = W.vault || arm.vault;
                 res.vault = arm.vault;
                 res.watchId = arm.watchId;
                 res.arm = arm;
-                if (!same(arm.vault, W.vault)) fail(`the watch is on ${arm.vault}, the walk's vault is ${W.vault}`);
+                /* the walk has one vault (the signer's): the watch, the deposit and the submit are all on it */
+                if (!OWN || !same(arm.vault, OWN)) fail(`the watch is on ${arm.vault}, the walk's vault is ${OWN}`);
                 if (arm.kinds !== WATCH_KINDS[OPT.kind] || arm.mode !== OPT.mode) fail(`WatchArmed says kinds ${arm.kinds} mode ${arm.mode}`);
                 const v = await verifyRun({ ...hashes, submitHash: submitSent.hash, owner: ME, curator: ME, vault: arm.vault,
                   watchId: arm.watchId, shares: arm.maxShares, kind: OPT.kind });
                 const check = (name, ok, detail) => v.checks.push({ name, ok: !!ok, detail: String(detail) });
-                /* read until the three agree with the exit (a lagging endpoint can answer one block behind), 20 s at most */
-                let sharesAfter = null;
-                let watchAfter = null;
-                let tokenAfter = null;
+                const haveBefore = W.tokenBefore !== null && W.tokenBefore !== undefined;
+                /* The balances after the exit, at one block number that every endpoint has reached and that is not
+                   before the exit's block, the same answer from every endpoint; read again for 20 s at most until
+                   they fit the exit (an endpoint can be behind). */
+                let after = { block: null, token: null, shares: null, watch: null };
                 await until(async () => {
-                  sharesAfter = await uintOf(BASE_READ, arm.vault, sel('balanceOf(address)') + addrWord(ME));
-                  watchAfter = await uintOf(BASE_READ, DEP.exit, sel('activeWatchOf(address,address)') + addrWord(ME) + addrWord(arm.vault));
-                  tokenAfter = await tokenBalance(ME);
-                  const gained = W.tokenBefore !== null && W.tokenBefore !== undefined && tokenAfter !== null && v.assets !== undefined
-                    ? tokenAfter - W.tokenBefore === BigInt(v.assets) : true;
-                  return sharesAfter === 0n && watchAfter === 0n && gained ? true : null;
+                  after = await balancesAt(arm.vault, v.block3 || 0);
+                  const gained = haveBefore && after.token !== null && v.assets !== undefined ? after.token - W.tokenBefore === BigInt(v.assets) : true;
+                  return after.shares === 0n && after.watch === 0n && gained ? true : null;
                 }, 20000, 2000);
-                check('after: no shares left in the vault', sharesAfter === 0n, sharesAfter);
-                check('after: no watch left on the vault', watchAfter === 0n, watchAfter);
-                /* a balance that could not be read is a failed check, never a skipped one */
-                const haveTokens = W.tokenBefore !== null && W.tokenBefore !== undefined && tokenAfter !== null && v.assets !== undefined;
-                check('after: the wallet gained exactly the redeemed assets', haveTokens && tokenAfter - W.tokenBefore === BigInt(v.assets),
-                  haveTokens ? `${W.tokenBefore} -> ${tokenAfter}` : `not read (before ${W.tokenBefore}, after ${tokenAfter})`);
-                /* the returned amount belongs to the deposit this walk signed */
-                const dep = W.sent.filter((x) => x.sig === 'deposit(uint256,address)' || x.sig === 'mint(uint256,address)').slice(-1)[0];
-                check('the deposit this walk signed went to the watched vault', dep && same(dep.to, arm.vault), dep ? dep.to : 'no deposit signed');
+                check('after: no shares left in the vault', after.shares === 0n, after.shares);
+                check('after: no watch left on the vault', after.watch === 0n, after.watch);
+                /* a balance that could not be read alike from every endpoint is a failed check, never a skipped one */
+                const haveTokens = haveBefore && after.token !== null && v.assets !== undefined;
+                check('after: the wallet gained exactly the redeemed assets', haveTokens && after.token - W.tokenBefore === BigInt(v.assets),
+                  haveTokens ? `${W.tokenBefore} -> ${after.token}` : `not read (before ${W.tokenBefore}, after ${after.token})`);
+                /* one of each, all on the one vault: the signer refuses a second, and the record is checked for it too */
+                const count = (sig) => W.sent.filter((x) => x.sig === sig).length;
+                check('this walk signed one create() at most, and exactly one deposit, one arm and one submit',
+                  count(SIG_CREATE) <= 1 && count(SIG_DEPOSIT) === 1 && count(SIG_ARM) === 1 && count(SIG_SUBMIT) === 1,
+                  `${count(SIG_CREATE)} create, ${count(SIG_DEPOSIT)} deposit, ${count(SIG_ARM)} arm, ${count(SIG_SUBMIT)} submit`);
+                const dep = W.sent.filter((x) => x.sig === SIG_DEPOSIT)[0];
+                check('the deposit and the submit this walk signed went to the watched vault',
+                  dep && same(dep.to, arm.vault) && same(submitSent.to, arm.vault), `deposit ${dep ? dep.to : 'none'}, submit ${submitSent.to}`);
                 const shares = BigInt(arm.maxShares);
                 check('the shares held before the change equal the watch\'s maxShares and the shares redeemed',
                   W.sharesBefore !== null && W.sharesBefore !== undefined && W.sharesBefore === shares && v.shares !== undefined && BigInt(v.shares) === shares,
                   `held ${W.sharesBefore}, watch ${shares}, redeemed ${v.shares}`);
-                if (dep && dep.sig === 'deposit(uint256,address)') {
-                  const put = BigInt(dep.args[0]);
-                  check('the exit returned the deposit, less at most one unit of rounding', v.assets !== undefined && BigInt(v.assets) + 1n >= put,
-                    `deposited ${put}, returned ${v.assets}`);
-                }
+                /* what the deposit paid: its own Transfer log of the demo dollar, from the walk address to the vault */
+                const depRc = dep && dep.hash ? await receiptAgreed(dep.hash) : null;
+                const tTransfer = topic('Transfer(address,address,uint256)');
+                const paidLog = depRc && depRc.status === '0x1' ? depRc.logs.find((l) => same(l.address, DEP.token) && l.topics[0] === tTransfer &&
+                  same(topicAddr(l.topics[1] || ''), ME) && same(topicAddr(l.topics[2] || ''), arm.vault)) : null;
+                const paid = paidLog ? dataWord(paidLog.data, 0) : null;
+                check('the deposit moved the demo dollars it names from the walk address into the vault', paid !== null && paid === BigInt(dep.args[0]),
+                  paid === null ? 'no such Transfer log in the deposit' : `moved ${paid}, named ${dep.args[0]}`);
+                check('the exit returned the deposit, less at most one unit of rounding', paid !== null && v.assets !== undefined && BigInt(v.assets) + 1n >= paid,
+                  `deposited ${paid}, returned ${v.assets}`);
+                res.readBlocks = { before: W.beforeBlock === undefined ? null : W.beforeBlock, after: after.block };
+                const tokenAfter = after.token;
                 res.verified = v;
                 res.tokens = { before: W.tokenBefore === undefined || W.tokenBefore === null ? null : W.tokenBefore.toString(), after: tokenAfter === null ? null : tokenAfter.toString() };
                 const bad = v.checks.filter((c) => !c.ok);
@@ -1467,6 +1963,7 @@ async function walkMode() {
     } catch (e) {
       fail(`walk error: ${scrub(e && e.message)}`);
     }
+    DEADLINE = Infinity;
     /* nothing more is signed; a send still in flight is recorded (and can fail the walk) before the result is decided */
     W.stopped = true;
     await signChain;
@@ -1477,6 +1974,8 @@ async function walkMode() {
   }
   W.stopped = true;
   await signChain;
+  /* the nonce again, and what became of a send cast did not report (can fail the walk) */
+  res.nonce = await closeSends().catch(() => null);
   /* the dry walk passes only with the wallet seen, one rejected confirmation and nothing else wrong */
   if (OPT.dry && res.result === 'ok' && (!res.walletSeen || !W.connected || W.failure)) res.result = 'failed';
   if (W.failure) res.result = 'failed';
@@ -1486,14 +1985,17 @@ async function walkMode() {
     endedAt: new Date().toISOString(), seconds: secs(), states: W.states, stateLog: W.stateLog, walletRequests: W.requests,
     sent: W.sent.map(({ logs, ...rest }) => rest), refused: W.refused, unsupported: W.unsupported, dryRequests: W.dryRequests,
     consoleErrors: W.consoleErrors, warnings: W.warnings, networkErrors: W.networkErrors, notes: W.notes,
-    screenshots: W.screenshots.map((f) => f.split(/[\\/]/).pop()), pageConfig: W.page,
+    screenshots: W.screenshots.map((f) => f.split(/[\\/]/).pop()), pageConfig: W.page, ownVault: OWN,
   });
-  /* a transaction cast was still sending is in the record (W.sent and W.failure were read after signChain) */
-  if (res.result !== 'ok' && W.last) {
-    log(`page state at the end: ${W.last.state} | ${W.last.head}`);
-    console.log(String(W.last.text || '').split('\n').map((l) => `  | ${l}`).join('\n'));
-  }
-  emit(res, shot);
+  /* A transaction cast was still sending is in the record (W.sent and W.failure were read after signChain). The
+     result is written first; nothing printed after it can keep it from being written. */
+  try { emit(res, shot); } catch (e) { emit(bareResult(`the result could not be written in full: ${scrub(e && e.message)}`), null); }
+  try {
+    if (res.result !== 'ok' && W.last) {
+      log(`page state at the end: ${W.last.state} | ${W.last.head}`);
+      console.log(String(W.last.text || '').split('\n').map((l) => `  | ${oneLine(l)}`).join('\n'));
+    }
+  } catch (e) { /* diagnostics only */ }
   if (CDP) {
     await CDP.send('Browser.close', {}, undefined, 5000).catch(() => {});
     CDP.close();
@@ -1502,6 +2004,16 @@ async function walkMode() {
   await sleep(1000);
   if (chrome && chrome.profile) { try { rmSync(chrome.profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 }); } catch (e) { /* the browser may still hold it */ } }
   return res.result === 'ok' ? 0 : 1;
+}
+
+/* The least a failed walk leaves behind, and the running record (writeRunning): what was sent and refused, and the
+   send in flight, in plain values only. */
+function bareResult(failure, result = 'failed') {
+  const plain = (list) => list.map((x) => { try { return JSON.parse(JSON.stringify(x, (k, v) => (k === 'logs' ? undefined : (typeof v === 'bigint' ? v.toString() : v)))); } catch (e) { return null; } });
+  return { result, dry: !!(OPT && OPT.dry), url: OPT ? OPT.url : null, deployment: DEP ? DEP.name : null, key: OPT ? OPT.key : null,
+    address: ME, kind: OPT ? OPT.kind : null, mode: OPT ? OPT.mode : null, watchKinds: OPT ? WATCH_KINDS[OPT.kind] : null,
+    failure: failure ? oneLine(failure) : null, sent: plain(W.sent), inFlight: W.inFlight ? plain([W.inFlight])[0] : null,
+    refused: plain(W.refused), states: plain(W.states), ownVault: OWN, endedAt: new Date().toISOString(), seconds: secs() };
 }
 
 async function main() {
@@ -1515,20 +2027,52 @@ async function main() {
 }
 
 /* For a test of the signer's rules without a browser or a key: the rules see this walk's options, deployment,
-   address and own vaults (as if made by this walk), and nothing is sent (dry). */
-export function policyFor(opt, deploymentName, address, ownVaults = []) {
+   address and its one vault (ownVault, as if made by this walk), and nothing is sent (dry). The chain reads behind a
+   yes are asked once, without the wait for a lagging endpoint; the test answers them itself (it replaces fetch), and
+   it puts what counts as already signed into record.sent. The longer waits are set to 0 too; waits is that table, for
+   a test of a wait itself. */
+export function policyFor(opt, deploymentName, address, ownVault = null) {
   OPT = { deployment: deploymentName, key: 'b', kind: 'adapter', mode: 0, timeout: 480, ...opt, dry: true };
   DEP = loadDeployment(deploymentName);
   ME = lower(address);
   KEY = null;
-  OWN.clear();
-  ownVaults.forEach(addOwn);
-  return { policy, walletRequest, record: W, keccak256, encodeArgs, decodeArgs, sel };
+  setOwn(Array.isArray(ownVault) ? ownVault[0] : ownVault);
+  vaultCache.clear();
+  makerTimelock = null;
+  READ_WAIT = 0;
+  READ_EVERY = 1;
+  for (const k of Object.keys(WAIT)) WAIT[k] = 0;
+  return { policy, walletRequest, record: W, keccak256, encodeArgs, decodeArgs, sel, topic, isLiveUrl, cleanSnap, hashesIn,
+    endpoints: BASE_ALL.slice(), createdVault, armBaseline, boxProblem, broadcastOf, minedDiffers, ownVault: () => OWN, waits: WAIT };
+}
+
+/* For a test of the signing path itself (the nonce, the stop checks, the read-back, the create's vault): as
+   policyFor, but not dry, with cast replaced by cast(argv, timeoutMs), a function of the test that returns
+   { code, out, err } and starts nothing ('process': the real cast process, CAST_BIN, for a stand-in of cast), and
+   with key, a placeholder string that is no key, in place of WALK_KEY. out, when given, is the directory of the
+   running result. Returns sendTransaction and closeSends with the policyFor tools. */
+export function signerFor(opt, deploymentName, address, ownVault, { key, cast, out } = {}) {
+  if (typeof cast !== 'function' && cast !== 'process') throw new Error('signerFor needs a cast function of the test');
+  if (typeof key !== 'string' || /^(0x)?[0-9a-fA-F]{64}$/.test(key.trim())) throw new Error('signerFor takes a placeholder, never a key');
+  const tools = policyFor(opt, deploymentName, address, ownVault);
+  OPT.dry = false;
+  OPT.out = out;
+  KEY = key;
+  castRunner = cast === 'process' ? (argv, timeoutMs) => runCast(argv, timeoutMs) : cast;
+  W.failure = null;
+  W.stopped = false;
+  W.inFlight = null;
+  W.nonceStart = undefined;
+  for (const k of ['sent', 'refused', 'dryRequests']) W[k].length = 0;
+  return { ...tools, sendTransaction, closeSends };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().then((code) => process.exit(code), (e) => {
-    console.error(`page-walk: ${scrub(e && e.message)}`);
+    const msg = scrub(e && e.message);
+    console.error(`page-walk: ${msg}`);
+    /* a walk that stopped on an error of this script still leaves its record of sends */
+    try { if (OPT && OPT.out && !OPT.verifyRecord) emit(bareResult(`walk error: ${msg}`), null); } catch (e2) { /* nothing more to try */ }
     process.exit(1);
   });
 }
