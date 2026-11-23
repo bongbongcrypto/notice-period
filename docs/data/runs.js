@@ -5,7 +5,7 @@
   'use strict';
   var NP = window.NP = window.NP || {};
   NP.recorded = {
-    "readAt": "2026-11-22T12:10:26Z",
+    "readAt": "2026-11-23T04:30:46Z",
     "runs": [
       {
         "id": 1,
@@ -186,6 +186,117 @@
           "ts": 1795340918,
           "outcome": 0,
           "reason": 2,
+          "shares": "100000000000000000000",
+          "assets": "100000000"
+        },
+        "exit": "0xc3451Dc97fBF3ba019524E68939192BEC4b83Fca",
+        "reactive": "0xb27F7223B83D3596868EAc0299Ab5B132b0B8D32"
+      },
+      {
+        "id": 9,
+        "mode": 1,
+        "kinds": 7,
+        "owner": "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4",
+        "vault": "0x1927A694bFCEE108c9015b122D79faB0d6805093",
+        "selector": "0x5c1a1a4f",
+        "execAt": 1795399715,
+        "armTx": "0xafdd5769282baafe0bec1dcc9d66b79f03217d126290388874c5d435dfcc95c5",
+        "armTs": 1795399516,
+        "subTx": "0x2c14cd75073d1c8a30dec37edf1c3bb5195832dd6235193c5800cf4d53a400cc",
+        "subTs": 1795399515,
+        "r1": {
+          "hash": "0xb28dd039c4677ebbf82ab16db773dbc0beb417bd355efc6e40db31dcb21ae089",
+          "block": 62388331,
+          "ts": 1795399535
+        },
+        "r2": {
+          "hash": "0x3283ace2058d53ad2f8c00008a17e9ecb8fe3b52f01155f6a49fdc024fbb546a",
+          "block": 9020291,
+          "ts": 1795399596,
+          "refTx": "0x897cc2823d799ed70086455dd2cad5914b95af49ea30ae33b1d2e74c5e8bc6c3",
+          "refChainId": "0x512577",
+          "reason": 2
+        },
+        "r3": {
+          "hash": "0x87553a4a5428ed035d68f8981e7f4945057eb2efc3848ab8fe025ad7c67b078f",
+          "block": 62388646,
+          "ts": 1795399598,
+          "outcome": 0,
+          "reason": 2,
+          "shares": "100000000000000000000",
+          "assets": "100000000"
+        },
+        "exit": "0xc3451Dc97fBF3ba019524E68939192BEC4b83Fca",
+        "reactive": "0xb27F7223B83D3596868EAc0299Ab5B132b0B8D32"
+      },
+      {
+        "id": 10,
+        "mode": 1,
+        "kinds": 7,
+        "owner": "0x616FF5998E3e6AF794881Adf6Fe6cac62Cc29b19",
+        "vault": "0xE8B6E086e1a8143041dA2962bD89eA5C8CDc6074",
+        "selector": "0xb192a84a",
+        "execAt": 1795399845,
+        "armTx": "0x4f83ec60e9db49e7910c1bf41dc4c9537ef23502e2aebfce5a5c3f333499b33b",
+        "armTs": 1795399646,
+        "subTx": "0x885ac0b6ba9e79f7adc866c02980d1b5fbf705262fe7f851cebfda587731354f",
+        "subTs": 1795399646,
+        "r1": {
+          "hash": "0x23273662123154ee91789ba32336500da3a19d87fa9b6be5d0b7dfb3d0a2527d",
+          "block": 62388983,
+          "ts": 1795399665
+        },
+        "r2": {
+          "hash": "0x5c58356b74abedcb3c1b4063b7c8b27f5241c913b45ca0d08b4118cbefb192a0",
+          "block": 9020421,
+          "ts": 1795399733,
+          "refTx": "0x0d32c93575c42ad8ce6646595e722ad60daca6c0c1031f2b68d8335a448aef23",
+          "refChainId": "0x512577",
+          "reason": 2
+        },
+        "r3": {
+          "hash": "0xd5fb0d552aceccc3fd867c112cd279f2abbb1d5780e2b50d17885446f5f95aac",
+          "block": 62389331,
+          "ts": 1795399735,
+          "outcome": 0,
+          "reason": 2,
+          "shares": "100000000000000000000",
+          "assets": "100000000"
+        },
+        "exit": "0xc3451Dc97fBF3ba019524E68939192BEC4b83Fca",
+        "reactive": "0xb27F7223B83D3596868EAc0299Ab5B132b0B8D32"
+      },
+      {
+        "id": 11,
+        "mode": 0,
+        "kinds": 15,
+        "owner": "0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4",
+        "vault": "0x8740a3480daDf44B4a89135B0C4Fb42584011706",
+        "selector": "0xf6f98fd5",
+        "execAt": 1795399970,
+        "armTx": "0xb66ba6201ad24afe3b58c9650dfe94f24e9fb3ca47b4cc63b2d46c69d21cd5dc",
+        "armTs": 1795399771,
+        "subTx": "0x74fb5aac539b142c067a18a7332963937ac9e3cafac98fb9063c4f5085c0779e",
+        "subTs": 1795399770,
+        "r1": {
+          "hash": "0xa6a052929d70b601b4545a2e9a69d1e71fd4e3f74c0b88eb381d7085c9d1d4f2",
+          "block": 62389608,
+          "ts": 1795399790
+        },
+        "r2": {
+          "hash": "0x5e04016fd5c3605adc92e24fa88d3ee5315bc56247db96ea5d0d2fc9d7a134cb",
+          "block": 9020475,
+          "ts": 1795399789,
+          "refTx": "0xa6a052929d70b601b4545a2e9a69d1e71fd4e3f74c0b88eb381d7085c9d1d4f2",
+          "refChainId": "0x14a34",
+          "reason": 1
+        },
+        "r3": {
+          "hash": "0x67d48fdeb74b26619f44f839e067b57d73d8f7aa3c9bcfb30665fdece41a37a5",
+          "block": 62389614,
+          "ts": 1795399791,
+          "outcome": 0,
+          "reason": 1,
           "shares": "100000000000000000000",
           "assets": "100000000"
         },
