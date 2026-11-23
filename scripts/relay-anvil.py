@@ -3,9 +3,12 @@
 
 Base anvil (chain 84532) holds the mock callback proxy at the real proxy address; Lasna anvil (chain 5318007) holds
 the mock system contract at 0x8888...8888 and the CRON source at 0x...fffFfF. This relay:
-  - copies every Base log to MockSystem.deliver(reactive, record) on Lasna (the mock checks subscriptions);
+  - sends a Base log to MockSystem.deliver(reactive, record) on Lasna only when MockSystem.matches says the reactive
+    contract holds a matching subscription, as the real network delivers only subscribed logs (a refused deliver()
+    changes no state, but each one was a Lasna block and a second of Lasna clock);
   - every --cron seconds emits a Cron10 tick on Lasna and delivers it the same way;
-  - forwards every callback the reactive contracts asked for to MockCallbackProxy.deliver on Base.
+  - forwards every callback the reactive contracts asked for to MockCallbackProxy.deliver on Base;
+  - after each delivery sets Base's next block time to Lasna's latest when Lasna is ahead (keep_base_up).
 It sends with its own anvil account (RELAY_KEY), so the deployer's nonces are untouched.
 Stdlib only; transactions go through `cast send`.
 """
@@ -68,8 +71,56 @@ def main():
     ap.add_argument("--reactive", action="append", required=True)
     ap.add_argument("--cron", type=float, default=10.0)
     ap.add_argument("--duration", type=float, default=1200.0)
+    # While --pause-file exists the relay makes no clock push (deliveries and callbacks go on) and touches --idle-file
+    # (dry-run.sh warp()).
+    ap.add_argument("--pause-file", default="")
+    ap.add_argument("--idle-file", default="")
     a = ap.parse_args()
     key = os.environ["RELAY_KEY"]
+
+    def paused():
+        if a.pause_file and os.path.exists(a.pause_file):
+            if a.idle_file:
+                open(a.idle_file, "a").close()
+            return True
+        return False
+
+    pushes = {"ok": 0, "failed": 0}
+
+    def keep_base_up():
+        # Anvil gives every Lasna block a time at least 1 s after the last, so a burst of deliveries runs Lasna's clock
+        # ahead of Base's. NoticeReactive reads a change's notice as Base's executableAt minus Lasna's clock, so 60 s of
+        # drift turns mode 1's "store and wait" into "too soon" (ci run 45132513488, revoke twin: before deliveries
+        # were filtered, a maker vault's creation logs went out as about 80 Lasna blocks). After each delivery the next
+        # Base block is set to Lasna's latest time, so a change scheduled later is stamped no earlier than Lasna's time
+        # at the last delivery before it.
+        if paused():
+            return
+        try:
+            tl = int(rpc(a.lasna, "eth_getBlockByNumber", ["latest", False])["timestamp"], 16)
+            tb = int(rpc(a.base, "eth_getBlockByNumber", ["latest", False])["timestamp"], 16)
+            if tl > tb:
+                if tl - tb > 20:
+                    print(f"relay: Lasna was {tl - tb} s ahead of Base; next Base block set to {tl}", flush=True)
+                rpc(a.base, "evm_setNextBlockTimestamp", [tl])
+                pushes["ok"] += 1
+                if pushes["ok"] == 1:
+                    print(f"relay: first clock push, next Base block set to {tl}", flush=True)
+        except Exception as e:  # e.g. a Base block mined between the read and the set; the next delivery tries again
+            pushes["failed"] += 1
+            print(f"relay: clock push skipped ({pushes['failed']} so far): {e}", flush=True)
+
+    def deliver(target, rec):
+        try:
+            wanted = cast("call", "--rpc-url", a.lasna, SYSTEM, f"matches(address,{RECORD})(bool)", target, rec) == "true"
+        except RuntimeError as e:  # unsure: deliver anyway, deliver() checks again on chain
+            print(f"relay: matches() read failed, delivering: {e}", flush=True)
+            wanted = True
+        if not wanted:
+            return
+        send(a.lasna, key, SYSTEM, f"deliver(address,{RECORD})", target, rec)
+        keep_base_up()
+
     base_chain = int(rpc(a.base, "eth_chainId", []), 16)
     lasna_chain = int(rpc(a.lasna, "eth_chainId", []), 16)
     base_next = int(rpc(a.base, "eth_blockNumber", []), 16) + 1
@@ -80,17 +131,19 @@ def main():
     print(f"relay: base {base_chain} from {base_next}, lasna {lasna_chain} from {lasna_next}, reactive {a.reactive}",
           flush=True)
     while time.time() < end:
+        paused()  # reports idle to warp() even when nothing is delivered
         # origin logs -> reactive contracts
         head = int(rpc(a.base, "eth_blockNumber", []), 16)
         if head >= base_next:
             logs = rpc(a.base, "eth_getLogs", [{"fromBlock": hex(base_next), "toBlock": hex(head)}])
             for log in logs:
                 for target in a.reactive:
-                    send(a.lasna, key, SYSTEM, f"deliver(address,{RECORD})", target, record(log, base_chain))
+                    deliver(target, record(log, base_chain))
             base_next = head + 1
         # CRON
         if time.time() - last_tick >= a.cron:
             send(a.lasna, key, CRON, "tick()")
+            keep_base_up()
             last_tick = time.time()
         head = int(rpc(a.lasna, "eth_blockNumber", []), 16)
         if head >= lasna_next:
@@ -98,7 +151,7 @@ def main():
             lasna_next = head + 1
             for log in logs:
                 for target in a.reactive:
-                    send(a.lasna, key, SYSTEM, f"deliver(address,{RECORD})", target, record(log, lasna_chain))
+                    deliver(target, record(log, lasna_chain))
             lasna_next = max(lasna_next, int(rpc(a.lasna, "eth_blockNumber", []), 16) + 1)
         # callbacks -> Base
         count = int(cast("call", "--rpc-url", a.lasna, SYSTEM, "callbackCount()(uint256)").split()[0])

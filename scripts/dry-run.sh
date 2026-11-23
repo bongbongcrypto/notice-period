@@ -128,8 +128,15 @@ export HELLO_ORIGIN HELLO_REACTIVE HELLO_CALLBACK NP_TOKEN NP_FACTORY NP_EXIT NP
 # The vault source of this deployment is MorphoVaultMaker (Vault V2 vaults).
 export LOOP_FACTORY_KIND=maker
 
+keeper_pause="$logs/keeper.pause"
+keeper_idle="$logs/keeper.idle"
+relay_idle="$logs/relay.idle"
+rm -f "$keeper_pause" "$keeper_idle" "$relay_idle" # left over from a killed local run, both would start paused
+# The relay also sets Base's next block to Lasna's time after each delivery (keep_base_up in relay-anvil.py), and
+# like the clock keeper below it makes no clock push while warp() holds the pause file.
 python3 scripts/relay-anvil.py --base "$BASE_RPC" --lasna "$LASNA_RPC" --proxy "$CALLBACK_PROXY" \
-  --reactive "$HELLO_REACTIVE" --reactive "$NP_REACTIVE" --cron 5 --duration 3000 > "$logs/relay.log" 2>&1 &
+  --reactive "$HELLO_REACTIVE" --reactive "$NP_REACTIVE" --cron 5 --duration 3000 \
+  --pause-file "$keeper_pause" --idle-file "$relay_idle" > "$logs/relay.log" 2>&1 &
 relay_pid="$!"
 
 # Anvil gives each block at least one second more than the last, so a chain that mines several blocks a second (Lasna,
@@ -149,8 +156,6 @@ sync_clocks() {
     cast rpc --rpc-url "$LASNA_RPC" evm_mine >/dev/null 2>&1 || true
   fi
 }
-keeper_pause="$logs/keeper.pause"
-keeper_idle="$logs/keeper.idle"
 (while :; do
   if [ -e "$keeper_pause" ]; then
     touch "$keeper_idle"
@@ -208,11 +213,11 @@ if [ "$status" = 0 ]; then exit_gas mode1; fi
 # both chains move forward by the same time between groups. Key B needs gas once (key A sends it; anvil keys are rich).
 warp() { # seconds: both chains to the same time, $1 s after the later of the two; checked
   local b0 l0 target b1 l1
-  rm -f "$keeper_idle"
+  rm -f "$keeper_idle" "$relay_idle"
   touch "$keeper_pause"
-  for _ in $(seq 1 40); do [ -e "$keeper_idle" ] && break; sleep 0.5; done
-  if [ ! -e "$keeper_idle" ]; then
-    echo "warp: the clock keeper did not pause"
+  for _ in $(seq 1 40); do [ -e "$keeper_idle" ] && [ -e "$relay_idle" ] && break; sleep 0.5; done
+  if [ ! -e "$keeper_idle" ] || [ ! -e "$relay_idle" ]; then
+    echo "warp: the clock keeper or the relay did not pause (keeper idle: $([ -e "$keeper_idle" ] && echo yes || echo no), relay idle: $([ -e "$relay_idle" ] && echo yes || echo no), relay process: $(kill -0 "$relay_pid" 2>/dev/null && echo alive || echo stopped))"
     status=1
     return 0
   fi
@@ -347,6 +352,7 @@ fi
 
 echo "---- relay log"
 cat "$logs/relay.log"
+echo "relay clock pushes: first push logged $(grep -c "first clock push" "$logs/relay.log"), skipped $(grep -c "clock push skipped" "$logs/relay.log")"
 kill -0 "$relay_pid" 2>/dev/null || { echo "the relay stopped early"; status=1; }
 for what in "strayEvents()(uint256)" "unknownEvents()(uint256)" "activeWatches()(uint256)" "cronFilterRefs()(uint256)" \
   "timedWatches()(uint256)"; do
