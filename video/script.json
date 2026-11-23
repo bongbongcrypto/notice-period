@@ -53,10 +53,10 @@
       "seconds": 11,
       "label": "Hosted page · count read live from Morpho's public API",
       "labelFailed": "Hosted page · Morpho's public API did not answer; the page shows its dated count",
-      "captionLive": "Curators of Morpho vaults schedule rule changes behind a waiting period. When this was recorded, the page read {morpho.changes} waiting in {morpho.vaults} holding {morpho.usd}.",
-      "captionZero": "Curators of Morpho vaults schedule rule changes behind a waiting period. When this was recorded, no rule change was waiting in any listed Morpho vault.",
-      "caption": "Curators of Morpho vaults schedule rule changes behind a waiting period. On 21 Nov 2026 that was 35 changes in 9 vaults holding $85.9M.",
-      "evidence": [{ "readme": "On 21 Nov 2026 that was 35 changes in 9 vaults holding $85.9M" }]
+      "captionLive": "A Morpho vault's curator, its manager, can change its rules after you deposit, but each change must wait, usually days: that wait is your notice. When this was recorded, the page read {morpho.changes} waiting in {morpho.vaults} holding {morpho.usd}.",
+      "captionZero": "A Morpho vault's curator, its manager, can change its rules after you deposit, but each change must wait, usually days: that wait is your notice. When this was recorded, no rule change was waiting in any listed Morpho vault.",
+      "caption": "A Morpho vault's curator, its manager, can change its rules after you deposit, but each change must wait, usually days: that wait is your notice. On 21 Nov 2026 that was 35 changes in 9 vaults holding $85.9M.",
+      "evidence": [{ "readme": "On 21 Nov 2026 that was 35 changes in 9 vaults holding $85.9M" }, { "readme": "The vault makes each change wait, usually days" }]
     },
     {
       "id": "S03",
@@ -65,7 +65,7 @@
       "target": { "selector": "#how", "align": "top", "offset": 16 },
       "seconds": 13,
       "label": "Hosted page · How it works",
-      "caption": "Pick, once, the kinds of change you will not accept. A reactive contract on Reactive Lasna watches the vault, and if the curator schedules such a change, your shares are redeemed to your own wallet.",
+      "caption": "Pick, once, the changes you refuse: a new place the vault may send funds, a new account that may move them, or a shorter wait. A reactive contract sees the vault's event, and your shares come back to your own wallet.",
       "evidence": []
     },
     {
@@ -100,7 +100,7 @@
       "seconds": 11,
       "clock": true,
       "label": "Page replay of run 1, recorded 22 Nov 2026 · real speed, not sped up",
-      "caption": "Here the page replays run 1 at real speed: the curator schedules a new adapter on a Morpho Vault V2, and 1 second later the deposit is back in the depositor's wallet.",
+      "caption": "Here the page replays run 1 at real speed: the curator schedules a new adapter on a Morpho Vault V2, and 1 second later the deposit is back in the depositor's wallet. A visitor can run the same with a test wallet.",
       "evidence": [
         { "readme": "Run 1 on these contracts, 22 Nov 2026" },
         { "readme": "and the deposit was back 1 s later" },
@@ -139,7 +139,7 @@
       "tx": "r2",
       "seconds": 9,
       "label": "Run 1 · record 2 of 3 · reactive transaction · Reactive Lasna · +0 s",
-      "caption": "The second record, on Reactive Lasna: our reactive contract receives that event, names its transaction as its origin and asks for the exit.",
+      "caption": "The second record, on Reactive Lasna: our reactive contract receives that event and asks for the exit.",
       "evidence": [
         { "readme": "Run 1 on these contracts, 22 Nov 2026" },
         { "readme": "The three records belong together." },
@@ -158,7 +158,7 @@
       "to": { "selector": "*", "text": ["Tokens transferred", "ERC-20 tokens transferred", "Token transfers"], "match": "contains", "align": "center", "required": false },
       "seconds": 10,
       "label": "Run 1 · record 3 of 3 · deposit back · Base Sepolia · +1 s",
-      "caption": "The third record, 1 second after the first: the exit contract redeems the shares, and the demo dollars go from the vault to the depositor's own wallet.",
+      "caption": "The third record, 1 second after the first: the exit contract redeems the shares, and the demo dollars go to the depositor's own wallet.",
       "evidence": [
         { "readme": "Run 1 on these contracts, 22 Nov 2026" },
         { "readme": "The three records belong together." },
@@ -182,7 +182,7 @@
       "maxCaptureSeconds": 20,
       "seconds": 14,
       "label": "Page replay of run 6, recorded 22 Nov 2026 · sped up by the page: the 63 s of waiting play in about 8 s",
-      "caption": "The other mode waits for the deadline: our reactive contract stores the change and asks for the exit when 120 seconds or less are left. If the curator cancels first, the deposit stays, as in run 7.",
+      "caption": "The other mode waits for the deadline: it stores the change and asks for the exit only when 120 seconds or less are left. If the curator cancels first, nothing moves: the deposit stays in the vault, as in run 7.",
       "evidence": [
         { "readme": "Run 6, \"wait for the deadline\"" },
         { "readme": "+63 s, on the timer" },
@@ -203,7 +203,7 @@
       "target": { "selector": "h2", "text": "Real vault replay", "align": "top", "offset": 16 },
       "seconds": 16,
       "label": "README · replay of our deployed exit code on a real vault; Reactive not in it",
-      "caption": "We also replayed our deployed exit code on a real Morpho Vault V2 on Ethereum mainnet, sending nothing. With a 1,000,000 gas callback limit the shares were redeemed to their holder; with 600,000 the call ran out of gas.",
+      "caption": "We also replayed our deployed exit code on a real Morpho Vault V2 on Ethereum mainnet, sending nothing. With a 1,000,000 gas callback limit the shares were redeemed to their holder; with 600,000 they were not, so ours ask for 1,000,000.",
       "evidence": [
         { "readme": "Label: replay of our deployed exit code on a real vault; Reactive not in it." },
         { "readme": "with the gas a 1,000,000 callback limit forwards, the holder's 5,600.30 shares were redeemed" },
@@ -223,7 +223,7 @@
       "scrollSeconds": 5,
       "seconds": 14,
       "label": "README · Check every claim in ten minutes",
-      "caption": "No server, and no key that can send the funds elsewhere. Each claim comes with a check: the receipts, the sources verified on Sourcify with an exact match, and a script that re-reads every run.",
+      "caption": "No server, and no key that can send the funds elsewhere. Do not take our word: every run links its receipts, the sources are verified on Sourcify with an exact match, and a script re-reads every run.",
       "evidence": [
         { "readme": "Check every claim in ten minutes" },
         { "readme": "No server, no key that can send the funds elsewhere" },
@@ -241,7 +241,7 @@
       "scrollTop": true,
       "seconds": 9,
       "label": "GitHub Actions · the ci workflow's runs",
-      "caption": "The ci workflow runs the tests, fuzz and invariant checks, a mutation check and a dry run in GitHub Actions; this is its list of runs on main.",
+      "caption": "GitHub Actions runs our tests, fuzz and invariant checks, a mutation check and a dry run; this is the ci workflow's list of runs on main.",
       "evidence": [
         { "readme": "Everything builds and runs in GitHub Actions" },
         { "readme": "mutation check" }
@@ -255,7 +255,7 @@
       "target": { "selector": "h2", "text": "Limits, said plainly", "align": "top", "offset": 16 },
       "seconds": 11,
       "label": "README · Limits, said plainly",
-      "caption": "The limits are written down: the demo dollar and the vault maker are ours, the curator in these runs is our own test account, and a watch is served only while our float lasts.",
+      "caption": "The limits are written down: the demo dollar and the vault maker are ours, the curator in these runs is our own test account, and a watch is served only while our prepaid Reactive gas lasts.",
       "evidence": [
         { "readme": "The demo dollar and MorphoVaultMaker are ours, and the dollar has no value." },
         { "readme": "the curator in our runs is our own test account" },
