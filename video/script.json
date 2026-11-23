@@ -76,10 +76,10 @@
       "soft": { "textAny": ["Live from the chain"], "notText": ["visitor"] },
       "seconds": 12,
       "label": "Hosted page · Recent runs, all our own tests",
-      "caption": "Each exit run is on the page with its three transactions. All are our own tests, on Morpho Vault V2s made through our maker: eight exits so far, and every kind of change has a recorded exit.",
+      "caption": "Each exit run is on the page with its three transactions. All are our own tests, on Morpho Vault V2s made through our maker: nine exits so far, and every kind of change has a recorded exit.",
       "evidence": [
         { "readme": "The three records belong together." },
-        { "readme": "Eight ended in an exit" },
+        { "readme": "Nine ended in an exit" },
         { "readme": "all our own tests" },
         { "readme": "Every kind has a recorded exit on testnet" }
       ]

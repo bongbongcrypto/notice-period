@@ -9,13 +9,16 @@ between 06:02 and 06:47 UTC, the browser rows of part 1b between 04:32 and 04:36
 earlier notes (21 Nov 2026 for the pair of 18 Nov 2026, 22 Nov 2026 for earlier files of this page); they are in the
 history of this file. What was last run then and not since is listed in part 3, without a result.
 
-Nothing here was run with a real wallet. The live wallet walk (`.github/workflows/page-walk.yml`, which runs
-`scripts/page-walk.mjs` on the hosted page) has not run yet: it is the next step.
+One run used a wallet that signs: the live wallet walk of part 1c (`.github/workflows/page-walk.yml`, which runs
+`scripts/page-walk.mjs` on the hosted page), at 06:49 UTC. It came after every other row, so parts 1a, 1b and 2
+show the page as it was before it, with 11 watches. No wallet extension was used anywhere.
 
-Two kinds of evidence, kept apart:
+Three kinds of evidence, kept apart:
 
-- Part 1 can be redone by anyone with this repository (this folder and `scripts/`), node 22 or later with no
-  packages, a Chromium-based browser with developer tools, and the public endpoints.
+- Parts 1a and 1b can be redone by anyone with this repository (this folder and `scripts/`), node 22 or later with
+  no packages, a Chromium-based browser with developer tools, and the public endpoints.
+- Part 1c is one run of a workflow of this repository that signs with our testnet key. Anyone can read its log and
+  check its receipts again; only we can run it.
 - Part 2 was run with test tooling that is not in this repository: a static scan of this folder, an encoder test on
   real transaction inputs, a simulator of the two chains with a fake wallet that runs the page's own scripts in node,
   and a read-only replay of the simulator's reads on the live chains.
@@ -29,9 +32,9 @@ fresh profile (the dry walk).
 - From a local server: `python -m http.server 8000 --bind 127.0.0.1` in this folder, then `http://127.0.0.1:8000/`.
 - By double click on `index.html`. Not repeated on these files (part 3).
 
-## 1. Redoable from this repository, no real wallet
+## 1. From this repository
 
-### 1a. Scripts in `scripts/`
+### 1a. Scripts in `scripts/` (no key)
 
 | What | How | Result |
 |---|---|---|
@@ -40,7 +43,7 @@ fresh profile (the dry walk).
 | The guided run up to the first confirmation, in a browser with a stand-in wallet (the dry walk) | `python -m http.server PORT --bind 127.0.0.1` in this folder, then `node scripts/page-walk.mjs --dry --url http://127.0.0.1:PORT/ --browser PATH_TO_EDGE`. The script injects a wallet that has no key, with the deployment's second operator address (0.001966 test ETH on Base Sepolia at that time). Nothing is signed or sent | Result `ok` in 9.5 s, in headless Edge 157 with its sandbox, under the shipped Content-Security-Policy. The page saw the wallet and went `idle`, `checking`, `step-deposit`. Pressing the deposit button (`depositing`) asked the wallet for one transaction, `create()` on the maker, which the signer's rules would sign; it was answered with a rejection (4001) and the page showed `confirm-rejected`, `You rejected confirmation 1 of 3`. Wallet requests: `eth_accounts` 1, `eth_requestAccounts` 1, `eth_chainId` 2, `eth_sendTransaction` 1. The page's token, maker, exit and reactive addresses equal the deployment file's. Console errors, warnings and network errors: none recorded. Flags read from the page: `mode1` false, `unprovenKinds` true |
 | The watch step and the curator step for each kind, drawn by the page's own renderer | Part of the same dry walk; no chain behind them, nothing pressed that asks the wallet | For each of the four walk settings the boxes could be set, the button that turns the watch on was enabled and that kind's curator button was there. Kinds value the page built: 7 for a new adapter, 6 for a shorter waiting period, 4 for a new allocator, 15 for a cap increase |
 
-### 1b. In a browser
+### 1b. In a browser (no wallet)
 
 A Chromium-based browser pane, the page served by `python -m http.server` from this folder on localhost, port 8831,
 so the shipped Content-Security-Policy applied. No wallet.
@@ -60,6 +63,22 @@ so the shipped Content-Security-Policy applied. No wallet.
 | The newer screens, drawn by the page's renderer with made-up values (no chain behind them, nothing pressed), at 1280 and at 390 wide | `NP.run.go(state, values)` in the console | `vault-set-aside` with its one button `Withdraw my 100 demo dollars`; `run-no-return` (`Run #5 ended without a return`, a made-up number); `confirm-rejected` with `Continue` and `Back`; `depositing` with the slow notice and `Check the chain again`; `watch-off` with `No watch is on for this address and vault.`; `rpc-down` with `Tried the one public endpoint that can search that far twice.` At both widths nothing in the box goes past an edge. At 390 the buttons are 324 px wide and 44 px high, one of them 56 on two lines |
 | Phone, 390 by 844 | Measure | Document scroll width 390, so no sideways scroll; the only wider element is the visually hidden header row of the table. The first three transaction links of the first screen end at 761, 843 and 925 px |
 | 1280 by 800 | Measure | No element past the right edge. The record rows of the first screen are 37 px each |
+
+### 1c. The live wallet walk (GitHub Actions, our testnet key)
+
+`page-walk.yml`, [run 45126645970](https://github.com/bongbongcrypto/notice-period/actions/runs/45126645970), on commit `909bef1`, 23 Nov 2026 at 06:49 UTC. Chrome 157 on the
+runner, with its sandbox, opened the hosted page and pressed its buttons; the injected wallet signed with the
+second key (`0x616FF5998E3e6AF794881Adf6Fe6cac62Cc29b19`) under the rules in the header of `scripts/page-walk.mjs`.
+Settings: a new adapter, leave now. This row cannot be redone without the key. Its record is
+`records/2026-11-22-14.json`, and `node scripts/page-walk.mjs --verify-record records/2026-11-22-14.json` reads its
+receipts again without a key (result `ok`, 19 of 19 checks, at 06:56 UTC).
+
+| What | Result |
+|---|---|
+| The guided run from the hosted page's own buttons | Result `ok` in 56.1 s. States `idle`, `checking`, `step-deposit`, `depositing`, `deposited`, `arming`, `armed-subscribing`, `armed-settling`, `armed`, `scheduling`, `scheduled`, `exit-requested`, `returned`. End screen: `Your deposit came back by itself`, `Deposit back +1 s`, `179 s of notice left`, `Wallet: from 200 to 300 demo dollars. Vault shares: from 100 to 0. Allowance left to the exit contract: 0.` |
+| What the wallet signed | Six transactions, nonces 49 to 54, each read back alike from both Base Sepolia endpoints: `create()` on the maker, `approve` on the demo dollar, `deposit` into the new vault `0xB4A34D2b05aD3961a2E3936999A86D6f719beB84`, `approve` on the vault for the exit contract, `arm` on the exit contract (watch 12) and `submit` on the vault. No `mint`: the address already held 200 demo dollars. Nothing was refused. Wallet requests: `eth_accounts` 1, `eth_requestAccounts` 1, `eth_chainId` 7, `eth_sendTransaction` 6 |
+| The three transactions the page showed, read by receipt outside the page | 27 of 27 checks. Status 1 on all three, the two on Base Sepolia alike from both endpoints. The `Submit` is the one the walk signed, a new adapter change sent by the curator to the vault. `ExitRequested` on Reactive Lasna and `WatchEnded` on Base Sepolia are for watch 12 and each names the `Submit` as its origin. Outcome 0 (redeemed), every share the watch covered. The exit landed 1 s after the `Submit` and 179 s before the change could run. Afterwards no shares and no watch were left on the vault, the wallet had gained exactly the redeemed assets (200000000 to 300000000 units), and the walk had signed one `create()`, one deposit, one arm and one submit, all on the one vault |
+| Console and network | Console errors, warnings and network errors: none recorded |
 
 ## 2. With test tooling that is not in this repository
 
@@ -84,14 +103,14 @@ so the shipped Content-Security-Policy applied. No wallet.
 
 | What | Why | Where it can run |
 |---|---|---|
-| Any step with a real wallet: connection, the confirmations, the real deposit coming back | No wallet with a key was used for these tests | The live wallet walk, `page-walk.yml`, on the hosted page: the next step. It signs with our testnet key through an injected wallet under the rules in the header of `scripts/page-walk.mjs`, then checks the three transactions by receipt |
-| `page-walk.yml` itself | Not run yet. Only its script's signer rules, its receipt check and its dry mode were run (part 1a) | GitHub Actions, by hand |
+| A wallet extension a person holds: its connection prompt, its confirmations, a rejection by a person | The walk's wallet (part 1c) is injected through developer tools and signs by rule; no extension was used | A person with a browser wallet |
+| The live walk with another setting | Only a new adapter, leave now, the second key was walked (part 1c) | `page-walk.yml` with other inputs |
 | A dry walk with another setting | Only the default was run (a new adapter, leave now, the second operator address) | `--kind`, `--mode`, `--address` of the same script |
 | Whether wallet extensions inject their provider under `script-src 'self'` | Needs a real extension; the walk's wallet is injected through developer tools and does not answer this | A person with a browser wallet |
-| The hosted address | Every row was run on a local copy of these files, none on the hosted page | The hosted page, with the same steps |
+| Parts 1a, 1b and 2 on the hosted address | They were run on a local copy of these files. On the hosted page only the walk of part 1c was run | The hosted page, with the same steps |
 | The newer screens and buttons by their real cause | `Back` after a rejected confirmation, `Check the chain again` while a transaction has no receipt, the stop screen for a vault that is not watched again, `#run=N` for a run whose exit returned nothing, the sentence `No watch is on for this address and vault`, a switch of account before the run starts, and the wording when only one endpoint can search far enough. Their screens were drawn with made-up values (part 1b); on these files none was reached by the event that causes it | Simulator or real run |
 | A cap increase on a watch that covers it, from this page's buttons | One returned a deposit on the 22 Nov pair from our loop workflow (run #11, `records/2026-11-22-13.json`). The page's own button for it was not pressed on the live contracts, and the simulator's only cap increase is on a watch that does not cover it | The walk with `--kind cap` |
-| A shorter waiting period or a new allocator scheduled from this page's buttons, on the live contracts | Both returned a deposit on the 22 Nov pair from our loop workflow (runs #3 and #4), not yet from the page's own buttons | The walk with `--kind timelock` or `--kind allocator` |
+| A shorter waiting period or a new allocator scheduled from this page's buttons, on the live contracts | Both returned a deposit on the 22 Nov pair from our loop workflow (runs #3 and #4), not yet from the page's own buttons; only the new adapter button was pressed live (part 1c) | The walk with `--kind timelock` or `--kind allocator` |
 | Last run on 21 Nov 2026 on earlier files, not since: the double-clicked `file://` copy, a script file that does not load, reduced motion, the fallback endpoint in the page's own code, the hosts contacted by a full load, the widths 1024, 816, 768 and 360, type sizes, lone last words, the first-screen buttons, print | Not repeated for the 22 Nov deployment | A browser with developer tools |
 | Last run on 21 Nov 2026 with the simulator in a browser, not since: every state rendered at five widths, every button of every state pressed, positions before and after data arrives, failure of every read, two wallets, wrong network, the daily limits, a rejected confirmation in the curator step, a busy wallet, a read endpoint that lags, Reactive Lasna unreachable, Reactive never reacting or reacting late, a subscription that never arrives, log reads that fail at "Turn the watch on" | Not repeated for the 22 Nov deployment; the node simulator of part 2 covers 12 scenarios and no layout | The same tooling in a browser |
 | Reload in the middle of a real run, two tabs, a second browser engine, private mode | Only the simulator was available; it forgets its state on reload | Real-wallet walk |
@@ -100,5 +119,5 @@ so the shipped Content-Security-Policy applied. No wallet.
 | A layout-shift score from the browser's own meter | Not measured | A visible browser with developer tools |
 | Activation with Enter and Space, a screen reader | Not run. Read in the HTML only: one polite live region (`aria-live`) | A person |
 | `callback-slow`, `deposit-short` and `timer-full` by their real cause | Drawn in the simulator only | Simulator or real run |
-| A table with visitor runs | The records hold 11 watches on the 22 Nov pair (`records/`), all our own; none by a visitor | After more runs |
+| A table with visitor runs | The records hold 12 watches on the 22 Nov pair (`records/`), all our own; none by a visitor | After more runs |
 | "Wait for the deadline" in the guided run | Switched off on this page (`flags.mode1`); the contracts support it and runs #6, #9 and #10 used it | Later |

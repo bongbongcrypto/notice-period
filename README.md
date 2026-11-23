@@ -60,12 +60,13 @@ and the deposit was back 1 s later
 ([`0x85724300…f549`](https://base-sepolia.blockscout.com/tx/0x85724300cdc2c5a21cf1f56c58133094f6f07e694644fa1d692368d296e1f549)),
 179 s before the change could run. That callback's transaction had a gas limit of 1,000,000 and used 174428.
 
-Runs 2 to 8 on these contracts followed the same day and runs 9 to 11 on 23 Nov 2026, each on a new vault made
+Runs 2 to 8 on these contracts followed the same day and runs 9 to 12 on 23 Nov 2026, each on a new vault made
 through `MorphoVaultMaker`. A run
-number here is the watch id, as on the page. The first key is the curator in every run; the second key is the
-depositor in runs 1, 5, 7, 8 and 10. Seconds are differences of block times.
+number here is the watch id, as on the page. The first key is the curator in runs 1 to 11; the second key is the
+depositor in runs 1, 5, 7, 8 and 10, and both depositor and curator in run 12. Seconds are differences of block
+times.
 
-So far on these contracts: eleven watches, all our own tests. Eight ended in an exit (five "leave now",
+So far on these contracts: twelve watches, all our own tests. Nine ended in an exit (six "leave now",
 three "wait for the deadline"), two were turned off by their owners (run 2, and run 7 after its change was
 revoked) and one is still on (run 8).
 
@@ -101,6 +102,13 @@ revoked) and one is still on (run 8).
   ([`0x23273662…527d`](https://base-sepolia.blockscout.com/tx/0x23273662123154ee91789ba32336500da3a19d87fa9b6be5d0b7dfb3d0a2527d), [`0x5c58356b…92a0`](https://lasna.reactscan.net/tx/0x5c58356b74abedcb3c1b4063b7c8b27f5241c913b45ca0d08b4118cbefb192a0), [`0xd5fb0d55…5aac`](https://base-sepolia.blockscout.com/tx/0xd5fb0d552aceccc3fd867c112cd279f2abbb1d5780e2b50d17885446f5f95aac)).
   Run 11, a cap increase on a "leave now" watch that opted in: 1 s after, 179 s before
   ([`0xa6a05292…d4f2`](https://base-sepolia.blockscout.com/tx/0xa6a052929d70b601b4545a2e9a69d1e71fd4e3f74c0b88eb381d7085c9d1d4f2), [`0x5e04016f…34cb`](https://lasna.reactscan.net/tx/0x5e04016fd5c3605adc92e24fa88d3ee5315bc56247db96ea5d0d2fc9d7a134cb), [`0x67d48fde…37a5`](https://base-sepolia.blockscout.com/tx/0x67d48fdeb74b26619f44f839e067b57d73d8f7aa3c9bcfb30665fdece41a37a5)).
+- Run 12, on 23 Nov 2026, is the hosted page's own guided run, pressed button by button by the `page-walk`
+  workflow ([run 45126645970](https://github.com/bongbongcrypto/notice-period/actions/runs/45126645970)): Chrome on the runner opened the page, and an injected wallet signed with
+  the second key, which made its own vault and was both its depositor and its curator. The curator's button
+  scheduled a new adapter at 06:49:58 UTC; the deposit was back 1 s after, 179 s before the change could run
+  ([`0xac9323f8…7317`](https://base-sepolia.blockscout.com/tx/0xac9323f8b520e2464a8a0861919dc64131076e78f635656d6d5b05eff3b67317), [`0xbd66f4a1…37e8`](https://lasna.reactscan.net/tx/0xbd66f4a1bedfc2d2e3025c299c6a996c6a143bc3f15491c3a49f53000f8037e8), [`0xee2b1a90…9065`](https://base-sepolia.blockscout.com/tx/0xee2b1a90f07f6a0041a5accdc3048b750854b1d32f06b504154b6270f5649065)).
+  The walk then read the three transactions by receipt, outside the page: 27 of 27 checks
+  ([`docs/TESTING.md`](docs/TESTING.md), part 1c).
 - The burst test: on run 1's vault, after its watch had ended, the curator scheduled three new adapters in one
   `multicall`
   ([`0x6d92a52c…bb8f`](https://base-sepolia.blockscout.com/tx/0x6d92a52c571396ca88227c30a7300399307649653a33389b642b58fcb23cbb8f), 09:41:08 UTC).
@@ -294,8 +302,8 @@ scheduled; the search was not exhaustive.
   the cap increase is run 7.
   The page's curator buttons encode the same calls ([`docs/abi.js`](docs/abi.js)). Against a simulated pair of
   chains ([`docs/TESTING.md`](docs/TESTING.md)) the adapter, waiting-period and allocator buttons were clicked
-  through to a returned deposit, and the cap button on a watch that does not cover it; no visitor has run them on
-  the live contracts yet.
+  through to a returned deposit, and the cap button on a watch that does not cover it. On the live contracts the
+  adapter button was pressed by our own page walk (run 12); no visitor has run them yet.
 - The 18 Nov demo vault counts every demo dollar it holds, and demo dollars are free to mint. So someone can send
   demo dollars to a visitor's fresh vault and skew its share price. The page refuses to deposit into such a vault;
   that contract itself does not prevent it (SPEC.md section 11).
