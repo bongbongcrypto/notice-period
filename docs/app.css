@@ -94,7 +94,7 @@ code { font-family: var(--mono); font-size: 1em; color: var(--navy); }
 /* Two fixed slots. A wallet being found changes which button is the filled one, never where a button is. */
 .cta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s2); max-width: 31rem; }
 .problem-line { font-size: var(--f20); line-height: 1.4; color: var(--navy); min-height: 7rem; margin-bottom: var(--s1); }
-#problem-src { min-height: 3.6rem; margin: 0; }
+#problem-src { min-height: 4.8rem; margin: 0; }
 .latest { grid-column: 1 / -1; margin: 0; padding: 1.5rem; background: var(--card); border: 1px solid var(--hair); border-radius: 8px; }
 .latest figcaption { font-weight: 600; color: var(--navy); min-height: 3rem; max-width: 40rem; text-wrap: balance; }
 #latest-check { min-height: 2.75rem; margin: var(--s2) 0 var(--s1); }
@@ -274,7 +274,7 @@ code { font-family: var(--mono); font-size: 1em; color: var(--navy); }
   .cta { grid-template-columns: minmax(0, 1fr); max-width: none; }
   .btn { white-space: normal; text-wrap: balance; }
   .problem-line { font-size: var(--f16); min-height: 6rem; }
-  #problem-src { min-height: 4.8rem; }
+  #problem-src { min-height: 6rem; }
   .latest { padding: var(--s2); }
   .latest figcaption { min-height: 3rem; }
   #latest-check { min-height: 3.6rem; }

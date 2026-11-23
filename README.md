@@ -210,8 +210,8 @@ and the deposit was back 1 s later
 ## Check every claim in ten minutes
 
 1. **The three records belong together.** Open the three links of a run. In run 1 Reactive's transaction names
-   the Base Sepolia transaction as its origin (on both deployments). In a "wait for the deadline" run (run 6 of
-   22 Nov, run 2 of 18 Nov) the origin is the timer tick, and the Base Sepolia hash is a topic of the
+   the Base Sepolia transaction as its origin (on both deployments). In a "wait for the deadline" run (runs 6, 9
+   and 10 of 22 Nov, run 2 of 18 Nov) the origin is the timer tick, and the Base Sepolia hash is a topic of the
    `ExitRequested` log. In both, the withdrawal's `WatchEnded` log carries the same hash.
 2. **The deposit went to its owner.** In the withdrawal the demo dollars move from the vault to the depositor.
    In [`src/NoticeExit.sol`](src/NoticeExit.sol) the receiver is read from the watch in storage (`_end`), never

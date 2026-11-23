@@ -5,7 +5,7 @@ made by Morpho's factory through our `MorphoVaultMaker`; the maker, the demo dol
 ours. The page is plain HTML, CSS and JavaScript with no build step.
 
 Every row was run on 2026-11-23 on the files as they are now, and its output was read: the scripts of parts 1a and 2
-between 06:02 and 06:47 UTC, the browser rows of part 1b between 04:32 and 04:36 UTC. No result is carried over from the
+between 06:02 and 06:47 UTC, the browser rows of part 1b between 04:32 and 04:36 UTC (its Morpho row at 07:54 UTC, after that sentence was reworded). No result is carried over from the
 earlier notes (21 Nov 2026 for the pair of 18 Nov 2026, 22 Nov 2026 for earlier files of this page); they are in the
 history of this file. What was last run then and not since is listed in part 3, without a result.
 
@@ -51,7 +51,7 @@ so the shipped Content-Security-Policy applied. No wallet.
 | What | How | Result |
 |---|---|---|
 | Console under the shipped policy | Open the page, read the console and the list of requests | Only the info lines `state: idle` and `state: no-wallet`. No error and no warning. The page's 13 own files each answered 200 |
-| Morpho public API | First screen, 04:34 UTC | `20 rule changes are waiting in 5 Morpho vaults holding $28.3M right now. None of them is a kind this tool would exit on by default.` |
+| Morpho public API | First screen, 07:54 UTC | `20 rule changes are waiting in 5 Morpho vaults holding $27.6M right now. All are cap increases, the routine kind a watch leaves alone unless you opt in.` Under it: `Morpho’s public API, 23 Nov 2026, 07:54 UTC: 20 cap increases. On 21 Nov 2026, 3 of 35 waiting changes were shorter waiting periods.` At 1280 and at 390 wide the text stays inside its column |
 | Recorded run re-read by receipt | First screen | `Run #11` with `Three receipts re-read from both chains at 04:34:04 UTC.` |
 | Count of watches | First screen | `11 watches turned on so far, all our own tests: 8 deposits returned, 2 turned off by their owners, 1 still on. “Leave now” runs: median 1 s over 5 runs.` |
 | Live limits and float | First screen | `Live now: 47 of 50 runs left today. Float 8.03 lREACT, no debt.` |

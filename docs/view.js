@@ -225,16 +225,22 @@
     if (d.n === 0) {
       p.textContent = 'No rule change is waiting in any listed Morpho vault right now.';
     } else {
-      var watched = d.k === 0 ? 'None of them is a kind this tool would exit on by default.'
-        : d.k + fmt.plural(d.k, ' of them is', ' of them are') + ' a kind this tool would exit on by default.';
+      /* when nothing waiting is a default kind, say what is waiting: on most days it is cap increases only */
+      var onlyCaps = d.k === 0 && d.byKind['cap increase'] === d.n;
+      var watched = onlyCaps ? (d.n === 1 ? 'It is a cap increase' : 'All are cap increases') + ', the routine kind a watch leaves alone unless you opt in.'
+        : d.k === 0 ? 'None of them is a kind this tool would exit on by default.'
+          : d.k + fmt.plural(d.k, ' of them is', ' of them are') + ' a kind this tool would exit on by default.';
       p.textContent = d.n + fmt.plural(d.n, ' rule change is', ' rule changes are') + ' waiting in ' + d.v +
         fmt.plural(d.v, ' Morpho vault', ' Morpho vaults') + ' holding ' + fmt.usd(d.usd) + ' right now. ' + watched;
     }
     var parts = Object.keys(d.byKind).filter(function (k) { return d.byKind[k] > 0; }).map(function (k) {
       return d.byKind[k] + ' ' + (kindWord[k] || [k, k])[d.byKind[k] === 1 ? 0 : 1];
     });
+    var snap = cfg.morpho.snapshot;
     src.textContent = 'Morpho’s public API, ' + fmt.date(d.at) + ', ' + fmt.time(d.at).slice(0, 5) + ' UTC' +
-      (parts.length ? ': ' + parts.join(', ') : '') + '. ' + NP.copy.notMorpho;
+      (parts.length ? ': ' + parts.join(', ') : '') + '. ' +
+      (d.n > 0 && d.k === 0 ? 'On ' + snap.date + ', ' + snap.shorter + ' of ' + snap.changes + ' waiting changes were shorter waiting periods. ' : '') +
+      NP.copy.notMorpho;
   }
   function problemFailed(retry) {
     var s = cfg.morpho.snapshot;
