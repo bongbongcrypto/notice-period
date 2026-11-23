@@ -209,9 +209,15 @@ def load_script():
 
 
 def run_record(repo, deployment, run):
-    rel = f"records/{deployment}-{run}.json"
-    rec = repo.json(rel)
-    return rel, rec, rec["derived"]["page"]
+    """The record of a run. A run number is the watch id, as on the page; the number in a record's file name is the
+    order the record was written in, and the two differ once a watch was turned off or left on between two exits."""
+    for path in sorted((ROOT / "records").glob(f"{deployment}-*.json")):
+        rel = f"records/{path.name}"
+        rec = repo.json(rel)
+        page = (rec.get("derived") or {}).get("page")
+        if page and str(page.get("id")) == str(run):
+            return rel, rec, page
+    raise ValueError(f"no record of deployment {deployment} holds run {run} with its derived page values")
 
 
 def plan_shot(shot, script, repo, fields):
