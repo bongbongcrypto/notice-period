@@ -113,6 +113,12 @@
   var ERR_TEXT = {
     'DailyCapReached()': "Today's live runs are used up",
     'DailyCapForAddress()': 'This address has used its runs for today',
+    'DailyCapForTimed()': 'The timer mode is full right now',
+    'NoExpiry(uint256)': 'A “leave now” watch does not expire: only its owner turns it off',
+    'NoFreeSalt()': 'The vault maker found no free vault address in this block. Try again in a few seconds',
+    'BadMode(uint8)': 'That watch mode does not exist',
+    'UnknownKinds(uint8)': 'That kind of change is not one a watch can cover',
+    'ZeroMaxShares()': 'The watch would cover no shares',
     'AlreadyWatching(uint256)': 'This address already has a watch on this vault',
     'NoShares()': 'This address holds no shares of the vault',
     'NoAllowance()': 'The exit contract is not allowed to redeem any shares yet',
@@ -129,6 +135,8 @@
     'NoKinds()': 'No kind of change is selected',
     'Reentrancy()': 'The contract is busy with another call',
     'TransferFailed()': 'The token transfer failed',
+    /* Morpho Vault V2: its pull of the deposit failed (allowance or balance not there, or not seen yet) */
+    'TransferFromReverted()': 'The vault could not take the demo dollars: allow it again or get more, or check again in a few seconds',
     'ZeroAddress()': 'The receiver address is empty'
   };
 

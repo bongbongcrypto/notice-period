@@ -1,8 +1,12 @@
-/* Notice Period page: every address, endpoint, limit and flag in one place.
-   Addresses are those of the testnet deployment of 18 Nov 2026 and change with a redeploy. */
+/* Notice Period page: every endpoint, limit and flag in one place. The addresses, our own accounts and the
+   deployment's rules come from data/deployment.js (window.NP_DEPLOYMENT), which scripts/stamp.py writes from
+   deployments/<name>.json; a redeploy changes that file only. */
 (function () {
   'use strict';
   var NP = window.NP = window.NP || {};
+  var D = window.NP_DEPLOYMENT;
+  if (!D || !D.contracts || !D.operators || !D.operators.length || !D.values) throw new Error('data/deployment.js did not load');
+  var vaultSource = (D.rules && D.rules.vaultSource) || (D.contracts.maker ? 'maker' : 'demo');
 
   NP.config = {
     chains: {
@@ -39,25 +43,50 @@
     },
 
     contracts: {
-      token: '0x2690DF70a37939c582a800f32FFEE52ec40d150B',
-      factory: '0xFFc96A898AF31e2ED652A8A0C0E90584999093CD',
-      exit: '0xEf1BCfeA1218c606C2AEDE19D1d25bc141be84B8',
-      callbackProxy: '0x476F44b11F5C942c58f4c8E3d0300E5710743585',
-      reactive: '0x00E4996c7255B919B619902E1Ac4b254D3c3f014',
+      token: D.contracts.token,
+      /* The vault source: the maker of Morpho Vault V2s (create(), lastVaultOf(address), TIMELOCK(), isVault(address)
+         and VaultCreated(vault, curator)), or our demo vault factory on the 18 Nov 2026 deployment (same calls). */
+      factory: vaultSource === 'maker' ? D.contracts.maker : D.contracts.factory,
+      morphoFactory: D.contracts.morphoFactory || null,
+      exit: D.contracts.exit,
+      callbackProxy: D.contracts.callbackProxy,
+      reactive: D.contracts.reactive,
       system: '0x8888888888888888888888888888888888888888'
     },
     /* Our own accounts: runs they sent are labelled "Our own test run". operator is the first (the testnet key);
        the second is the key derived from it for runs that need a second depositor (scripts/loop-system.sh). */
-    operators: ['0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4', '0x616FF5998E3e6AF794881Adf6Fe6cac62Cc29b19'],
-    operator: '0x46b6d1a62cAf1172D41502e39C78fb8d1a55FbA4',
+    operators: D.operators.slice(),
+    operator: D.operators[0],
+    /* What this deployment's contracts do, for the page's words: the vault source, whether a "leave now" watch ends
+       after LIFETIME seconds (the 18 Nov 2026 contracts) or only a timer watch can be ended then (22 Nov 2026), and
+       the deployed values (the page reads the live caps from the chain; these are for the words and the fallbacks). */
+    deployment: {
+      name: D.name,
+      vaultSource: vaultSource,
+      lifetime: D.values.LIFETIME,
+      leaveNowExpires: D.rules ? D.rules.leaveNowExpires !== false : true,
+      values: D.values
+    },
 
     token: { symbol: 'npUSD', decimals: 6 },
     amounts: {
       deposit: '100000000',            /* 100 npUSD, 6 decimals */
       capIncrease: '1000000000000',    /* the demo cap a "cap increase" schedules */
-      minGasWei: '30000000000000',     /* 0.00003 ETH asked before the run starts */
+      /* Test ETH asked before the run starts. Gas limits of our first loop on these contracts (22 Nov 2026, the seven
+         transactions of the guided run): vault create 5,321,160 (the larger of two creates), mint 69,158, approve
+         46,497, deposit 134,755, share approve 46,354, arm 235,035, submit 54,598; 5,907,557 in all. A wallet checks
+         gas limit times its maximum fee, so the sum is priced at 0.02 gwei, more than three times the 0.006 gwei paid
+         then: 5,907,557 x 0.02 gwei = 0.000118 ETH, asked as 0.00012. Without the create, 586,397 x 0.02 gwei =
+         0.0000117 ETH, asked as 0.000015. The loop's seven transactions used 5,606,449 gas (5,657,749 with the larger
+         create), about 0.000034 ETH at 0.006 gwei: typicalEth below. */
+      minGasWei: '120000000000000',
+      minGasStepWei: '15000000000000',
+      typicalEth: '0.00004',
       floatMinWei: '500000000000000000', /* 0.5 lREACT in the reactive contract */
-      exitMinWei: '500000000000000'    /* 0.0005 ETH in the exit contract */
+      exitMinWei: '500000000000000',   /* 0.0005 ETH in the exit contract */
+      /* A vault whose shares, priced by its own previewDeposit and previewRedeem, would pay back less than this share
+         of the deposit is refused before the deposit and reported after it. One unit of rounding is not a refusal. */
+      fairPercent: 99
     },
 
     /* Kinds a watch can cover (bit mask, SPEC section 3). DEFAULT = 7. */
@@ -93,9 +122,11 @@
     flags: {
       /* "Leave only if it is still scheduled near the end" is built in the contracts and switched off on this page. */
       mode1: false,
-      /* As the curator, this page schedules every kind the watch can cover. A new adapter, a shorter waiting period,
-         a new allocator and (on a watch that covers it) a cap increase have each returned a deposit on the live
-         contracts (recorded runs 1, 3, 4 and 7). Off, the page
+      /* As the curator, this page schedules every kind the watch can cover. Each is one our maker gave its waiting
+         period (TIMELOCK, 180 s): a new adapter, a new allocator and a cap increase directly, and a shorter waiting
+         period because it waits as long as the action it shortens, which is always one of those (run.js changeFor).
+         All four have returned a deposit from our loop on the live contracts (a new adapter, a shorter waiting
+         period and a new allocator on the 22 Nov 2026 pair; a cap increase on the 18 Nov 2026 pair). Off, the page
          offers only a new adapter and, while the watch does not cover it, a cap increase (nothing should move). */
       unprovenKinds: true
     },

@@ -1,0 +1,150 @@
+name: page-walk
+
+# The wallet walk of the hosted page. scripts/page-walk.mjs opens the page in the runner's Google
+# Chrome with a fresh profile, gives it one injected wallet (EIP-6963 and window.ethereum), clicks through the guided
+# run (make the vault, get demo dollars, deposit, turn the watch on with the chosen kinds and mode, schedule the change
+# as the curator) and waits for the page's "deposit returned". Then it reads the three transactions the page showed by
+# receipt from the public endpoints and checks them itself.
+# The wallet signs with key A (the testnet key) or key B (derived from it and masked by scripts/chain.sh), and only
+# the calls listed in the script's header: to the demo dollar, the vault maker and the exit contract of the deployment
+# file below, and to the walk's own vault (made by this walk, or the key's last vault from the maker). Only the hosted
+# page can be walked. Manual only, inside the "testnet" environment (main branch only: a deployment-branch rule of that
+# environment on GitHub, not of this file), never at the same time as another job that sends with the key
+# (concurrency group testnet-key).
+# Key B is never funded here (a loop dispatch with depositor b tops it up). A walk arms one watch, which counts against
+# the deployment's daily arms per address (4 on the 22 Nov pair, reset at 00:00 UTC).
+# The result is printed between the lines NP-WALK-JSON-BEGIN and NP-WALK-JSON-END and written to the job summary. The
+# screenshots stay on the runner: the one upload action scripts/check-workflows.py allows may not run in a job that
+# reads a secret. On a failure the last screenshot is printed in base64 between NP-WALK-SHOT-BEGIN and -END.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "the page to walk (the hosted page only)"
+        default: "https://bongbongcrypto.github.io/notice-period/"
+      deployment:
+        description: "name of deployments/<name>.json, the only source of the addresses the wallet signs for"
+        default: "2026-11-22"
+      key:
+        description: "the wallet's key: b = derived from the testnet key, a = the testnet key"
+        type: choice
+        options: [b, a]
+        default: b
+      kind:
+        description: "the change the curator schedules (the watch is set so that the page offers its button)"
+        type: choice
+        options: [adapter, allocator, timelock, cap]
+        default: adapter
+      mode:
+        description: "0 leave now, 1 leave if still pending (only if the page offers a control for it)"
+        type: choice
+        options: ["0", "1"]
+        default: "0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testnet-key
+  cancel-in-progress: false
+
+jobs:
+  walk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: testnet
+    env:
+      BASE_RPC: https://sepolia.base.org
+      LASNA_RPC: https://lasna-rpc.rnk.dev/
+      WALK_URL: ${{ inputs.url }}
+      WALK_DEPLOYMENT: ${{ inputs.deployment }}
+      WALK_KEY_NAME: ${{ inputs.key }}
+      WALK_KIND: ${{ inputs.kind }}
+      WALK_MODE: ${{ inputs.mode }}
+    steps:
+      - name: Check out this commit (plain git, no third-party action)
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          git init -q .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          echo "::add-mask::${auth}"
+          git -c http.extraheader="AUTHORIZATION: basic ${auth}" fetch -q --depth 1 origin "${GITHUB_SHA}"
+          git checkout -q FETCH_HEAD
+          git log -1 --format='%H %s'
+
+      - name: Check the inputs
+        run: |
+          set -euo pipefail
+          # the key signs only for the hosted page (scripts/page-walk.mjs LIVE_URL checks the same)
+          [[ "$WALK_URL" =~ ^https://bongbongcrypto\.github\.io/notice-period/[A-Za-z0-9._~/-]*$ ]] || { echo "url must be the hosted page, https://bongbongcrypto.github.io/notice-period/..."; exit 1; }
+          case "$WALK_KEY_NAME" in a | b) ;; *) echo "key must be a or b"; exit 1 ;; esac
+          case "$WALK_KIND" in adapter | allocator | timelock | cap) ;; *) echo "kind must be adapter, allocator, timelock or cap"; exit 1 ;; esac
+          case "$WALK_MODE" in 0 | 1) ;; *) echo "mode must be 0 or 1"; exit 1 ;; esac
+          echo "url $WALK_URL, deployment $WALK_DEPLOYMENT, key $WALK_KEY_NAME, kind $WALK_KIND, mode $WALK_MODE"
+
+      - name: Read the deployment file
+        run: python3 scripts/deployment.py "$WALK_DEPLOYMENT"
+
+      - name: Install pinned Foundry, solc and libraries (cast signs the walk's transactions)
+        run: bash scripts/ci-setup.sh
+
+      - name: Find Node 22 or later and Google Chrome on the runner
+        run: |
+          set -euo pipefail
+          node_bin=""
+          for c in "$(command -v node || true)" /opt/hostedtoolcache/node/*/x64/bin/node; do
+            if [ -z "$c" ] || [ ! -x "$c" ]; then continue; fi
+            major="$("$c" -p 'process.versions.node.split(".")[0]')"
+            if [ "$major" -ge 22 ]; then node_bin="$c"; break; fi
+          done
+          if [ -z "$node_bin" ]; then echo "no Node 22 or later on this runner (global WebSocket is needed)"; exit 1; fi
+          "$node_bin" -e 'if (typeof WebSocket !== "function" || typeof fetch !== "function") { console.error("no global WebSocket or fetch"); process.exit(1); }'
+          "$node_bin" --check scripts/page-walk.mjs
+          chrome="$(command -v google-chrome || command -v google-chrome-stable || true)"
+          if [ -z "$chrome" ]; then echo "Google Chrome is not installed on this runner"; exit 1; fi
+          echo "node $("$node_bin" --version) at $node_bin"
+          "$chrome" --version
+          echo "NODE_BIN=$node_bin" >> "$GITHUB_ENV"
+          echo "CHROME_BIN=$chrome" >> "$GITHUB_ENV"
+
+      - name: Walk the page (the injected wallet signs with the chosen key)
+        env:
+          DEPLOY_KEY: ${{ secrets.TESTNET_KEY }}
+        run: |
+          # shellcheck source=scripts/chain.sh
+          source scripts/chain.sh
+          need_key
+          check_chain "$BASE_RPC" "$BASE_CHAIN_ID" "Base Sepolia"
+          check_chain "$LASNA_RPC" "$LASNA_CHAIN_ID" "Lasna"
+          # derive_key_b masks key B before any use; it is called directly, never inside $(...)
+          if [ "$WALK_KEY_NAME" = b ]; then
+            derive_key_b
+            WALK_KEY="$KEY_B"
+            WALK_ADDRESS="$ADDR_B"
+          else
+            WALK_KEY="$DEPLOY_KEY"
+            WALK_ADDRESS="$DEPLOYER"
+          fi
+          echo "This job never funds the walk key (key B is topped up by a loop dispatch with depositor b)."
+          check_balance_of "$BASE_RPC" "Base Sepolia, walk key $WALK_KEY_NAME" "$WALK_ADDRESS" "$(to_wei 0.0005)"
+          # Node gets only the walk key, by environment; it removes it from its own environment before it starts
+          # Chrome or cast.
+          unset DEPLOY_KEY KEY_B
+          export WALK_KEY WALK_ADDRESS
+          "$NODE_BIN" scripts/page-walk.mjs --url "$WALK_URL" --deployment "$WALK_DEPLOYMENT" --key "$WALK_KEY_NAME" \
+            --kind "$WALK_KIND" --mode "$WALK_MODE" --browser "$CHROME_BIN" --out "$RUNNER_TEMP/page-walk"
+          # green only with a written result that says ok
+          python3 -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1])).get("result") == "ok" else "the walk wrote no ok result")' \
+            "$RUNNER_TEMP/page-walk/result.json"
+
+      - name: Walk result into the job summary
+        if: always()
+        run: |
+          f="$RUNNER_TEMP/page-walk/summary.md"
+          if [ -f "$f" ]; then
+            cat "$f" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The walk produced no result; see the steps above." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi

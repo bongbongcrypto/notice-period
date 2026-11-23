@@ -12,6 +12,16 @@
   var WITHDRAW_NOW = { a: 'withdraw', label: 'Withdraw my deposit now' };
   var WITHDRAW_IF = { a: 'withdraw', label: 'Withdraw my deposit now', when: 'hasDeposit' };
   var STILL_IN = { t: 'Your 100 demo dollars are still in your vault. You can take them out now.', when: 'hasDeposit' };
+  /* While a confirmed transaction has no receipt for a long time (the "tx-slow" notice): read the chain again and go
+     on from what is there. A transaction sped up or cancelled in the wallet gets a new hash this page cannot follow. */
+  var CHECK_CHAIN = [{ a: 'back', label: 'Check the chain again', when: 'slowTx' }];
+  /* The vault source of this deployment (config.js): a Morpho Vault V2 made through our maker, or our demo vault. */
+  var V2 = NP.config.deployment.vaultSource === 'maker';
+  /* How long a watch that can expire lasts, in words (the deployment's LIFETIME). */
+  var LIFE = (function (s) {
+    if (s % 86400 === 0) return s === 86400 ? 'one day' : (s / 86400) + ' days';
+    return Math.round(s / 3600) + ' hours';
+  }(NP.config.deployment.lifetime));
 
   /* The kinds of change this page schedules as the curator. With flags.unprovenKinds off: a new adapter, and a cap
      increase only while the watch does not cover it (the case where nothing should move). */
@@ -109,7 +119,7 @@
     },
     'wrong-network': {
       step: null, kind: 'stop', h: 'Your wallet is on another network',
-      body: ['The demo vault is on Base Sepolia, a test network.'],
+      body: ['The vault is on Base Sepolia, a test network.'],
       actions: [{ a: 'switch', label: 'Switch to Base Sepolia', primary: true }]
     },
     'switch-refused': {
@@ -119,7 +129,7 @@
     },
     'no-gas': {
       step: null, kind: 'stop', h: 'Not enough test ETH for gas',
-      body: ['The run needs about 0.00002 Base Sepolia ETH, and this page asks for 0.00003 before it starts. It is free from a faucet. This page cannot pay it for you: it has no server and no key.',
+      body: ['The run needs about {typical} Base Sepolia ETH. This page asks for {need} before the next step, because a wallet checks each transaction against its highest possible fee. It is free from a faucet. This page cannot pay it for you: it has no server and no key.',
         'Your address: {address}'],
       copy: 'address',
       actions: [{ a: 'faucet', label: 'Open Base’s faucet list', href: 'faucets', primary: true },
@@ -136,13 +146,20 @@
       actions: [{ a: 'replay', label: 'Replay a real run', primary: true }, WITHDRAW_IF]
     },
     'slots-full': {
-      step: null, kind: 'stop', h: 'All {n} watch slots are taken right now',
-      body: ['Other visitors have watches open. A slot frees when a watch ends, or one day after it was turned on.', STILL_IN],
+      step: null, kind: 'stop', h: 'All {slots} watch slots are taken right now',
+      body: ['Every one of the {slots} watch slots is held by an open watch, ours included. A slot frees when a watch fires or is turned off{frees}.', STILL_IN],
+      actions: [{ a: 'retry', label: 'Check again', primary: true }, REPLAY, WITHDRAW_IF]
+    },
+    'timer-full': {
+      step: null, kind: 'stop', h: 'The timer mode is full right now',
+      body: [{ t: 'Today’s {cap} new timer watches are used up. The count resets at 00:00 UTC, in {h} h {m} min.', when: 'today' },
+        { t: 'All {cap} timer places are taken. One frees when a timer watch ends.', when: 'places' },
+        'The timer mode is a demonstration and limited on purpose. “Leave now” has none of these limits.', STILL_IN],
       actions: [{ a: 'retry', label: 'Check again', primary: true }, REPLAY, WITHDRAW_IF]
     },
     'float-empty': {
       step: null, kind: 'stop', h: 'The demo is out of fee money',
-      body: ['Reactive transactions for this demo are paid from our float, and it is too low right now ({x} lREACT, {y} ETH). A watch turned on now might not fire. Recorded runs still play.', STILL_IN],
+      body: ['Reactive transactions for this demo are paid from our float, and right now it is too low or in debt (Reactive Lasna {x} lREACT, debt {dL}; exit reserve {y} ETH, debt {dB}). A watch turned on now might not fire. Recorded runs still play.', STILL_IN],
       actions: [{ a: 'replay', label: 'Replay a real run', primary: true }, WITHDRAW_IF]
     },
     'rpc-down': {
@@ -162,22 +179,28 @@
       body: ['It was made more than about 3 hours ago, too long ago for this page to list its scheduled changes, so a watch on it could miss one. Take the deposit out and start with a fresh vault.'],
       actions: [{ a: 'withdraw-restart', label: 'Withdraw my 100 demo dollars', primary: true }]
     },
+    'vault-set-aside': {
+      step: 1, kind: 'stop', h: 'Your deposit is in a vault this page will not watch again',
+      body: ['Reactive Lasna refused or closed the last watch on this vault, and a new watch on it could go the same way. Take the 100 demo dollars out; the next run then makes a fresh vault.'],
+      actions: [{ a: 'withdraw-restart', label: 'Withdraw my 100 demo dollars', primary: true }]
+    },
     'step-deposit': {
       step: 1, kind: 'plain', h: 'Step 1. Deposit',
-      body: ['One button, {n} wallet confirmations. The vault is created for you, so you are also its curator.'],
+      body: [V2 ? 'One button, {n} wallet confirmations. A Morpho Vault V2 is made for you by Morpho’s own factory, through our maker contract, so you are also its curator.' :
+        'One button, {n} wallet confirmations. The vault is created for you, so you are also its curator.'],
       lines: true,
       actions: [{ a: 'deposit', label: 'Deposit 100 demo dollars', primary: true }]
     },
     'depositing': {
       step: 1, kind: 'wait', h: 'Confirm in your wallet ({i} of {n})',
       body: [], lines: true,
-      actions: []
+      actions: CHECK_CHAIN
     },
     'confirm-rejected': {
       step: null, kind: 'stop', h: 'You rejected confirmation {i} of {n}',
-      body: ['Nothing was lost. The steps already done stay done.'],
+      body: ['Nothing was lost. The steps already done stay done. Continue asks for the same confirmation again; Back reads the chain and shows the step you are at, with all its choices.'],
       lines: true,
-      actions: [{ a: 'continue', label: 'Continue', primary: true }]
+      actions: [{ a: 'continue', label: 'Continue', primary: true }, { a: 'back', label: 'Back' }]
     },
     'would-fail': {
       step: null, kind: 'stop', h: 'This step would fail right now',
@@ -197,28 +220,28 @@
       actions: [{ a: 'continue', label: 'Try again', primary: true }, { a: 'view-tx', label: 'View transaction', href: 'tx' }]
     },
     'vault-tampered': {
-      step: 1, kind: 'stop', h: 'Someone tampered with this new vault',
-      body: ['{amount} demo dollars were sent to it before your deposit. That would change what your shares are worth, so nothing was deposited and nothing of yours is in it.',
-        'Demo dollars are free for anyone to mint, which is what makes this possible in the demo. A new vault takes one more confirmation.',
+      step: 1, kind: 'stop', h: 'This vault would pay back less than your deposit',
+      body: ['Priced by the vault itself, the shares of a 100 demo dollar deposit would redeem for {worth} demo dollars. So nothing was deposited and nothing of yours is in it.',
+        'A new vault takes one more confirmation.',
         '{again}'],
       actions: [{ a: 'deposit', label: 'Make another vault', primary: true }, REPLAY_INSTEAD]
     },
     'deposit-short': {
       step: 1, kind: 'stop', h: 'Your deposit is worth less than you put in',
-      body: ['Your shares would redeem for {worth} demo dollars, not 100. Someone sent demo dollars to this vault just before your deposit, which moves the share price. These are test tokens with no value.',
+      body: ['Your shares would redeem for {worth} demo dollars, not 100: the vault’s share price moved just before your deposit. These are test tokens with no value.',
         'Take the deposit out and start again with a fresh vault.'],
       actions: [{ a: 'withdraw-restart', label: 'Withdraw and start over', primary: true }]
     },
     'deposited': {
       step: 2, kind: 'plain', h: '100 demo dollars are in your vault',
-      body: ['You hold {shares} vault shares.'],
+      body: ['You hold {shares} vault shares.', '{vaultLine}'],
       rule: true,
       actions: [{ a: 'arm', label: 'Turn the watch on', primary: true }]
     },
     'arming': {
       step: 2, kind: 'wait', h: 'Confirm in your wallet ({i} of {n})',
       body: [], lines: true,
-      actions: []
+      actions: CHECK_CHAIN
     },
     'armed-subscribing': {
       step: 2, kind: 'wait', h: 'Watch #{id} is on. Reactive is subscribing to your vault.',
@@ -239,9 +262,19 @@
       actions: curatorActions(false)
     },
     'watch-refused': {
-      step: 2, kind: 'stop', h: 'Reactive did not take this watch',
-      body: ['{reason}', 'Base Sepolia still shows it as on, so turn it off before trying again.'],
-      actions: [{ a: 'cancel', label: 'Turn the watch off', primary: true }, { a: 'withdraw', label: 'Withdraw my deposit' }]
+      step: 2, kind: 'stop', h: 'Reactive Lasna refused this watch',
+      body: ['{reason}', 'The exit contract on Base Sepolia still shows it as on, but nothing watches your vault. Turn it off before trying again; the next run uses a fresh vault.'],
+      cols: ['Base Sepolia: watch #{id} on', 'Reactive Lasna: refused'],
+      actions: [{ a: 'cancel', label: 'Turn the watch off', primary: true },
+        { a: 'withdraw-restart', label: 'Turn it off, withdraw and start over', when: 'hasDeposit' }]
+    },
+    'watch-closed': {
+      step: 2, kind: 'stop', h: 'Reactive Lasna has closed this watch',
+      body: ['Reactive Lasna has ended this watch, but the exit contract on Base Sepolia still shows it as on: the exit did not arrive.', STILL_IN,
+        'Turn the watch off before trying again; the next run uses a fresh vault.'],
+      cols: ['Base Sepolia: watch #{id} on', 'Reactive Lasna: closed'],
+      actions: [{ a: 'cancel', label: 'Turn the watch off', primary: true },
+        { a: 'withdraw-restart', label: 'Turn it off, withdraw and start over', when: 'hasDeposit' }]
     },
     'subscribe-slow': {
       step: 2, kind: 'stop', h: 'Reactive has not picked up the watch',
@@ -251,7 +284,7 @@
     'scheduling': {
       step: 3, kind: 'wait', h: 'Confirm in your wallet (1 of 1)',
       body: ['You are scheduling the change as the vault’s curator.'],
-      actions: []
+      actions: CHECK_CHAIN
     },
     'scheduled': {
       step: 4, kind: 'wait', h: 'Change scheduled. Hands off now.',
@@ -320,14 +353,16 @@
     },
     'watch-off': {
       step: null, kind: 'done', h: 'The watch is off',
-      body: ['Reactive drops its subscription when it sees the cancellation. Allowance left to the exit contract: {z}.'],
+      body: [{ t: 'Reactive drops its subscription when it sees the cancellation. Allowance left to the exit contract: {z}.', when: 'subscribedOff' },
+        { t: 'The watch is off on Base Sepolia. Reactive never subscribed to it. Allowance left to the exit contract: {z}.', when: 'refused' },
+        { t: 'No watch is on for this address and vault. Allowance left to the exit contract: {z}.', when: 'plainOff' }],
       actions: [{ a: 'remove-allowance', label: 'Remove the allowance', primary: true, when: 'hasAllowance' },
         { a: 'withdraw', label: 'Withdraw my deposit', when: 'hasDeposit' }, { a: 'again', label: 'Run again' }]
     },
     'recovering': {
       step: null, kind: 'wait', h: 'Confirm in your wallet ({i} of {n})',
       body: [], lines: true,
-      actions: []
+      actions: CHECK_CHAIN
     },
     'page-error': {
       step: null, kind: 'stop', h: 'This page hit a problem',
@@ -355,6 +390,24 @@
       actions: [{ a: 'open-exit', label: 'Open the exit contract on the explorer', href: 'exit', primary: true },
         { a: 'see-runs', label: 'See recent runs', href: '#runs' }]
     },
+    'run-still-on': {
+      step: null, kind: 'stop', h: 'Run #{id} has not fired yet',
+      body: ['Watch #{id} is still on and has not asked for an exit, so there is nothing to replay yet.'],
+      actions: [{ a: 'open-exit', label: 'Open the exit contract on the explorer', href: 'exit', primary: true },
+        { a: 'see-runs', label: 'See recent runs', href: '#runs' }]
+    },
+    'run-no-exit': {
+      step: null, kind: 'stop', h: 'Run #{id} ended without an exit',
+      body: ['{why} Nothing moved, so there is nothing to replay.'],
+      actions: [{ a: 'open-exit', label: 'Open the exit contract on the explorer', href: 'exit', primary: true },
+        { a: 'see-runs', label: 'See recent runs', href: '#runs' }]
+    },
+    'run-no-return': {
+      step: null, kind: 'stop', h: 'Run #{id} ended without a return',
+      body: ['Its exit ran on Base Sepolia, but no deposit came back. {why}', 'So there is no returned deposit to replay. The transactions of this run are in the list of recent runs.'],
+      actions: [{ a: 'see-runs', label: 'See recent runs', href: '#runs', primary: true },
+        { a: 'open-exit', label: 'Open the exit contract on the explorer', href: 'exit' }]
+    },
     'reading-run': {
       step: null, kind: 'wait', h: 'Reading run #{id}',
       body: ['Looking up its three transactions on both chains.'],
@@ -374,36 +427,41 @@
     'rpc-hiccup': { h: 'A read failed',
       body: 'A public endpoint did not answer. The page keeps trying every second. Your run does not depend on this page: it goes on by itself.' },
     'tx-slow': { h: 'Still waiting for Base Sepolia',
-      body: 'This usually takes under 5 seconds. Your wallet may show the transaction as pending; you can speed it up there.' }
+      body: 'This usually takes under 5 seconds. Your wallet may show the transaction as pending. If you speed it up or cancel it there, it gets a new hash that this page does not follow: press “Check the chain again” then.' }
   };
 
   NP.copy = {
     stepNames: ['Deposit', 'Watch', 'Curator', 'Result'],
-    depositLines: ['Create your own demo vault', 'Get 100 demo dollars (free)', 'Let the vault take them', 'Deposit'],
+    depositLines: [V2 ? 'Make your own Morpho Vault V2 (test network)' : 'Create your own demo vault', 'Get 100 demo dollars (free)', 'Let the vault take them', 'Deposit'],
     armLines: ['Allow the exit contract to redeem exactly your {shares} shares, to your address only', 'Turn the watch on'],
     lineStatus: { todo: 'to do', wallet: 'waiting for your wallet', sent: 'sent', done: 'confirmed', have: 'already in your wallet',
       skip: 'already done' },
-    noTokens: 'You have no demo dollars yet. They are free: the next confirmation mints 100 to your address.',
+    noTokens: 'You have no demo dollars yet. They are free: the confirmation “Get 100 demo dollars” mints 100 to your address.',
     ruleHeading: 'Leave when the curator schedules',
+    clockNote: 'The two chains’ clocks differ by about a second, so a record can show a time one second before the change it follows.',
     pendingNone: 'Changes already scheduled on this vault: none.',
     pendingSome: 'Changes already scheduled on this vault: {n}. A watch turned on now will not see them.',
     pendingUnread: 'Changes already scheduled on this vault: could not be read just now.',
-    curatorIntro: 'Now play the curator. On a real vault this is the operator, not you. Schedule a rule change and see what your deposit does.',
-    curatorTimelock: 'This vault’s waiting period is {min} minutes. Real vaults use days.',
+    curatorIntro: 'Now play the curator. On a vault that holds real deposits the curator is someone else, not the depositor. Schedule a rule change and see what your deposit does.',
+    curatorTimelock: 'This vault waits {sec} seconds before each change offered below can take effect. Vaults that hold real deposits usually wait days.',
     hintCovered: 'your watch covers it, so the deposit should leave.',
     hintIgnored: 'your watch does not cover it, so the deposit should stay.',
-    tamperedReuse: 'Someone sent demo dollars to the empty vault from your earlier visit, so this run makes a new one.',
-    tamperedAgain: 'This is the second vault in a row. Whoever does it may have prepared more. The replay shows the same contracts at work.',
+    tamperedReuse: 'The empty vault from your earlier visit would now pay back less than a deposit, so this run makes a new one.',
+    tamperedAgain: 'This is the second vault in a row. The replay shows the same contracts at work.',
     refused3: 'All watch slots were taken.',
-    refused4: 'This vault already has 3 watches.',
+    refused4: 'This vault already has 3 watches, the most our reactive contract serves on one vault. Anyone can deposit into it and turn watches on, so a fresh vault is the way out.',
+    refused5: 'The timer mode is full right now.',
     refusedOther: 'Reactive refused it with code {code}.',
     refusedGone: 'Reactive refused this watch when it was turned on.',
-    refusedClosed: 'Reactive has already closed this watch.',
+    noExitOff: 'Its owner turned the watch off before any exit.',
+    noExitExpired: NP.config.deployment.leaveNowExpires ? 'It was ended ' + LIFE + ' after it was turned on, before any exit.' :
+      'It was a timer watch, ended ' + LIFE + ' after it was turned on.',
+    vaultRefused: 'The vault refused this step. If you just confirmed the step before it, the public endpoint may not show it yet: check again in a few seconds',
     rec1: 'Change scheduled',
     rec2: 'Reactive transaction',
     rec3: 'Withdrawal',
     rec2Wait: 'waiting (usually the same second)',
-    rec3Wait: 'waiting (usually 2 seconds)',
+    rec3Wait: 'waiting (usually a second or two)',
     rec2WaitTimer: 'waiting for the timer (about 2 minutes before the deadline)',
     rec3WaitTimer: 'waiting (follows Reactive within seconds)',
     rec2Missing: 'not read: Reactive Lasna did not answer',
@@ -411,12 +469,17 @@
     replayDeadline: 'This run used the other mode, “wait for the deadline”: Reactive stores the change and asks for the exit about 2 minutes before it can take effect, if it is still scheduled then. Here that was {s} s after the change, with {left} s of notice left.',
     replayFast: 'The {s} s of waiting are played back in about {play} s.',
     stillNoWallet: 'Still no wallet found. Checked just now.',
-    notMorpho: 'The demo below runs on our own test vault. Not affiliated with Morpho.',
+    notMorpho: V2 ? 'The demo below runs on test Morpho Vault V2s made by Morpho’s own factory through our maker contract, holding our demo dollar; these contracts accept no other vault. Not affiliated with Morpho.' :
+      'The demo below runs on our own test vault. Not affiliated with Morpho.',
+    vaultIsV2: 'Morpho’s own Vault V2 factory lists this vault as one of its vaults.',
+    vaultNotV2: 'Morpho’s Vault V2 factory does not list this vault.',
     copyFailed: 'Copying was blocked. Select the text in the box and copy it.',
     refTx: 'Reactive’s receipt names your transaction as its trigger.',
     checkOk: 'Checked against both chains just now.',
     checkFail: 'Could not re-check right now; this is the recorded copy from {date}.',
     checking: 'Reading the three receipts from both chains…',
+    txSlowWait: 'Waiting for the receipt of the transaction you confirmed.',
+    triedLogs: 'the one public endpoint that can search that far',
     watchStillOn: 'The watch is still on.',
     watchNone: 'No watch is on.',
     kindsNone: 'Pick at least one kind of change.',

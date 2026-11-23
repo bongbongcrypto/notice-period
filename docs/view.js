@@ -97,6 +97,7 @@
     root.appendChild(zoom);
     var recs = el('div', 'records');
     recs.appendChild(makeLedger());
+    recs.appendChild(el('p', 'small', NP.copy.clockNote));
     root.appendChild(recs);
     return root;
   }
@@ -251,7 +252,9 @@
     var check = $('latest-check');
     if (run) {
       var ours = !run.owner || cfg.isOurs(run.owner);
-      var where = ours ? 'on our own demo vault' : 'by a visitor on a demo vault';
+      var v2 = cfg.deployment.vaultSource === 'maker';
+      var where = ours ? (v2 ? 'on a test Morpho Vault V2 of ours, our own keys as curator and depositor' : 'on our own demo vault') :
+        (v2 ? 'by a visitor on a test Morpho Vault V2' : 'by a visitor on a demo vault');
       var mode = run.mode === 1 ? '“wait for the deadline”' : '“leave now”';
       cap.textContent = (linked ? 'Run #' + run.id + ' on testnet, ' + mode + ' mode, ' + where + ', ' : 'Latest ' + mode + ' run on testnet, ' + where + ', ') +
         fmt.date(run.r1.ts) + ': deposit back ' + fmt.sec(run.r3.ts, run.r1.ts) + ' s after the change was scheduled.';
@@ -272,21 +275,34 @@
     }
   }
 
+  /* Live, every watch is counted by what became of it, so a watch that is still on or was turned off never reads as a
+     failed run. Without the live read, the line counts the recorded runs (the same words as the static copy). */
   function proof(d) {
     /* Test traffic is called test traffic, on the same line as the count. */
     var who = '';
     if (d.runs > 0 && d.ours === d.runs) who = d.runs === 1 ? ', our own test' : (d.runs === 2 ? ', both our own tests' : ', all our own tests');
-    else if (d.runs > 0 && d.ours + d.visitors === d.runs) who = ': ' + d.visitors + ' by ' + fmt.plural(d.visitors, 'a visitor', 'visitors') + ', ' + d.ours + ' our own ' + fmt.plural(d.ours, 'test', 'tests');
+    else if (d.runs > 0 && d.ours + d.visitors === d.runs) who = ', ' + d.visitors + ' by ' + fmt.plural(d.visitors, 'a visitor', 'visitors') + ' and ' + d.ours + ' our own ' + fmt.plural(d.ours, 'test', 'tests');
     else if (d.ours > 0) who = ', ' + d.ours + ' of them our own ' + fmt.plural(d.ours, 'test', 'tests');
-    var txt = d.runs + fmt.plural(d.runs, ' run so far', ' runs so far') + who + '. ' + d.returned +
-      fmt.plural(d.returned, ' deposit returned.', ' deposits returned.');
+    var returned = d.returned + fmt.plural(d.returned, ' deposit returned', ' deposits returned');
+    var txt;
+    if (d.live) {
+      var parts = [];
+      if (d.returned) parts.push(returned);
+      if (d.noReturn) parts.push(d.noReturn + ' ended without a return');
+      if (d.off) parts.push(d.off + ' turned off by ' + fmt.plural(d.off, 'its owner', 'their owners'));
+      if (d.on) parts.push(d.on + ' still on');
+      if (d.expired) parts.push(d.expired + ' expired');
+      if (d.unlisted) parts.push(d.unlisted + ' ended earlier than this page can list');
+      txt = d.runs + fmt.plural(d.runs, ' watch', ' watches') + ' turned on so far' + who + (parts.length ? ': ' + parts.join(', ') : '') + '.';
+    } else {
+      txt = d.runs + fmt.plural(d.runs, ' recorded run so far', ' recorded runs so far') + who + '. ' + returned + '.';
+    }
     if (d.nowTimes.length >= cfg.timing.medianFromRuns) {
       var s = d.nowTimes.slice().sort(function (a, b) { return a - b; });
       var mid = s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
       txt += ' “Leave now” runs: median ' + mid + ' s over ' + s.length + ' runs.';
     }
     /* below that many runs the caption above already gives the latest time */
-    if (d.unlisted > 0) txt += ' ' + d.unlisted + fmt.plural(d.unlisted, ' run is', ' runs are') + ' older than this page can list.';
     $('proof').textContent = txt;
   }
 
@@ -296,11 +312,11 @@
     setBusy(h, false);
     clear(h);
     if (!d) {
-      h.textContent = 'Could not read the run count and the float right now. ';
+      h.textContent = 'Could not read the run count, the float and the debts right now. ';
       if (retry) h.appendChild(retryButton('health-retry', 'Try again', retry));
       return;
     }
-    var txt = 'Live now: ' + d.left + ' of ' + d.cap + ' runs left today. Float ' + d.float + ' lREACT. ';
+    var txt = 'Live now: ' + d.left + ' of ' + d.cap + ' runs left today. Float ' + d.float + ' lREACT, ' + (d.debt || 'no debt') + '. ';
     if (d.lastAge !== null && d.lastAge <= 26 * 3600) txt += 'Our last \u201cleave now\u201d test run was ' + fmt.age(d.lastAge) + ' ago, deposit back in ' + d.lastSec + ' s.';
     else if (d.lastAge !== null) txt += 'Our latest \u201cleave now\u201d test run was ' + fmt.age(d.lastAge) + ' ago (' + fmt.date(d.lastTs) + '), deposit back in ' + d.lastSec + ' s.';
     else txt += 'No \u201cleave now\u201d test run of ours is on record yet.';
@@ -309,6 +325,9 @@
 
   var OUTCOME = { 1: 'Nothing to redeem', 3: 'Vault refused the redeem' };
   var STATUS = { 0: 'not found', 1: 'still on', 2: 'turned off by its owner', 3: 'ended', 4: 'expired' };
+  /* A row without transactions, by the watch's status: only an ended watch has transactions this list does not hold. */
+  var NO_TX = { 0: 'Watch not found.', 1: 'Watch still on. No exit yet.', 2: 'Watch turned off by its owner. No exit.',
+    3: 'Watch ended. Its transactions are older than this list.', 4: 'Watch expired. No exit.' };
 
   function runRow(r) {
     var tr = el('tr');
@@ -323,7 +342,7 @@
     if (!r.r1) {
       td('num', 'When (UTC)', r.armedAt ? fmt.date(r.armedAt) + ' ' + fmt.time(r.armedAt) : '');
       td('', 'Who', who);
-      var c = td('quiet', 'Change', 'Watch ' + (STATUS[r.status] || 'unknown') + '. Its transactions are not in this list.');
+      var c = td('quiet', 'Change', NO_TX[r.status] || 'Watch state unknown.');
       c.colSpan = 5;
       return tr;
     }
@@ -588,6 +607,7 @@
     state: state, tickStrip: tickStrip, setHeadline: setHeadline, setPendingLine: setPendingLine, setKindsWarn: setKindsWarn,
     enableActions: enableActions, announce: announce, ctaOrder: ctaOrder,
     onAction: function (f) { handler = f; },
-    STATUS: STATUS
+    STATUS: STATUS,
+    OUTCOME: OUTCOME
   };
 }());
