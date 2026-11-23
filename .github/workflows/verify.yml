@@ -10,7 +10,7 @@ on:
         description: "name of deployments/<name>.json"
         default: "2026-11-22"
       publish:
-        description: "also register the sources on Sourcify and Blockscout (owner's yes (Q1) required)"
+        description: "also register the sources on Sourcify and Blockscout (publishes them on both sites)"
         type: choice
         options: ["no", "yes"]
         default: "no"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sourcify v2 with the standard library (branch B of scripts/verify.sh; runs only with the owner's yes to publish).
+"""Sourcify v2 with the standard library (branch B of scripts/verify.sh; runs only with PUBLISH=yes).
 
     sourcify.py check  --chain ID --address ADDR
         exit 0 only if Sourcify reports an exact match (GET /v2/contract/{chain}/{address}).

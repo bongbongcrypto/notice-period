@@ -3,7 +3,7 @@
 #
 #   D (always): scripts/bytecode_match.py: the code on chain against the build of the deployment's source commit,
 #     immutables masked, metadata compared. Writes status/bytecode-<name>.json. Public reads only.
-#   Only with PUBLISH=yes (the owner's yes to registering our sources on outside sites is required first):
+#   Only with PUBLISH=yes (this registers our sources on outside sites):
 #   A: forge verify-contract --verifier sourcify, per contract;
 #   B: if A fails for a contract, the standard JSON input sent to Sourcify's v2 API with Python (scripts/sourcify.py);
 #   C: Base Sepolia contracts also on Blockscout (forge verify-contract --verifier blockscout).

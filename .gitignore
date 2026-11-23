@@ -1,7 +1,7 @@
 # Secrets
 .env*
 !.env.example
-.alert.env
+*.env
 wallet.json
 *.key
 *.pem
