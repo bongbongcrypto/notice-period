@@ -65,6 +65,10 @@ through `MorphoVaultMaker`. A run
 number here is the watch id, as on the page. The first key is the curator in every run; the second key is the
 depositor in runs 1, 5, 7, 8 and 10. Seconds are differences of block times.
 
+So far on these contracts: eleven watches, all our own tests. Eight ended in an exit (five "leave now",
+three "wait for the deadline"), two were turned off by their owners (run 2, and run 7 after its change was
+revoked) and one is still on (run 8).
+
 | | Run 3, a shorter waiting period | Run 4, a new allocator | Run 5, a new adapter after an ignored cap increase | Run 6, "wait for the deadline" |
 |---|---|---|---|---|
 | Change scheduled (Base Sepolia) | [`0x4fa10231…16ce`](https://base-sepolia.blockscout.com/tx/0x4fa102311a96226837e5f07850028f40edc472d33d89a6b7d25f727e174616ce) 09:43:16 UTC | [`0xb2f3b820…affb`](https://base-sepolia.blockscout.com/tx/0xb2f3b82017938a457a5dd5957cef1e4e54c5a92c400fbba2f6853964a8fbaffb) 09:44:17 UTC | [`0x6e0edc92…a633`](https://base-sepolia.blockscout.com/tx/0x6e0edc92588549cdc8854ce32501f4602eb0654bcc384432a66841794497a633) 09:46:22 UTC | [`0x9b56fa04…2bfb`](https://base-sepolia.blockscout.com/tx/0x9b56fa046d73aaccb548b72993f443d6e248928c136f4b0d0c9e32cd10d52bfb) 09:47:33 UTC |
