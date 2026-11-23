@@ -64,8 +64,8 @@
       "url": "{pageUrl}",
       "target": { "selector": "#how", "align": "top", "offset": 16 },
       "seconds": 13,
-      "label": "Hosted page · How it works",
-      "caption": "Pick, once, the changes you refuse: a new place the vault may send funds, a new account that may move them, or a shorter wait. If the curator schedules such a change, our reactive contract on Reactive Lasna sees it, and your deposit comes back to your wallet.",
+      "label": "Hosted page · How it works · you pick the kinds of change you refuse; such a change sends your deposit back to your own wallet",
+      "caption": "Pick, once, the kinds of change you will not accept, such as a shorter wait. If the curator schedules such a change, our reactive contract on Reactive Lasna sees it, and your deposit comes back to your own wallet.",
       "evidence": []
     },
     {
@@ -75,7 +75,7 @@
       "target": { "selector": "#runs", "align": "top", "offset": 16 },
       "soft": { "textAny": ["Live from the chain"], "notText": ["visitor"] },
       "seconds": 12,
-      "label": "Hosted page · Recent runs, all our own tests",
+      "label": "Hosted page · Recent runs, all our own tests: our demo dollar, our curator account",
       "caption": "Each exit run is on the page with its three transactions. All are our own tests, on Morpho Vault V2s made through our maker: nine exits so far, and every kind of change has a recorded exit.",
       "evidence": [
         { "readme": "The three records belong together." },
@@ -181,7 +181,7 @@
       "untilText": ["Checked against both chains just now", "Could not re-check right now"],
       "maxCaptureSeconds": 20,
       "seconds": 14,
-      "label": "Page replay of run 6, recorded 22 Nov 2026 · sped up by the page: the 63 s of waiting play in about 8 s",
+      "label": "Page replay of run 6, 22 Nov 2026 · sped up by the page: 63 s of waiting play in about 8 s · a change cancelled first leaves the deposit in place (run 7)",
       "caption": "The other mode waits until close to the deadline: it stores the change and asks for the exit only when 120 seconds or less are left. If the curator cancels first, nothing moves: the deposit stays in the vault, as in run 7.",
       "evidence": [
         { "readme": "Run 6, \"wait for the deadline\"" },
@@ -222,7 +222,7 @@
       "holdBefore": 2.5,
       "scrollSeconds": 5,
       "seconds": 14,
-      "label": "README · Check every claim in ten minutes",
+      "label": "README · Check every claim in ten minutes: every run's receipts, sources verified on Sourcify, a script that re-reads every run",
       "caption": "No server, and no key that can send the funds elsewhere. Each claim comes with a check: every run's receipts, the sources verified on Sourcify with an exact match, and a script that re-reads every run.",
       "evidence": [
         { "readme": "Check every claim in ten minutes" },
