@@ -11,6 +11,11 @@ pays the depositor and nobody else.
 Live page: <https://bongbongcrypto.github.io/notice-period/>. It replays any recorded run from the chains' own
 receipts, and it walks a visitor with a test wallet through a run of their own.
 
+Demo video, 2 min 41 s, one synthetic voice and burnt-in captions:
+<https://bongbongcrypto.github.io/notice-period/video/notice-period-demo.mp4>. It was recorded in GitHub Actions from
+the live page, the explorers and this README by [`.github/workflows/video.yml`](.github/workflows/video.yml), from
+[`video/script.json`](video/script.json).
+
 ![The first screen of the page on 23 Nov 2026: the latest recorded run, with its three transactions](media/first-screen.png)
 
 The rule book is [SPEC.md](SPEC.md). The page is in [`docs/`](docs): plain HTML, CSS and JavaScript, no build step and
