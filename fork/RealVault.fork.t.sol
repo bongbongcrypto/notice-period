@@ -37,7 +37,7 @@ interface IForkErc20 {
 ///         delivered to exit() with the gas the proxy forwards for the requested limit.
 /// @dev Needs ETH_RPC (an archive endpoint); without it every test is skipped. Lives in fork/, outside the test
 ///      directory, so the blocking jobs never compile it: run it with FOUNDRY_TEST=fork (the non-blocking ci.yml job
-///      "fork"). The constants below are the values scripts/deploy-system.sh deploys (Track 1).
+///      "fork"). The constants below are the values scripts/deploy-system.sh deploys (the 22 Nov 2026 deployment).
 contract RealVaultForkTest is Network {
     uint256 internal constant MAINNET = 1;
     uint256 internal constant FORK_BLOCK = 26_406_895;
@@ -79,7 +79,7 @@ contract RealVaultForkTest is Network {
     bytes32 internal constant WATCH_ENDED_TOPIC = keccak256("WatchEnded(uint256,uint256,uint8,uint8,uint256,uint256)");
     bytes32 internal constant REDEEM_REVERTED_TOPIC = keccak256("RedeemReverted(uint256,bytes)");
 
-    // Values scripts/deploy-system.sh deploys (SPEC.md section 9, Track 1 column).
+    // Values scripts/deploy-system.sh deploys (SPEC.md section 9, 22 Nov pair column).
     uint256 internal constant LEAD = 120;
     uint256 internal constant MAX_WAIT = 200;
     uint256 internal constant MAX_ACTIVE = 1000;
@@ -175,7 +175,7 @@ contract RealVaultForkTest is Network {
     }
 
     // ------------------------------------------------------------------
-    // F2b: an allocator empties the exit path first (SPEC.md section 11, NP-04)
+    // F2b: an allocator empties the exit path first (SPEC.md section 11)
     // ------------------------------------------------------------------
 
     /// @notice F2b: an allocator (no timelock) clears the liquidity adapter before the curator's change is scheduled;

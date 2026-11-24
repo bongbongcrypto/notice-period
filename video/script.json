@@ -53,10 +53,10 @@
       "seconds": 11,
       "label": "Hosted page · count read live from Morpho's public API",
       "labelFailed": "Hosted page · Morpho's public API did not answer; the page shows its dated count",
-      "captionLive": "A Morpho vault's curator, its manager, can change its rules, but each change must wait, usually days: that wait is your notice. When this was recorded, the page read {morpho.changes} waiting in {morpho.vaults} holding {morpho.usd}.",
-      "captionZero": "A Morpho vault's curator, its manager, can change its rules, but each change must wait, usually days: that wait is your notice. When this was recorded, no rule change was waiting in any listed Morpho vault.",
-      "caption": "A Morpho vault's curator, its manager, can change its rules, but each change must wait, usually days: that wait is your notice. On 21 Nov 2026 that was 35 changes in 9 vaults holding $85.9M.",
-      "evidence": [{ "readme": "On 21 Nov 2026 that was 35 changes in 9 vaults holding $85.9M" }, { "readme": "The vault makes each change wait, usually days" }]
+      "captionLive": "A Morpho vault's curator, its manager, can change its rules, but most changes must wait, usually days: that wait is your notice. When this was recorded, the page read {morpho.changes} waiting in {morpho.vaults} holding {morpho.usd}.",
+      "captionZero": "A Morpho vault's curator, its manager, can change its rules, but most changes must wait, usually days: that wait is your notice. When this was recorded, no rule change was waiting in any listed Morpho vault.",
+      "caption": "A Morpho vault's curator, its manager, can change its rules, but most changes must wait, usually days: that wait is your notice. On 21 Nov 2026 that was 35 changes in 9 vaults holding $85.9M.",
+      "evidence": [{ "readme": "On 21 Nov 2026 that was 35 changes in 9 vaults holding $85.9M" }, { "readme": "The vault makes most of these changes wait, usually days" }]
     },
     {
       "id": "S03",
@@ -182,7 +182,7 @@
       "maxCaptureSeconds": 20,
       "seconds": 14,
       "label": "Page replay of run 6, recorded 22 Nov 2026 · sped up by the page: the 63 s of waiting play in about 8 s",
-      "caption": "The other mode waits until close to the deadline: it stores the change and asks for the exit only when 120 seconds or less are left. If the curator cancels first, nothing moves: the deposit stays in the vault, as in run 7.",
+      "caption": "The other mode waits until close to the deadline: it stores the change and asks for the exit when 120 seconds or less are left. If the curator cancels first, nothing moves: the deposit stays in the vault, as in run 7.",
       "evidence": [
         { "readme": "Run 6, \"wait for the deadline\"" },
         { "readme": "+63 s, on the timer" },

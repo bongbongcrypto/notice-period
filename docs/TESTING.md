@@ -7,7 +7,10 @@ ours. The page is plain HTML, CSS and JavaScript with no build step.
 Every row was run on 2026-11-23 on the files as they are now, and its output was read: the scripts of parts 1a and 2
 between 06:02 and 06:47 UTC, the browser rows of part 1b between 04:32 and 04:36 UTC (its Morpho row at 07:54 UTC, after that sentence was reworded). No result is carried over from the
 earlier notes (21 Nov 2026 for the pair of 18 Nov 2026, 22 Nov 2026 for earlier files of this page); they are in the
-history of this file. What was last run then and not since is listed in part 3, without a result.
+history of this file. What was last run then and not since is listed in part 3, without a result. Two page files
+changed after these rows, in commit 5333fe9 (23 Nov 2026, 20:11 UTC): `docs/rpc.js` now tries the next endpoint when
+one answers with a JSON-RPC error, and a comment in `docs/run.js`. The new offline test `scripts/test-rpc.mjs` runs
+on every push in CI; the browser rows were not run again after that commit.
 
 One run used a wallet that signs: the live wallet walk of part 1c (`.github/workflows/page-walk.yml`, which runs
 `scripts/page-walk.mjs` on the hosted page), at 06:49 UTC. It came after every other row, so parts 1a, 1b and 2
