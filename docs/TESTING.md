@@ -9,8 +9,9 @@ between 06:02 and 06:47 UTC, the browser rows of part 1b between 04:32 and 04:36
 earlier notes (21 Nov 2026 for the pair of 18 Nov 2026, 22 Nov 2026 for earlier files of this page); they are in the
 history of this file. What was last run then and not since is listed in part 3, without a result. Two page files
 changed after these rows, in commit 5333fe9 (23 Nov 2026, 20:11 UTC): `docs/rpc.js` now tries the next endpoint when
-one answers with a JSON-RPC error, and a comment in `docs/run.js`. The new offline test `scripts/test-rpc.mjs` runs
-on every push in CI; the browser rows were not run again after that commit.
+one answers with a JSON-RPC error, and a comment in `docs/run.js`. The new offline test `scripts/test-rpc.mjs` is a
+step of the `ci` workflow, which passed on the next two commits (517503b, 49bfe4b); the browser rows were not run
+again after 5333fe9.
 
 One run used a wallet that signs: the live wallet walk of part 1c (`.github/workflows/page-walk.yml`, which runs
 `scripts/page-walk.mjs` on the hosted page), at 06:49 UTC. It came after every other row, so parts 1a, 1b and 2
@@ -109,7 +110,7 @@ receipts again without a key (result `ok`, 19 of 19 checks, at 06:56 UTC).
 | A wallet extension a person holds: its connection prompt, its confirmations, a rejection by a person | The walk's wallet (part 1c) is injected through developer tools and signs by rule; no extension was used | A person with a browser wallet |
 | The live walk with another setting | Only a new adapter, leave now, the second key was walked (part 1c) | `page-walk.yml` with other inputs |
 | A dry walk with another setting | Only the default was run (a new adapter, leave now, the second operator address) | `--kind`, `--mode`, `--address` of the same script |
-| Whether wallet extensions inject their provider under `script-src 'self'` | Needs a real extension; the walk's wallet is injected through developer tools and does not answer this | A person with a browser wallet |
+| Whether wallet extensions inject their provider under `script-src 'self'`, outside Edge | Read only, on 2026-11-25 on the hosted page in Edge 158 (Chromium) with six wallet extensions installed: all six announced their providers by EIP-6963 and `window.ethereum` was set; nothing was connected or signed. Other browsers were not tried | A person with a browser wallet in another browser |
 | Parts 1a, 1b and 2 on the hosted address | They were run on a local copy of these files. On the hosted page only the walk of part 1c was run | The hosted page, with the same steps |
 | The newer screens and buttons by their real cause | `Back` after a rejected confirmation, `Check the chain again` while a transaction has no receipt, the stop screen for a vault that is not watched again, `#run=N` for a run whose exit returned nothing, the sentence `No watch is on for this address and vault`, a switch of account before the run starts, and the wording when only one endpoint can search far enough. Their screens were drawn with made-up values (part 1b); on these files none was reached by the event that causes it | Simulator or real run |
 | A cap increase on a watch that covers it, from this page's buttons | One returned a deposit on the 22 Nov pair from our loop workflow (run #11, `records/2026-11-22-13.json`). The page's own button for it was not pressed on the live contracts, and the simulator's only cap increase is on a watch that does not cover it | The walk with `--kind cap` |

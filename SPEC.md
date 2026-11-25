@@ -460,8 +460,8 @@ fails a test), and a mock callback proxy writes the requesting contract's addres
 as the network does. Real logs (a Morpho V2 `Submit` from Base, a Cron10 tick from Lasna) are decoded in
 fixture tests.
 
-Checks in CI on every push that changes code (pushes of the page in `docs/` or of prose alone skip it, and it can
-be run by hand): unit and attack tests (each refusal test next to a sibling call that succeeds), fuzz
+Checks in CI, started by hand on the branch head (most of our commits say `[skip ci]`) or by a push that changes
+more than the page in `docs/` or prose: unit and attack tests (each refusal test next to a sibling call that succeeds), fuzz
 tests, an invariant run with random visitor, curator, clock and attacker actions (the exit contract never
 holds tokens or shares, tokens go only to their depositor, no visitor's wallet plus shares is ever worth more
 than they put in (rounding aside), both chains agree on each watch's status, the CRON
